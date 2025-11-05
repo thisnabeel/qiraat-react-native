@@ -1049,7 +1049,7 @@ export default function App() {
       </SafeAreaView>
 
       {isDrawerVisible && (
-        <View style={styles.drawerOverlay}>
+        <SafeAreaView style={styles.drawerOverlay}>
           <Animated.View
             style={[styles.drawer, { transform: [{ translateX: drawerAnim }] }]}
           >
@@ -1087,7 +1087,7 @@ export default function App() {
               style={[styles.drawerBackdropFill, { opacity: backdropAnim }]}
             />
           </Pressable>
-        </View>
+        </SafeAreaView>
       )}
 
       <NarratorPopup
@@ -1146,14 +1146,15 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingTop: Platform.OS === "android" ? StatusBar.currentHeight || 0 : 0,
   },
   navBar: {
-    height: 50,
+    minHeight: 50,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 12,
+    paddingTop: Platform.OS === "ios" ? 0 : StatusBar.currentHeight || 0,
+    paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e9ecef",
     backgroundColor: "#ffffff",
@@ -1271,6 +1272,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     flexDirection: "row",
+    backgroundColor: "transparent",
   },
   drawerBackdrop: {
     flex: 1,
@@ -1289,7 +1291,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: "#ddd",
-    paddingTop: 20,
+    paddingTop: Platform.OS === "ios" ? 50 : (StatusBar.currentHeight || 0) + 20,
     paddingHorizontal: 16,
     shadowColor: "#000",
     shadowOffset: { width: 2, height: 0 },

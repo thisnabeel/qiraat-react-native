@@ -5,6 +5,8 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  Platform,
+  SafeAreaView,
 } from "react-native";
 
 const NarratorNav = ({
@@ -14,8 +16,9 @@ const NarratorNav = ({
   onOpenMenu,
 }) => {
   return (
-    <View style={styles.container}>
-      <View style={styles.row}>
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <View style={styles.container}>
+        <View style={styles.row}>
         <TouchableOpacity
           accessibilityRole="button"
           onPress={onOpenMenu}
@@ -63,10 +66,14 @@ const NarratorNav = ({
         </ScrollView>
       </View>
     </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
+  safeAreaContainer: {
+    backgroundColor: "#f8f9fa",
+  },
   container: {
     backgroundColor: "#f8f9fa",
     borderBottomWidth: 1,
