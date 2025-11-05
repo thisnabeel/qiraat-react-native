@@ -1,7 +1,9 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
 
 const ComparisonTable = ({ originalText, inputText }) => {
+  const textRef = useRef(null);
+  const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
 
   const isDiacritic = (char) => diacritics.includes(char);
@@ -30,6 +32,19 @@ const ComparisonTable = ({ originalText, inputText }) => {
     return units;
   };
 
+  // Check if character is an Arabic letter
+  const isArabicLetter = (char) => {
+    if (isDiacritic(char)) return false;
+    const code = char.charCodeAt(0);
+    return (
+      (code >= 0x0600 && code <= 0x06FF) ||
+      (code >= 0x0750 && code <= 0x077F) ||
+      (code >= 0x08A0 && code <= 0x08FF) ||
+      (code >= 0xFB50 && code <= 0xFDFF) ||
+      (code >= 0xFE70 && code <= 0xFEFF)
+    );
+  };
+
   const renderHighlightedText = (text1, text2) => {
     const units1 = groupUnits(text1);
     const units2 = groupUnits(text2);
@@ -47,30 +62,47 @@ const ComparisonTable = ({ originalText, inputText }) => {
       }
     }
 
-    // Create segments
+    // Create segments with dot markers
     const segments = [];
-    let currentSegment = { text: "", isDifferent: false };
+    let currentSegment = { text: "", isDifferent: false, hasDots: [] };
 
-    for (let i = 0; i < maxLength; i++) {
+    for (let i = 0; i < units1.length; i++) {
       const unit1 = units1[i];
+      const nextUnit = units1[i + 1];
       const isDifferent = differences.has(i);
+      const isDot = unit1.base === "." || unit1.base === "٫";
+      const isFollowedByDot = nextUnit && (nextUnit.base === "." || nextUnit.base === "٫");
 
-      if (!unit1) break;
-
-      if (isDifferent !== currentSegment.isDifferent && currentSegment.text) {
-        segments.push({ ...currentSegment });
-        currentSegment = { text: "", isDifferent };
+      // Skip dot units
+      if (isDot) {
+        continue;
       }
 
+      // Check if highlight state changed
+      if (isDifferent !== currentSegment.isDifferent && currentSegment.text) {
+        segments.push({ ...currentSegment });
+        currentSegment = { text: "", isDifferent, hasDots: [] };
+      }
+
+      // Add unit to segment
+      const charIndexInSegment = currentSegment.text.length;
       currentSegment.text += unit1.full;
       currentSegment.isDifferent = isDifferent;
+
+      // Mark letter position for dot if followed by dot
+      if (isArabicLetter(unit1.base) && isFollowedByDot) {
+        currentSegment.hasDots.push(charIndexInSegment);
+        // Skip the dot unit
+        i++;
+      }
     }
 
     if (currentSegment.text) {
       segments.push(currentSegment);
     }
 
-    return segments.map((segment, index) => (
+    // Render segments with dots positioned absolutely
+    const textElements = segments.map((segment, index) => (
       <Text
         key={index}
         style={[
@@ -81,6 +113,60 @@ const ComparisonTable = ({ originalText, inputText }) => {
         {segment.text}
       </Text>
     ));
+
+    // Calculate dot positions
+    const allDotPositions = [];
+    let textOffset = 0;
+    segments.forEach((segment) => {
+      if (segment.hasDots.length > 0) {
+        segment.hasDots.forEach((charIndex) => {
+          allDotPositions.push({
+            charCount: textOffset + charIndex + 1,
+          });
+        });
+      }
+      textOffset += segment.text.length;
+    });
+
+    const totalTextLength = segments.reduce((sum, seg) => sum + seg.text.length, 0);
+
+    const calculateDotPosition = (charIndex, totalLength) => {
+      if (!textLayout || totalLength === 0) {
+        // Fallback: average character width for fontSize 16 is ~12px
+        return (totalLength - charIndex) * 12;
+      }
+      const charWidth = textLayout.width / totalLength;
+      return (totalLength - charIndex) * charWidth;
+    };
+
+    return (
+      <View style={styles.comparisonTextWrapper}>
+        <Text
+          ref={textRef}
+          style={styles.comparisonText}
+          onLayout={(event) => {
+            const { width, height } = event.nativeEvent.layout;
+            setTextLayout({ width, height });
+          }}
+        >
+          {textElements}
+        </Text>
+        {allDotPositions.map((dotInfo, dotIndex) => {
+          const dotRight = calculateDotPosition(dotInfo.charCount, totalTextLength);
+          return (
+            <View
+              key={`dot-${dotIndex}`}
+              style={[
+                styles.redDotContainerComparison,
+                { right: dotRight },
+              ]}
+            >
+              <View style={styles.redDotComparison} />
+            </View>
+          );
+        })}
+      </View>
+    );
   };
 
   return (
@@ -98,7 +184,7 @@ const ComparisonTable = ({ originalText, inputText }) => {
         </View>
 
         <View style={styles.comparisonColumn}>
-          <Text style={styles.comparisonLabel}></Text>
+          <Text style={styles.comparisonLabel}>Tweaked</Text>
           <Text style={styles.comparisonText}>
             {renderHighlightedText(inputText, originalText)}
           </Text>
@@ -130,6 +216,9 @@ const styles = StyleSheet.create({
     color: "#666",
     marginBottom: 4,
   },
+  comparisonTextWrapper: {
+    position: "relative",
+  },
   comparisonText: {
     fontSize: 16,
     fontFamily: "NaskhNastaleeqIndoPakQWBW",
@@ -147,6 +236,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 1,
     paddingVertical: 0,
     lineHeight: undefined,
+  },
+  redDotContainerComparison: {
+    position: "absolute",
+    bottom: -4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  redDotComparison: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ff0000",
   },
   arrowContainer: {
     paddingHorizontal: 8,

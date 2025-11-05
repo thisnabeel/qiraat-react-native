@@ -227,8 +227,12 @@ const PageView = ({
   );
 };
 
-// Helper function to render Arabic text with red dots underneath letters followed by dots
-const renderArabicTextWithDots = (text) => {
+// Component to render Arabic text with red dots underneath letters followed by dots
+// Uses text measurement for accurate dot positioning
+const ArabicTextWithDots = ({ text }) => {
+  const textRef = useRef(null);
+  const [textLayout, setTextLayout] = useState(null);
+  
   const diacritics = ["َ", "ِ", "ُ", "ْ", "ً", "ٍ", "ٌ", "ّ", "ٰ", "ٖ", "ٗ", "٘", "ٙ", "ٚ", "ٛ", "ٜ", "ٝ", "ٞ", "ٟ"];
   
   const isDiacritic = (char) => diacritics.includes(char);
@@ -246,87 +250,73 @@ const renderArabicTextWithDots = (text) => {
     );
   };
 
-  // Group characters into units: base letter + its diacritics
-  const groupUnits = (text) => {
-    const chars = text.split("");
-    const units = [];
-    let i = 0;
+  // Remove dots from text and track letter positions for dots
+  const chars = text.split("");
+  let displayText = "";
+  const lettersWithDots = [];
 
-    while (i < chars.length) {
-      const char = chars[i];
-      
-      // If it's a dot, treat it separately
-      if (char === "." || char === "٫") {
-        units.push({ type: "dot", char: char, index: i });
-        i++;
-        continue;
-      }
-      
-      // If it's a letter, group it with following diacritics
-      if (isArabicLetter(char)) {
-        const unit = { type: "letter", base: char, diacritics: [], index: i, length: 1 };
-        i++;
-        
-        // Collect any following diacritics
-        while (i < chars.length && isDiacritic(chars[i])) {
-          unit.diacritics.push(chars[i]);
-          unit.length++;
-          i++;
-        }
-        
-        unit.full = unit.base + unit.diacritics.join("");
-        units.push(unit);
-      } else {
-        // Other character (space, punctuation, etc.)
-        units.push({ type: "other", char: char, index: i });
-        i++;
-      }
-    }
-
-    return units;
-  };
-
-  const units = groupUnits(text);
-  const elements = [];
-
-  for (let i = 0; i < units.length; i++) {
-    const unit = units[i];
-    const nextUnit = units[i + 1];
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    const nextChar = chars[i + 1];
     
-    // Check if this letter unit is followed by a dot
-    if (unit.type === "letter" && nextUnit && nextUnit.type === "dot") {
-      // Render letter with diacritics and red dot underneath
-      elements.push(
-        <View key={unit.index} style={styles.letterWithDot}>
-          <Text style={styles.renderedText}>{unit.full}</Text>
-          <View style={styles.redDotContainer}>
-            <View style={styles.redDot} />
-          </View>
-        </View>
-      );
-      // Skip the next dot unit since we're rendering it visually
-      i++;
-    } else if (unit.type === "dot") {
-      // Skip dots that are already handled
+    if (char === "." || char === "٫") {
+      // Skip dot characters - they're handled visually
       continue;
-    } else if (unit.type === "letter") {
-      // Regular letter without dot
-      elements.push(
-        <Text key={unit.index} style={styles.renderedText}>
-          {unit.full}
-        </Text>
-      );
+    }
+    
+    // Check if this letter is followed by a dot
+    if (isArabicLetter(char) && (nextChar === "." || nextChar === "٫")) {
+      // Track this letter position for dot placement
+      lettersWithDots.push(displayText.length);
+      displayText += char;
+      
+      // Skip the dot character
+      i++;
     } else {
-      // Other characters (spaces, punctuation, etc.)
-      elements.push(
-        <Text key={unit.index} style={styles.renderedText}>
-          {unit.char}
-        </Text>
-      );
+      displayText += char;
     }
   }
-  
-  return elements;
+
+  // Calculate dot positions based on measured text width
+  const calculateDotPosition = (letterIndex, totalLength) => {
+    if (!textLayout || totalLength === 0) {
+      // Fallback: average character width for fontSize 16 is ~12px
+      return (totalLength - letterIndex - 1) * 12;
+    }
+    // Calculate position from right (RTL)
+    const charWidth = textLayout.width / totalLength;
+    return (totalLength - letterIndex - 1) * charWidth;
+  };
+
+  // Render as one continuous text block with absolutely positioned dots
+  return (
+    <View style={styles.renderedTextWrapper}>
+      <Text
+        ref={textRef}
+        style={styles.renderedText}
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          setTextLayout({ width, height });
+        }}
+      >
+        {displayText}
+      </Text>
+      {lettersWithDots.map((letterIndex, dotIndex) => {
+        const dotRight = calculateDotPosition(letterIndex, displayText.length);
+        return (
+          <View
+            key={`dot-${dotIndex}`}
+            style={[
+              styles.redDotAbsolute,
+              { right: dotRight },
+            ]}
+          >
+            <View style={styles.redDot} />
+          </View>
+        );
+      })}
+    </View>
+  );
 };
 
 const NarratorPopup = ({
@@ -445,9 +435,7 @@ const NarratorPopup = ({
                     {/* Render text with red dots underneath letters followed by dots */}
                     {inputValue && inputValue.length > 0 && (
                       <View style={styles.renderedTextContainer} pointerEvents="none">
-                        <View style={styles.renderedTextRow}>
-                          {renderArabicTextWithDots(inputValue)}
-                        </View>
+                        <ArabicTextWithDots text={inputValue} />
                       </View>
                     )}
                   </View>
@@ -1506,8 +1494,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    padding: 20,
+    fontSize: 6,
     backgroundColor: "#f9f9f9",
     color: "#1a1a1a",
     fontFamily: "NaskhNastaleeqIndoPakQWBW",
@@ -1522,33 +1510,30 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     padding: 12,
-    justifyContent: "center",
+    paddingTop: 14,
+    paddingBottom: 14,
+    justifyContent: "flex-start",
+    alignItems: "flex-end",
     pointerEvents: "none",
   },
-  renderedTextRow: {
+  renderedTextWrapper: {
+    position: "relative",
     flexDirection: "row-reverse",
-    alignItems: "center",
-    flexWrap: "wrap",
-    minHeight: 20,
+    alignItems: "flex-start",
+    width: "100%",
   },
   renderedText: {
     fontSize: 16,
     fontFamily: "NaskhNastaleeqIndoPakQWBW",
     writingDirection: "rtl",
+    textAlign: "right",
     color: "#1a1a1a",
-    lineHeight: 20,
+    lineHeight: 24,
+    includeFontPadding: true,
   },
-  letterWithDot: {
-    alignItems: "center",
-    justifyContent: "flex-start",
-    marginHorizontal: 0.5,
-    position: "relative",
-  },
-  redDotContainer: {
+  redDotAbsolute: {
     position: "absolute",
     bottom: -4,
-    left: 0,
-    right: 0,
     alignItems: "center",
     justifyContent: "center",
   },

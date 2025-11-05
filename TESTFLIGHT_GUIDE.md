@@ -61,6 +61,14 @@ Before building, you need to create your app in App Store Connect:
 
 ## Step 6: Build for iOS
 
+**IMPORTANT**: Before building, make sure you've incremented the build number in `app.json`:
+
+```json
+"ios": {
+  "buildNumber": "2"  // Increment this for each new build
+}
+```
+
 Build your app for iOS production:
 
 ```bash
@@ -74,6 +82,8 @@ This will:
 - Generate an `.ipa` file
 
 **Note**: The first build will take longer (15-30 minutes) as it sets up certificates and provisioning profiles.
+
+**Warning**: If you try to build with the same build number as a previous build, the build will fail or be rejected by App Store Connect. Always increment the build number!
 
 ## Step 7: Submit to TestFlight
 
@@ -107,21 +117,24 @@ This will:
 - Cannot be changed after first submission to App Store Connect
 
 ### Build Number
-- Increment this for each new build (`app.json` → `ios.buildNumber`)
+- **Must be incremented for each new build** (`app.json` → `ios.buildNumber`)
+- If you use the same build number, the build will **fail** or be rejected by App Store Connect
+- Each build number must be unique and higher than previous builds
 - Version is separate from build number (`app.json` → `version`)
+- Example: First build = "1", second build = "2", third build = "3", etc.
 
 ### Version Updates
 When you want to release a new version:
 
 1. Update version in `app.json`:
    ```json
-   "version": "1.0.1"
+   "version": "1.0.2"
    ```
 
 2. Increment build number:
    ```json
    "ios": {
-     "buildNumber": "2"
+     "buildNumber": "3"
    }
    ```
 
@@ -141,6 +154,7 @@ When you want to release a new version:
 - Check the build logs in the Expo dashboard
 - Ensure all dependencies are compatible
 - Make sure your assets (icons, splash screens) are the correct format
+- **If error mentions "build number"**: Make sure you've incremented the build number in `app.json`
 
 ### Certificate issues
 - EAS will automatically manage certificates for you
