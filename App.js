@@ -123,6 +123,8 @@ const Line = ({
         let contentToRender = <Text style={styles.word}>{word.content}</Text>;
 
         // Find a saved variation for this word from selected narrators
+        // Only show variation if it's both in allVariations AND in savedVariations
+        // This ensures deleted variations don't show even if they're temporarily in allVariations
         const matchingVariation = Object.entries(allVariations).find(
           ([variationKey, variation]) => {
             const [wordIdFromKey, narratorIdFromKey] = variationKey.split("-");
@@ -132,6 +134,8 @@ const Line = ({
               parseInt(narratorIdFromKey)
             );
 
+            // Must be saved AND narrator selected to show variation
+            // If deleted, it won't be in savedVariations, so original text will show
             return isWordMatch && isSaved && isNarratorSelected;
           }
         );
@@ -221,6 +225,108 @@ const PageView = ({
       </View>
     </View>
   );
+};
+
+// Helper function to render Arabic text with red dots underneath letters followed by dots
+const renderArabicTextWithDots = (text) => {
+  const diacritics = ["َ", "ِ", "ُ", "ْ", "ً", "ٍ", "ٌ", "ّ", "ٰ", "ٖ", "ٗ", "٘", "ٙ", "ٚ", "ٛ", "ٜ", "ٝ", "ٞ", "ٟ"];
+  
+  const isDiacritic = (char) => diacritics.includes(char);
+  
+  // Arabic Unicode ranges for letters (excluding diacritics)
+  const isArabicLetter = (char) => {
+    if (isDiacritic(char)) return false;
+    const code = char.charCodeAt(0);
+    return (
+      (code >= 0x0600 && code <= 0x06FF) || // Arabic block
+      (code >= 0x0750 && code <= 0x077F) || // Arabic Supplement
+      (code >= 0x08A0 && code <= 0x08FF) || // Arabic Extended-A
+      (code >= 0xFB50 && code <= 0xFDFF) || // Arabic Presentation Forms-A
+      (code >= 0xFE70 && code <= 0xFEFF)    // Arabic Presentation Forms-B
+    );
+  };
+
+  // Group characters into units: base letter + its diacritics
+  const groupUnits = (text) => {
+    const chars = text.split("");
+    const units = [];
+    let i = 0;
+
+    while (i < chars.length) {
+      const char = chars[i];
+      
+      // If it's a dot, treat it separately
+      if (char === "." || char === "٫") {
+        units.push({ type: "dot", char: char, index: i });
+        i++;
+        continue;
+      }
+      
+      // If it's a letter, group it with following diacritics
+      if (isArabicLetter(char)) {
+        const unit = { type: "letter", base: char, diacritics: [], index: i, length: 1 };
+        i++;
+        
+        // Collect any following diacritics
+        while (i < chars.length && isDiacritic(chars[i])) {
+          unit.diacritics.push(chars[i]);
+          unit.length++;
+          i++;
+        }
+        
+        unit.full = unit.base + unit.diacritics.join("");
+        units.push(unit);
+      } else {
+        // Other character (space, punctuation, etc.)
+        units.push({ type: "other", char: char, index: i });
+        i++;
+      }
+    }
+
+    return units;
+  };
+
+  const units = groupUnits(text);
+  const elements = [];
+
+  for (let i = 0; i < units.length; i++) {
+    const unit = units[i];
+    const nextUnit = units[i + 1];
+    
+    // Check if this letter unit is followed by a dot
+    if (unit.type === "letter" && nextUnit && nextUnit.type === "dot") {
+      // Render letter with diacritics and red dot underneath
+      elements.push(
+        <View key={unit.index} style={styles.letterWithDot}>
+          <Text style={styles.renderedText}>{unit.full}</Text>
+          <View style={styles.redDotContainer}>
+            <View style={styles.redDot} />
+          </View>
+        </View>
+      );
+      // Skip the next dot unit since we're rendering it visually
+      i++;
+    } else if (unit.type === "dot") {
+      // Skip dots that are already handled
+      continue;
+    } else if (unit.type === "letter") {
+      // Regular letter without dot
+      elements.push(
+        <Text key={unit.index} style={styles.renderedText}>
+          {unit.full}
+        </Text>
+      );
+    } else {
+      // Other characters (spaces, punctuation, etc.)
+      elements.push(
+        <Text key={unit.index} style={styles.renderedText}>
+          {unit.char}
+        </Text>
+      );
+    }
+  }
+  
+  return elements;
 };
 
 const NarratorPopup = ({
@@ -323,14 +429,28 @@ const NarratorPopup = ({
                       <Text style={styles.deleteIcon}>×</Text>
                     </TouchableOpacity>
                   )}
-                  <TextInput
-                    style={[styles.input, isSaved && { marginLeft: 8 }]}
-                    value={inputValue}
-                    onChangeText={onInputChange}
-                    placeholder="Enter text..."
-                    placeholderTextColor="#999"
-                    editable={true}
-                  />
+                  <View style={[styles.inputContainer, isSaved && { marginLeft: 8 }]}>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        inputValue && inputValue.length > 0 && { color: "transparent" },
+                      ]}
+                      value={inputValue}
+                      onChangeText={onInputChange}
+                      placeholder="Enter text..."
+                      placeholderTextColor="#999"
+                      editable={true}
+                      multiline={false}
+                    />
+                    {/* Render text with red dots underneath letters followed by dots */}
+                    {inputValue && inputValue.length > 0 && (
+                      <View style={styles.renderedTextContainer} pointerEvents="none">
+                        <View style={styles.renderedTextRow}>
+                          {renderArabicTextWithDots(inputValue)}
+                        </View>
+                      </View>
+                    )}
+                  </View>
                 </View>
 
                 {/* Comparison table */}
@@ -722,22 +842,41 @@ export default function App() {
   const handleDeleteVariation = async () => {
     if (!selectedWord || !selectedNarrator) return;
     const variationKey = `${selectedWord.id}-${selectedNarrator.id}`;
+    
+    // Optimistically update local state first
+    setAllVariations((prev) => {
+      const newVariations = { ...prev };
+      delete newVariations[variationKey];
+      return newVariations;
+    });
+    setSavedVariations((prev) => prev.filter((k) => k !== variationKey));
+    setInputValue(selectedWord.content);
+    
     try {
-      await fetch(
+      // Then delete from API
+      const response = await fetch(
         `${VARIATIONS_URL}/by_keys?word_id=${selectedWord.id}&narrator_id=${selectedNarrator.id}`,
         { method: "DELETE" }
       );
-      setAllVariations((prev) => {
-        const newVariations = { ...prev };
-        delete newVariations[variationKey];
-        return newVariations;
-      });
-      setSavedVariations((prev) => prev.filter((k) => k !== variationKey));
-      setInputValue(selectedWord.content);
-      // Re-fetch to ensure both web and native sessions are in sync
-      await refreshVariations();
+      
+      if (response.ok || response.status === 204) {
+        // Deletion successful - refresh to sync with server
+        // Use a small delay to ensure server has processed the deletion
+        setTimeout(async () => {
+          await refreshVariations();
+        }, 100);
+      } else {
+        // If deletion failed, re-fetch to restore correct state from server
+        console.error("Failed to delete variation on server, status:", response.status);
+        await refreshVariations();
+      }
     } catch (e) {
       console.error("Error deleting variation:", e);
+      // On network error, refresh to get server state after a delay
+      // This gives the server time to process if it's a temporary issue
+      setTimeout(async () => {
+        await refreshVariations();
+      }, 500);
     }
   };
 
@@ -1090,7 +1229,7 @@ const styles = StyleSheet.create({
     fontFamily: "NaskhNastaleeqIndoPakQWBW",
     fontWeight: "500",
     writingDirection: "rtl",
-    lineHeight: 52,
+    lineHeight: 50,
   },
   modalContainer: {
     flex: 1,
@@ -1357,6 +1496,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1a1a1a",
   },
+  inputContainer: {
+    position: "relative",
+    flex: 1,
+  },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -1364,6 +1507,54 @@ const styles = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     backgroundColor: "#f9f9f9",
+    color: "#1a1a1a",
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    writingDirection: "rtl",
+    textAlign: "right",
+    minHeight: 44,
+  },
+  renderedTextContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 12,
+    justifyContent: "center",
+    pointerEvents: "none",
+  },
+  renderedTextRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    flexWrap: "wrap",
+    minHeight: 20,
+  },
+  renderedText: {
+    fontSize: 16,
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    writingDirection: "rtl",
+    color: "#1a1a1a",
+    lineHeight: 20,
+  },
+  letterWithDot: {
+    alignItems: "center",
+    justifyContent: "flex-start",
+    marginHorizontal: 0.5,
+    position: "relative",
+  },
+  redDotContainer: {
+    position: "absolute",
+    bottom: -4,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  redDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#ff0000",
   },
   inputRow: {
     flexDirection: "row",
