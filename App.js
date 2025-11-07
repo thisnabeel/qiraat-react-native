@@ -16,10 +16,10 @@ import {
   SafeAreaView,
   Animated,
   Easing,
+  PanResponder,
 } from "react-native";
 import ComparisonTable from "./ComparisonTable";
 import PageNavigation from "./PageNavigation";
-import NarratorNav from "./NarratorNav";
 import InlineComparison from "./InlineComparison";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -504,6 +504,38 @@ export default function App() {
   const DRAWER_WIDTH = 260;
   const drawerAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
+  const currentTabRef = useRef(currentTab);
+  const isDrawerVisibleRef = useRef(isDrawerVisible);
+
+  useEffect(() => {
+    currentTabRef.current = currentTab;
+  }, [currentTab]);
+
+  useEffect(() => {
+    isDrawerVisibleRef.current = isDrawerVisible;
+  }, [isDrawerVisible]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        const startX = evt.nativeEvent.pageX;
+        const { dx, dy } = gestureState;
+        if (currentTabRef.current !== "Recite") return false;
+        if (isDrawerVisibleRef.current) return false;
+        const fromLeftEdge = startX <= 30;
+        if (!fromLeftEdge) return false;
+        const horizontalSwipe = Math.abs(dx) > Math.abs(dy);
+        return horizontalSwipe && dx > 10;
+      },
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (currentTabRef.current !== "Recite") return;
+        if (isDrawerVisibleRef.current) return;
+        if (gestureState.dx > 60) {
+          openDrawer();
+        }
+      },
+    })
+  ).current;
 
   const openDrawer = () => {
     setIsDrawerVisible(true);
@@ -891,7 +923,7 @@ export default function App() {
   return (
     <>
       <StatusBar barStyle="dark-content" />
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea} {...panResponder.panHandlers}>
         {currentTab !== "Recite" && (
           <View style={styles.navBar}>
             <TouchableOpacity
@@ -909,13 +941,6 @@ export default function App() {
         <View style={styles.mainContainer}>
           {currentTab === "Recite" && (
             <>
-              <NarratorNav
-                narrators={narrators}
-                selectedNarrators={selectedNarrators}
-                onToggleNarrator={handleToggleNarrator}
-                onOpenMenu={openDrawer}
-              />
-
               <View style={styles.contentContainer}>
                 <PageView
                   page={page}
@@ -1041,34 +1066,51 @@ export default function App() {
           <Animated.View
             style={[styles.drawer, { transform: [{ translateX: drawerAnim }] }]}
           >
-            <Text style={styles.drawerTitle}>Aswaat</Text>
-            <TouchableOpacity
-              style={styles.drawerItem}
-              onPress={() => {
-                setCurrentTab("Recite");
-                closeDrawer();
-              }}
+            {/* <View style={styles.drawerHeader}>
+              <Text style={styles.drawerTitle}>Narrators</Text>
+              <Text style={styles.drawerSubtitle}>
+                Select narrators to display their saved variations.
+              </Text>
+            </View> */}
+            <ScrollView
+              contentContainerStyle={styles.drawerNarratorsContent}
+              showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.drawerItemText}>Recite</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.drawerItem}
-              onPress={() => {
-                setCurrentTab("Listen");
-                closeDrawer();
-              }}
-            >
-              <Text style={styles.drawerItemText}>Listen</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.drawerItem}
-              onPress={() => {
-                setCurrentTab("Learn");
-                closeDrawer();
-              }}
-            >
-              <Text style={styles.drawerItemText}>Learn</Text>
-            </TouchableOpacity>
+              {narrators.map((narrator) => {
+                const isSelected = selectedNarrators.includes(narrator.id);
+                return (
+                  <TouchableOpacity
+                    key={narrator.id}
+                    style={[
+                      styles.drawerNarratorItem,
+                      isSelected && styles.drawerNarratorItemSelected,
+                    ]}
+                    onPress={() => handleToggleNarrator(narrator.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.drawerNarratorRow}>
+                      <View
+                        style={[
+                          styles.drawerCheckbox,
+                          isSelected && styles.drawerCheckboxSelected,
+                        ]}
+                      >
+                        {isSelected && <Text style={styles.drawerCheckmark}>✓</Text>}
+                      </View>
+                      <Text
+                        style={[
+                          styles.drawerNarratorText,
+                          isSelected && styles.drawerNarratorTextSelected,
+                        ]}
+                        numberOfLines={2}
+                      >
+                        {narrator.title}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </Animated.View>
           <Pressable style={styles.drawerBackdrop} onPress={closeDrawer}>
             <Animated.View
@@ -1182,7 +1224,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     paddingTop: 4,
     paddingBottom: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 2,
   },
   line: {
     flexDirection: "row-reverse",
@@ -1213,12 +1255,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   word: {
-    fontSize: 26,
+    fontSize: 24,
     color: "#1a1a1a",
     fontFamily: "NaskhNastaleeqIndoPakQWBW",
     fontWeight: "500",
     writingDirection: "rtl",
-    lineHeight: 50,
+    lineHeight: 46,
   },
   modalContainer: {
     flex: 1,
@@ -1287,20 +1329,68 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 6,
   },
+  drawerHeader: {
+    marginBottom: 16,
+  },
   drawerTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    fontSize: 22,
+    fontWeight: "700",
     color: "#1a1a1a",
-    marginBottom: 12,
+    marginBottom: 4,
   },
-  drawerItem: {
+  drawerSubtitle: {
+    fontSize: 13,
+    color: "#6c757d",
+    lineHeight: 18,
+  },
+  drawerNarratorsContent: {
+    paddingBottom: 40,
+  },
+  drawerNarratorItem: {
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f0f0f0",
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    marginBottom: 10,
+    backgroundColor: "#fff",
   },
-  drawerItemText: {
+  drawerNarratorItemSelected: {
+    borderColor: "#0a84ff",
+    backgroundColor: "#f0f6ff",
+  },
+  drawerNarratorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  drawerCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#c4cacf",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+    backgroundColor: "#fff",
+  },
+  drawerCheckboxSelected: {
+    borderColor: "#0a84ff",
+    backgroundColor: "#0a84ff",
+  },
+  drawerCheckmark: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  drawerNarratorText: {
+    flex: 1,
     fontSize: 16,
-    color: "#1a1a1a",
+    color: "#1f2933",
+    fontWeight: "500",
+  },
+  drawerNarratorTextSelected: {
+    color: "#0a84ff",
   },
   learnContainer: {
     flex: 1,

@@ -158,7 +158,6 @@ const InlineComparison = ({ originalText, inputText }) => {
             onLayout={(event) => {
               const { width, height } = event.nativeEvent.layout;
               setTextLayout({ width, height });
-              setTextWidth(width);
             }}
           >
             {textElements}

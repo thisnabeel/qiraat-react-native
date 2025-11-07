@@ -20,17 +20,9 @@ const PageNavigation = ({
     <View style={styles.navigationContainer}>
       <TouchableOpacity
         style={styles.navButton}
-        onPress={onPreviousPage}
-        disabled={currentPage <= 1}
+        onPress={onNextPage}
       >
-        <Text
-          style={[
-            styles.navButtonText,
-            currentPage <= 1 && styles.navButtonDisabled,
-          ]}
-        >
-          ←
-        </Text>
+        <Text style={styles.navButtonText}>←</Text>
       </TouchableOpacity>
 
       <TextInput
@@ -43,8 +35,19 @@ const PageNavigation = ({
         selectTextOnFocus
       />
 
-      <TouchableOpacity style={styles.navButton} onPress={onNextPage}>
-        <Text style={styles.navButtonText}>→</Text>
+      <TouchableOpacity
+        style={styles.navButton}
+        onPress={onPreviousPage}
+        disabled={currentPage <= 1}
+      >
+        <Text
+          style={[
+            styles.navButtonText,
+            currentPage <= 1 && styles.navButtonDisabled,
+          ]}
+        >
+          →
+        </Text>
       </TouchableOpacity>
     </View>
   );
