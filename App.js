@@ -16,8 +16,8 @@ import {
   SafeAreaView,
   Animated,
   Easing,
-  PanResponder,
 } from "react-native";
+import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import ComparisonTable from "./ComparisonTable";
 import PageNavigation from "./PageNavigation";
 import InlineComparison from "./InlineComparison";
@@ -154,7 +154,7 @@ const Line = ({
           <Pressable
             key={`${word.id}-${index}`}
             ref={(ref) => (wordRefs.current[word.id] = ref)}
-            onPress={() => {
+            onLongPress={() => {
               // Measure the word's absolute position
               const ref = wordRefs.current[word.id];
               if (ref && ref.measure) {
@@ -164,6 +164,8 @@ const Line = ({
                 });
               }
             }}
+            delayLongPress={500}
+            cancelable={true}
             style={({ pressed }) => [
               styles.wordPressable,
               pressed && styles.wordPressed,
@@ -481,6 +483,8 @@ const NarratorPopup = ({
 
 export default function App() {
   const [page, setPage] = useState(null);
+  const [nextPage, setNextPage] = useState(null);
+  const [previousPage, setPreviousPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [fontsLoaded] = useFonts({
@@ -499,13 +503,30 @@ export default function App() {
   const [savedVariations, setSavedVariations] = useState([]);
   const [allVariations, setAllVariations] = useState({});
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
+  const [isDrawerFullyOpen, setIsDrawerFullyOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState("Recite");
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [pageCache, setPageCache] = useState({}); // Cache for pre-fetched pages (for React re-renders)
+  const [variationCache, setVariationCache] = useState({}); // Cache for variations per page (for React re-renders)
+  const pageCacheRef = useRef({}); // Ref cache for synchronous access
+  const variationCacheRef = useRef({}); // Ref cache for variations
   const DRAWER_WIDTH = 260;
   const drawerAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
   const currentTabRef = useRef(currentTab);
   const isDrawerVisibleRef = useRef(isDrawerVisible);
+  const currentPageRef = useRef(currentPage);
+  const isNavigatingRef = useRef(false);
+  const handlePreviousPageRef = useRef();
+  const handleNextPageRef = useRef();
+  const fetchingPagesRef = useRef(new Set()); // Track which pages are being fetched
+  const isDraggingDrawerRef = useRef(false);
+  const drawerStartValueRef = useRef(-DRAWER_WIDTH);
+  const isAnimatingDrawerRef = useRef(false);
+  const pageTranslateX = useRef(new Animated.Value(0)).current;
+  const isDraggingPageRef = useRef(false);
+  const pageStartValueRef = useRef(0);
+  const pageSwipeDirectionRef = useRef(null); // 'left' or 'right'
 
   useEffect(() => {
     currentTabRef.current = currentTab;
@@ -515,47 +536,259 @@ export default function App() {
     isDrawerVisibleRef.current = isDrawerVisible;
   }, [isDrawerVisible]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        const startX = evt.nativeEvent.pageX;
-        const { dx, dy } = gestureState;
-        if (currentTabRef.current !== "Recite") return false;
-        if (isDrawerVisibleRef.current) return false;
-        const fromLeftEdge = startX <= 30;
-        if (!fromLeftEdge) return false;
-        const horizontalSwipe = Math.abs(dx) > Math.abs(dy);
-        return horizontalSwipe && dx > 10;
-      },
-      onPanResponderRelease: (_evt, gestureState) => {
-        if (currentTabRef.current !== "Recite") return;
-        if (isDrawerVisibleRef.current) return;
-        if (gestureState.dx > 60) {
-          openDrawer();
+  useEffect(() => {
+    currentPageRef.current = currentPage;
+  }, [currentPage]);
+
+  // Cleanup effect: ensure drawer is in valid state when tab changes or component unmounts
+  useEffect(() => {
+    if (currentTab !== "Recite" && isDrawerVisible) {
+      // If we're not on Recite tab, close drawer
+      closeDrawer();
+    }
+  }, [currentTab]);
+
+  // Aggressive check to ensure drawer is ALWAYS in valid state - NEVER allow intermediate states
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      // Don't check during animations or dragging
+      if (isAnimatingDrawerRef.current || isDraggingDrawerRef.current) {
+        return;
+      }
+      
+      if (isDrawerVisible && currentTab === "Recite") {
+        const currentValue = drawerAnim._value;
+        // If drawer is visible but NOT fully open (value != 0), close it immediately
+        if (currentValue !== 0 && currentValue > -DRAWER_WIDTH) {
+          // Drawer is in invalid state - force close immediately
+          console.warn("Drawer in invalid state, forcing close:", currentValue);
+          drawerAnim.setValue(-DRAWER_WIDTH);
+          backdropAnim.setValue(0);
+          setIsDrawerVisible(false);
+          setIsDrawerFullyOpen(false);
+        } else if (currentValue === 0) {
+          // Drawer is fully open
+          setIsDrawerFullyOpen(true);
         }
-      },
-    })
+      } else if (!isDrawerVisible && currentTab === "Recite") {
+        // If drawer should be invisible, ensure it's fully closed
+        const currentValue = drawerAnim._value;
+        if (currentValue > -DRAWER_WIDTH) {
+          drawerAnim.setValue(-DRAWER_WIDTH);
+          backdropAnim.setValue(0);
+        }
+        setIsDrawerFullyOpen(false);
+      }
+    }, 100); // Check every 100ms - very aggressive
+
+    return () => clearInterval(checkInterval);
+  }, [isDrawerVisible, currentTab]);
+
+  // Additional safeguard: monitor drawer animation value
+  useEffect(() => {
+    const listener = drawerAnim.addListener(({ value }) => {
+      // Don't interfere during animations or dragging
+      if (isAnimatingDrawerRef.current || isDraggingDrawerRef.current) {
+        return;
+      }
+      
+      // If drawer is supposed to be visible but not fully open, fix it
+      if (isDrawerVisible && value !== 0 && value > -DRAWER_WIDTH) {
+        // Force to valid state immediately
+        if (value > -DRAWER_WIDTH * 0.5) {
+          // More than halfway, snap to open
+          drawerAnim.setValue(0);
+          backdropAnim.setValue(1);
+          setIsDrawerFullyOpen(true);
+        } else {
+          // Less than halfway, snap to closed
+          drawerAnim.setValue(-DRAWER_WIDTH);
+          backdropAnim.setValue(0);
+          setIsDrawerVisible(false);
+          setIsDrawerFullyOpen(false);
+        }
+      }
+    });
+
+    return () => {
+      drawerAnim.removeListener(listener);
+    };
+  }, [isDrawerVisible]);
+
+  // Helper function to ensure drawer is in a valid state (fully open or fully closed)
+  const ensureDrawerValidState = () => {
+    const currentValue = drawerAnim._value;
+    const threshold = DRAWER_WIDTH * 0.3; // 30% threshold
+    
+    // If drawer is in an intermediate state, snap it to nearest valid state
+    if (currentValue > -threshold && currentValue < 0) {
+      // More than 30% open, snap to fully open
+      Animated.spring(drawerAnim, {
+        toValue: 0,
+        useNativeDriver: true,
+        damping: 20,
+        stiffness: 300,
+      }).start(() => {
+        Animated.timing(backdropAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start();
+      });
+    } else if (currentValue <= -threshold && currentValue > -DRAWER_WIDTH) {
+      // Less than 30% open, snap to fully closed
+      closeDrawer();
+    }
+  };
+
+  // Swipe gesture for opening drawer from left edge (only on Recite tab)
+  // This gesture follows the finger like iOS Notes app - optimized for responsiveness
+  const drawerSwipeGesture = useRef(
+    Gesture.Pan()
+      .activeOffsetX([-5, 100]) // Very low threshold for rightward movement, allow left for closing
+      .failOffsetY([-20, 20]) // Fail if too much vertical movement
+      .minDistance(3) // Very low minimum distance for instant activation
+      .onBegin((event) => {
+        const startX = event.x;
+        const isDrawerOpen = isDrawerVisibleRef.current;
+        
+        // Check if we should activate this gesture
+        if (currentTabRef.current !== "Recite") {
+          return;
+        }
+        
+        // If drawer is closed, only activate from left edge (within 20px)
+        if (!isDrawerOpen && startX > 20) {
+          return; // Don't activate - let page swipe handle it
+        }
+        
+        // Start dragging
+        isDraggingDrawerRef.current = true;
+        drawerStartValueRef.current = drawerAnim._value;
+        
+        if (!isDrawerOpen) {
+          setIsDrawerVisible(true);
+        }
+      })
+      .onUpdate((event) => {
+        if (!isDraggingDrawerRef.current) return;
+        
+        // Update drawer position in real-time following finger
+        const newValue = Math.max(
+          -DRAWER_WIDTH,
+          Math.min(0, drawerStartValueRef.current + event.translationX)
+        );
+        drawerAnim.setValue(newValue);
+      })
+      .onEnd((event) => {
+        const wasDragging = isDraggingDrawerRef.current;
+        isDraggingDrawerRef.current = false;
+        
+        if (!wasDragging) {
+          // Force close if not dragging
+          closeDrawer();
+          return;
+        }
+        
+        const currentValue = drawerAnim._value;
+        const swipeThreshold = DRAWER_WIDTH * 0.4; // 40% of drawer width
+        const velocity = event.velocityX;
+        const startX = event.x - event.translationX;
+        const wasDrawerOpen = drawerStartValueRef.current > -DRAWER_WIDTH * 0.5;
+        
+        // If drawer was closed and didn't start from left edge, close it
+        if (!wasDrawerOpen && startX > 20) {
+          closeDrawer();
+          return;
+        }
+        
+        // Determine if we should open or close based on:
+        // 1. Current position (more than 40% open = stay open)
+        // 2. Swipe velocity (fast right swipe = open, fast left swipe = close)
+        const shouldOpen = 
+          (currentValue > -swipeThreshold && velocity > -300) || 
+          (velocity > 500 && event.translationX > 0);
+        
+        if (shouldOpen) {
+          // Animate to fully open - MUST reach 0
+          Animated.spring(drawerAnim, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 20,
+            stiffness: 300,
+          }).start((finished) => {
+            if (finished) {
+              // Ensure it's exactly 0
+              drawerAnim.setValue(0);
+              setIsDrawerFullyOpen(true);
+              // Only fade in backdrop when drawer is fully open
+              Animated.timing(backdropAnim, {
+                toValue: 1,
+                duration: 200,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }).start();
+            }
+          });
+        } else {
+          // Animate to closed - MUST reach -DRAWER_WIDTH
+          closeDrawer();
+        }
+      })
+      .onFinalize(() => {
+        isDraggingDrawerRef.current = false;
+        // Immediately ensure valid state
+        setTimeout(() => {
+          const currentValue = drawerAnim._value;
+          if (currentValue !== 0 && currentValue !== -DRAWER_WIDTH) {
+            // Invalid state - force to nearest valid state
+            if (currentValue > -DRAWER_WIDTH * 0.5) {
+              drawerAnim.setValue(0);
+              backdropAnim.setValue(1);
+            } else {
+              drawerAnim.setValue(-DRAWER_WIDTH);
+              backdropAnim.setValue(0);
+              setIsDrawerVisible(false);
+              setIsDrawerFullyOpen(false);
+            }
+          }
+        }, 50);
+      })
   ).current;
 
   const openDrawer = () => {
+    isAnimatingDrawerRef.current = true;
     setIsDrawerVisible(true);
-    Animated.parallel([
-      Animated.timing(drawerAnim, {
-        toValue: 0,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropAnim, {
-        toValue: 1,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // First open the drawer, then fade in the backdrop when fully open
+    Animated.timing(drawerAnim, {
+      toValue: 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start((finished) => {
+      if (finished) {
+        // Ensure it's exactly 0
+        drawerAnim.setValue(0);
+        setIsDrawerFullyOpen(true);
+        // Only fade in backdrop when drawer is fully open
+        Animated.timing(backdropAnim, {
+          toValue: 1,
+          duration: 200,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }).start(() => {
+          isAnimatingDrawerRef.current = false;
+        });
+      } else {
+        isAnimatingDrawerRef.current = false;
+      }
+    });
   };
 
   const closeDrawer = () => {
+    isDraggingDrawerRef.current = false; // Stop any dragging
+    isAnimatingDrawerRef.current = true;
     Animated.parallel([
       Animated.timing(drawerAnim, {
         toValue: -DRAWER_WIDTH,
@@ -569,71 +802,354 @@ export default function App() {
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
-    ]).start(() => {
-      setIsDrawerVisible(false);
+    ]).start((finished) => {
+      if (finished) {
+        // Ensure it's exactly closed
+        drawerAnim.setValue(-DRAWER_WIDTH);
+        backdropAnim.setValue(0);
+        setIsDrawerVisible(false);
+        setIsDrawerFullyOpen(false);
+      }
+      isAnimatingDrawerRef.current = false;
     });
   };
 
-  useEffect(() => {
-    const fetchPage = async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/${currentPage}`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+  // Swipe gesture for page navigation (only on Recite tab)
+  // This gesture follows the finger and animates page transitions
+  // It has priority over word presses to ensure swipes always work
+  const pageSwipeGesture = useRef(
+    Gesture.Pan()
+      .activeOffsetX([-10, 10]) // Lower threshold for faster activation
+      .failOffsetY([-12, 12]) // Fail if too much vertical movement (allows scrolling)
+      .minDistance(10) // Lower minimum distance for faster activation
+      .simultaneousWithExternalGesture(false) // Don't allow other gestures to interfere
+      .onBegin((event) => {
+        // Don't activate if drawer is open or already navigating
+        if (isDrawerVisibleRef.current || isNavigatingRef.current) {
+          return;
         }
-        const data = await response.json();
-        setPage(data);
-        setLoading(false);
-      } catch (err) {
-        console.error("Error fetching page:", err);
-        setError(err.message);
-        setLoading(false);
-      }
-    };
-
-    fetchPage();
-  }, [currentPage]);
-
-  useEffect(() => {
-    const fetchVariations = async () => {
-      try {
-        // Get all word IDs from the current page
-        if (page && page.lines) {
-          const wordIds = page.lines.flatMap((line) =>
-            line.words.map((word) => word.id)
-          );
-
-          if (wordIds.length > 0) {
-            const response = await fetch(
-              `${VARIATIONS_URL}?word_ids=${wordIds.join(",")}`
-            );
-            if (response.ok) {
-              const variations = await response.json();
-
-              // Convert variations to the format expected by the UI
-              const variationsMap = {};
-              const savedKeys = [];
-
-              variations.forEach((variation) => {
-                const key = `${variation.word_id}-${variation.narrator_id}`;
-                variationsMap[key] = variation.content;
-                savedKeys.push(key);
-              });
-
-              setAllVariations(variationsMap);
-              setSavedVariations(savedKeys);
-            }
+        
+        // Check if starting from left edge - if so, let drawer handle it
+        const startX = event.x;
+        if (startX <= 40) {
+          return; // Let drawer gesture handle this
+        }
+        
+        // Start dragging page immediately - this will cancel any word press
+        isDraggingPageRef.current = true;
+        pageStartValueRef.current = pageTranslateX._value;
+        pageSwipeDirectionRef.current = null;
+      })
+      .onUpdate((event) => {
+        if (!isDraggingPageRef.current) return;
+        
+        // Determine swipe direction
+        if (pageSwipeDirectionRef.current === null) {
+          if (Math.abs(event.translationX) > 10) {
+            pageSwipeDirectionRef.current = event.translationX > 0 ? 'right' : 'left';
           }
         }
-      } catch (err) {
-        console.error("Error fetching variations:", err);
-      }
-    };
+        
+        // Update page position in real-time (clamped to screen width)
+        const screenWidth = Dimensions.get('window').width;
+        const maxTranslate = screenWidth * 0.8; // Max 80% of screen width
+        const newValue = Math.max(
+          -maxTranslate,
+          Math.min(maxTranslate, pageStartValueRef.current + event.translationX)
+        );
+        
+        pageTranslateX.setValue(newValue);
+      })
+      .onEnd((event) => {
+        if (!isDraggingPageRef.current) return;
+        isDraggingPageRef.current = false;
+        
+        // Don't trigger if drawer is open or already navigating
+        if (isDrawerVisibleRef.current || isNavigatingRef.current) {
+          // Snap back to center
+          Animated.spring(pageTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 20,
+            stiffness: 300,
+          }).start();
+          return;
+        }
+        
+        const screenWidth = Dimensions.get('window').width;
+        const currentTranslate = pageTranslateX._value;
+        const velocity = event.velocityX;
+        
+        // Determine which page is more visible based on current position
+        // If more than 50% of next/previous page is showing, snap to that page
+        // Also consider velocity - fast swipes should change pages even if less visible
+        const snapThreshold = screenWidth * 0.5; // 50% threshold
+        const velocityThreshold = 400; // Fast swipe threshold
+        
+        // Check if horizontal movement is dominant
+        const isHorizontalSwipe = Math.abs(event.translationX) > Math.abs(event.translationY) * 2;
+        
+        if (!isHorizontalSwipe) {
+          // Not a horizontal swipe, snap back
+          Animated.spring(pageTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 20,
+            stiffness: 300,
+          }).start();
+          return;
+        }
+        
+        // Prevent rapid successive calls
+        if (isNavigatingRef.current) {
+          // Just snap back
+          Animated.spring(pageTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 20,
+            stiffness: 300,
+          }).start();
+          return;
+        }
+        
+        // Determine which page to snap to based on visibility
+        // Positive translationX = swiping right (showing previous page)
+        // Negative translationX = swiping left (showing next page)
+        const shouldGoToNext = 
+          currentTranslate < -snapThreshold || // More than 50% of next page visible
+          (currentTranslate < 0 && velocity < -velocityThreshold); // Fast left swipe
+        
+        const shouldGoToPrevious = 
+          currentTranslate > snapThreshold || // More than 50% of previous page visible
+          (currentTranslate > 0 && velocity > velocityThreshold); // Fast right swipe
+        
+        if (shouldGoToNext || shouldGoToPrevious) {
+          isNavigatingRef.current = true;
+          
+          // Use ref to get current page value
+          const page = currentPageRef.current;
+          
+          // Animate to the target page
+          const targetTranslate = shouldGoToNext ? -screenWidth : screenWidth;
+          
+          Animated.timing(pageTranslateX, {
+            toValue: targetTranslate,
+            duration: 200,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start(() => {
+            // Change page
+            if (shouldGoToPrevious && page > 1 && handlePreviousPageRef.current) {
+              handlePreviousPageRef.current();
+            } else if (shouldGoToNext && handleNextPageRef.current) {
+              handleNextPageRef.current();
+            }
+            
+            // Reset position
+            pageTranslateX.setValue(0);
+            
+            // Reset navigation flag
+            setTimeout(() => {
+              isNavigatingRef.current = false;
+            }, 300);
+          });
+        } else {
+          // Snap back to current page (less than 50% of other page showing)
+          Animated.spring(pageTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            damping: 20,
+            stiffness: 300,
+          }).start();
+        }
+      })
+      .onFinalize(() => {
+        isDraggingPageRef.current = false;
+        pageSwipeDirectionRef.current = null;
+      })
+  ).current;
 
-    if (page) {
-      fetchVariations();
+  // Function to fetch a single page and cache it
+  const fetchAndCachePage = async (pageNum, showLoading = false) => {
+    // Skip if already fetching
+    if (fetchingPagesRef.current.has(pageNum)) {
+      return null;
     }
-  }, [page]);
+    
+    // Check ref cache first (synchronous access)
+    if (pageCacheRef.current[pageNum]) {
+      return pageCacheRef.current[pageNum];
+    }
+
+    fetchingPagesRef.current.add(pageNum);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/${pageNum}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      
+      // Cache the page in both ref and state
+      pageCacheRef.current[pageNum] = data;
+      setPageCache((prev) => ({
+        ...prev,
+        [pageNum]: data,
+      }));
+
+      // If this is the current page, update it immediately
+      if (pageNum === currentPage) {
+        setPage(data);
+        if (showLoading) {
+          setLoading(false);
+        }
+      }
+      
+      return data;
+    } catch (err) {
+      console.error(`Error fetching page ${pageNum}:`, err);
+      if (pageNum === currentPage) {
+        setError(err.message);
+        if (showLoading) {
+          setLoading(false);
+        }
+      }
+      return null;
+    } finally {
+      fetchingPagesRef.current.delete(pageNum);
+    }
+  };
+
+  // Function to fetch variations for a page
+  const fetchVariationsForPage = async (pageData, pageNum, isBackground = false) => {
+    if (!pageData || !pageData.lines) return;
+
+    try {
+      const wordIds = pageData.lines.flatMap((line) =>
+        line.words.map((word) => word.id)
+      );
+
+      if (wordIds.length > 0) {
+        const response = await fetch(
+          `${VARIATIONS_URL}?word_ids=${wordIds.join(",")}`
+        );
+        if (response.ok) {
+          const variations = await response.json();
+
+          // Convert variations to the format expected by the UI
+          const variationsMap = {};
+          const savedKeys = [];
+
+          variations.forEach((variation) => {
+            const key = `${variation.word_id}-${variation.narrator_id}`;
+            variationsMap[key] = variation.content;
+            savedKeys.push(key);
+          });
+
+          // Cache variations for this page in both ref and state
+          const cacheData = { variationsMap, savedKeys };
+          variationCacheRef.current[pageNum] = cacheData;
+          setVariationCache((prev) => ({
+            ...prev,
+            [pageNum]: cacheData,
+          }));
+
+          // Only update current variations if this is the current page
+          if (pageNum === currentPage) {
+            setAllVariations(variationsMap);
+            setSavedVariations(savedKeys);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Error fetching variations for page ${pageNum}:`, err);
+    }
+  };
+
+  // Pre-fetch pages around current page
+  const preFetchPages = (centerPage) => {
+    const pagesToFetch = [];
+    for (let i = Math.max(1, centerPage - 5); i <= centerPage + 5; i++) {
+      if (!pageCacheRef.current[i] && !fetchingPagesRef.current.has(i)) {
+        pagesToFetch.push(i);
+      }
+    }
+
+    // Fetch all pages in parallel
+    pagesToFetch.forEach((pageNum) => {
+      fetchAndCachePage(pageNum, false);
+    });
+  };
+
+  // Main effect: handle page changes with caching
+  useEffect(() => {
+    // Check if page is in ref cache (synchronous check)
+    const cachedPage = pageCacheRef.current[currentPage];
+    if (cachedPage) {
+      // Page is cached, show it immediately
+      setPage(cachedPage);
+      setLoading(false);
+      
+      // Check if we have cached variations
+      const cachedVariations = variationCacheRef.current[currentPage];
+      if (cachedVariations) {
+        setAllVariations(cachedVariations.variationsMap);
+        setSavedVariations(cachedVariations.savedKeys);
+      } else if (selectedNarrators.length > 0) {
+        // If narrators are selected, do background refresh of variations
+        fetchVariationsForPage(cachedPage, currentPage, true);
+      }
+    } else {
+      // Page not in cache, fetch it with loading indicator
+      setLoading(true);
+      fetchAndCachePage(currentPage, true).then((data) => {
+        // After fetching, get variations if narrators are selected
+        if (selectedNarrators.length > 0 && data) {
+          fetchVariationsForPage(data, currentPage, false);
+        }
+      });
+    }
+
+    // Load next and previous pages for train effect
+    const nextPageNum = currentPage + 1;
+    const prevPageNum = currentPage - 1;
+    
+    // Load next page
+    const cachedNext = pageCacheRef.current[nextPageNum];
+    if (cachedNext) {
+      setNextPage(cachedNext);
+    } else {
+      fetchAndCachePage(nextPageNum, false).then((data) => {
+        if (data) setNextPage(data);
+      });
+    }
+    
+    // Load previous page
+    if (prevPageNum >= 1) {
+      const cachedPrev = pageCacheRef.current[prevPageNum];
+      if (cachedPrev) {
+        setPreviousPage(cachedPrev);
+      } else {
+        fetchAndCachePage(prevPageNum, false).then((data) => {
+          if (data) setPreviousPage(data);
+        });
+      }
+    } else {
+      setPreviousPage(null);
+    }
+
+    // Pre-fetch surrounding pages
+    preFetchPages(currentPage);
+  }, [currentPage]);
+
+  // Background refresh variations when narrators change (if on a cached page)
+  useEffect(() => {
+    const cachedPage = pageCacheRef.current[currentPage];
+    if (cachedPage && selectedNarrators.length > 0) {
+      // Always refresh variations when narrators change (they might have new selections)
+      fetchVariationsForPage(cachedPage, currentPage, true);
+    }
+  }, [selectedNarrators, currentPage]);
 
   // Expose a reusable refresher for variations (used after save/delete)
   const refreshVariations = async () => {
@@ -657,6 +1173,14 @@ export default function App() {
             });
             setAllVariations(variationsMap);
             setSavedVariations(savedKeys);
+            
+            // Update cache for current page in both ref and state
+            const cacheData = { variationsMap, savedKeys };
+            variationCacheRef.current[currentPage] = cacheData;
+            setVariationCache((prev) => ({
+              ...prev,
+              [currentPage]: cacheData,
+            }));
           }
         }
       }
@@ -673,19 +1197,57 @@ export default function App() {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
-        setNarrators(data);
+        
+        // Create synthetic "Hafs 'an 'Asim" narrator (frontend-only)
+        const hafsNarrator = {
+          id: "hafs-an-asim", // Special ID for frontend-only narrator
+          title: "Hafs 'an 'Asim",
+        };
+        
+        // Sort other narrators: "Shu'bah an Asim" first, then others
+        const sortedData = [...data].sort((a, b) => {
+          const aTitle = a.title || "";
+          const bTitle = b.title || "";
+          const shubahTitle = "Shu'bah an Asim";
+          
+          if (aTitle === shubahTitle) return -1;
+          if (bTitle === shubahTitle) return 1;
+          return aTitle.localeCompare(bTitle);
+        });
+        
+        // Add Hafs at the beginning of the list
+        const allNarrators = [hafsNarrator, ...sortedData];
+        setNarrators(allNarrators);
 
         // Load saved narrator selections (AsyncStorage on native, localStorage on web)
+        let savedNarrators = [];
         try {
           if (Platform.OS === "web" && typeof localStorage !== "undefined") {
             const saved = localStorage.getItem("selectedNarrators");
-            if (saved) setSelectedNarrators(JSON.parse(saved));
+            if (saved) savedNarrators = JSON.parse(saved);
           } else {
             const saved = await AsyncStorage.getItem("selectedNarrators");
-            if (saved) setSelectedNarrators(JSON.parse(saved));
+            if (saved) savedNarrators = JSON.parse(saved);
           }
         } catch (err) {
           console.error("Error loading saved narrators:", err);
+        }
+        
+        // If no narrators are saved, default to "Hafs 'an 'Asim"
+        if (savedNarrators.length === 0) {
+          setSelectedNarrators([hafsNarrator.id]);
+          // Save the default selection
+          try {
+            if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+              localStorage.setItem("selectedNarrators", JSON.stringify([hafsNarrator.id]));
+            } else {
+              await AsyncStorage.setItem("selectedNarrators", JSON.stringify([hafsNarrator.id]));
+            }
+          } catch (err) {
+            console.error("Error saving default narrator:", err);
+          }
+        } else {
+          setSelectedNarrators(savedNarrators);
         }
       } catch (err) {
         console.error("Error fetching narrators:", err);
@@ -698,7 +1260,7 @@ export default function App() {
   // Save narrator selections whenever they change
   useEffect(() => {
     const persist = async () => {
-      if (selectedNarrators.length === 0) return;
+      // Always save, even if empty (will default to Hafs on next load if empty)
       try {
         if (Platform.OS === "web" && typeof localStorage !== "undefined") {
           localStorage.setItem(
@@ -760,36 +1322,74 @@ export default function App() {
     if (pageNum > 0) {
       setCurrentPage(pageNum);
       setPageInput(newPage);
-      setLoading(true);
+      // Loading state is handled by useEffect based on cache
     }
   };
 
   const handlePreviousPage = () => {
-    if (currentPage > 1) {
-      const newPage = currentPage - 1;
+    const page = currentPageRef.current;
+    if (page > 1) {
+      const newPage = page - 1;
+      console.log("handlePreviousPage: going from", page, "to", newPage);
       setCurrentPage(newPage);
       setPageInput(newPage.toString());
-      setLoading(true);
+      // Loading state is handled by useEffect based on cache
     }
   };
 
   const handleNextPage = () => {
-    const newPage = currentPage + 1;
+    const page = currentPageRef.current;
+    const newPage = page + 1;
+    console.log("handleNextPage: going from", page, "to", newPage);
     setCurrentPage(newPage);
     setPageInput(newPage.toString());
-    setLoading(true);
+    // Loading state is handled by useEffect based on cache
   };
+
+  // Update handler refs whenever handlers are recreated
+  useEffect(() => {
+    handlePreviousPageRef.current = handlePreviousPage;
+    handleNextPageRef.current = handleNextPage;
+  });
 
   const handlePageInputChange = (text) => {
     setPageInput(text);
   };
 
   const handleToggleNarrator = (narratorId) => {
-    setSelectedNarrators((prev) =>
-      prev.includes(narratorId)
-        ? prev.filter((id) => id !== narratorId)
-        : [...prev, narratorId]
-    );
+    setSelectedNarrators((prev) => {
+      const isHafs = narratorId === "hafs-an-asim";
+      
+      // If clicking Hafs 'an 'Asim
+      if (isHafs) {
+        if (prev.includes(narratorId)) {
+          // Deselecting Hafs - only allow if there are other narrators selected
+          // If Hafs is the only one selected, prevent deselection (it's the default)
+          if (prev.length === 1 && prev[0] === "hafs-an-asim") {
+            return prev; // Don't change - keep Hafs selected
+          }
+          return prev.filter((id) => id !== narratorId);
+        } else {
+          // Selecting Hafs - deselect all others
+          return [narratorId];
+        }
+      } else {
+        // If clicking any other narrator
+        if (prev.includes(narratorId)) {
+          // Deselecting other narrator
+          const newSelection = prev.filter((id) => id !== narratorId);
+          // If nothing is selected now, default back to Hafs
+          if (newSelection.length === 0) {
+            return ["hafs-an-asim"];
+          }
+          return newSelection;
+        } else {
+          // Selecting other narrator - deselect Hafs first
+          const withoutHafs = prev.filter((id) => id !== "hafs-an-asim");
+          return [...withoutHafs, narratorId];
+        }
+      }
+    });
   };
 
   const handleSaveVariation = async (variationKey) => {
@@ -921,9 +1521,9 @@ export default function App() {
   }
 
   return (
-    <>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar barStyle="dark-content" />
-      <SafeAreaView style={styles.safeArea} {...panResponder.panHandlers}>
+      <SafeAreaView style={styles.safeArea}>
         {currentTab !== "Recite" && (
           <View style={styles.navBar}>
             <TouchableOpacity
@@ -941,17 +1541,92 @@ export default function App() {
         <View style={styles.mainContainer}>
           {currentTab === "Recite" && (
             <>
-              <View style={styles.contentContainer}>
-                <PageView
-                  page={page}
-                  onWordPress={handleWordPress}
-                  selectedWordId={selectedWordId}
-                  loading={loading}
-                  savedVariations={savedVariations}
-                  selectedNarrators={selectedNarrators}
-                  allVariations={allVariations}
-                />
-              </View>
+              <GestureDetector gesture={pageSwipeGesture}>
+                <View style={styles.contentContainer}>
+                  {/* Previous page (slides in from right when swiping right) */}
+                  {previousPage && currentPage > 1 && (
+                    <Animated.View
+                      style={[
+                        styles.pageViewContainer,
+                        styles.pageBehind,
+                        {
+                          transform: [
+                            {
+                              translateX: pageTranslateX.interpolate({
+                                inputRange: [-Dimensions.get('window').width, 0, Dimensions.get('window').width],
+                                outputRange: [0, Dimensions.get('window').width, Dimensions.get('window').width * 2],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <PageView
+                        page={previousPage}
+                        onWordPress={() => {}}
+                        selectedWordId={null}
+                        loading={false}
+                        savedVariations={[]}
+                        selectedNarrators={selectedNarrators}
+                        allVariations={{}}
+                      />
+                    </Animated.View>
+                  )}
+                  
+                  {/* Next page (slides in from left when swiping left) */}
+                  {nextPage && (
+                    <Animated.View
+                      style={[
+                        styles.pageViewContainer,
+                        styles.pageBehind,
+                        {
+                          transform: [
+                            {
+                              translateX: pageTranslateX.interpolate({
+                                inputRange: [-Dimensions.get('window').width, 0, Dimensions.get('window').width],
+                                outputRange: [-Dimensions.get('window').width * 2, -Dimensions.get('window').width, 0],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                      pointerEvents="none"
+                    >
+                      <PageView
+                        page={nextPage}
+                        onWordPress={() => {}}
+                        selectedWordId={null}
+                        loading={false}
+                        savedVariations={[]}
+                        selectedNarrators={selectedNarrators}
+                        allVariations={{}}
+                      />
+                    </Animated.View>
+                  )}
+                  
+                  {/* Current page */}
+                  <Animated.View
+                    style={[
+                      styles.pageViewContainer,
+                      styles.pageCurrent,
+                      {
+                        transform: [{ translateX: pageTranslateX }],
+                      },
+                    ]}
+                  >
+                    <PageView
+                      page={page}
+                      onWordPress={handleWordPress}
+                      selectedWordId={selectedWordId}
+                      loading={loading}
+                      savedVariations={savedVariations}
+                      selectedNarrators={selectedNarrators}
+                      allVariations={allVariations}
+                    />
+                  </Animated.View>
+                </View>
+              </GestureDetector>
 
               <PageNavigation
                 currentPage={currentPage}
@@ -960,6 +1635,8 @@ export default function App() {
                 onPageChange={handlePageChange}
                 onPreviousPage={handlePreviousPage}
                 onNextPage={handleNextPage}
+                onOpenMenu={isDrawerFullyOpen ? closeDrawer : openDrawer}
+                isMenuOpen={isDrawerFullyOpen}
               />
             </>
           )}
@@ -1117,6 +1794,54 @@ export default function App() {
               style={[styles.drawerBackdropFill, { opacity: backdropAnim }]}
             />
           </Pressable>
+          
+          {/* Bottom Navigation Bar - Outside drawer, spans full width */}
+          <View style={styles.drawerBottomNav}>
+            <TouchableOpacity
+              style={styles.drawerNavButton}
+              onPress={() => {
+                setCurrentTab("Recite");
+                closeDrawer();
+              }}
+            >
+              <Text style={[styles.drawerNavIcon, currentTab === "Recite" && styles.drawerNavIconActive]}>
+                📖
+              </Text>
+              <Text style={[styles.drawerNavLabel, currentTab === "Recite" && styles.drawerNavLabelActive]}>
+                Mushaf
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.drawerNavButton}
+              onPress={() => {
+                setCurrentTab("Listen");
+                closeDrawer();
+              }}
+            >
+              <Text style={[styles.drawerNavIcon, currentTab === "Listen" && styles.drawerNavIconActive]}>
+                🎧
+              </Text>
+              <Text style={[styles.drawerNavLabel, currentTab === "Listen" && styles.drawerNavLabelActive]}>
+                Recitation
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.drawerNavButton}
+              onPress={() => {
+                setCurrentTab("Learn");
+                closeDrawer();
+              }}
+            >
+              <Text style={[styles.drawerNavIcon, currentTab === "Learn" && styles.drawerNavIconActive]}>
+                📺
+              </Text>
+              <Text style={[styles.drawerNavLabel, currentTab === "Learn" && styles.drawerNavLabelActive]}>
+                Education
+              </Text>
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       )}
 
@@ -1134,7 +1859,7 @@ export default function App() {
         onSaveVariation={handleSaveVariation}
         onDeleteVariation={handleDeleteVariation}
       />
-    </>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1209,6 +1934,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     paddingBottom: Platform.OS === "ios" ? 100 : 80, // Space for navigation controls
+    overflow: "hidden", // Prevent content from showing outside during animation
+  },
+  pageViewContainer: {
+    flex: 1,
+    width: "100%",
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  pageBehind: {
+    opacity: 0.95,
+    zIndex: 0,
+  },
+  pageCurrent: {
+    zIndex: 1,
   },
   container: {
     flex: 1,
@@ -1318,9 +2060,10 @@ const styles = StyleSheet.create({
   },
   drawer: {
     width: 260,
-    backgroundColor: "#fff",
+    flex: 1,
+    backgroundColor: "#282828",
     borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: "#ddd",
+    borderRightColor: "#3a3a3a",
     paddingTop: Platform.OS === "ios" ? 50 : (StatusBar.currentHeight || 0) + 20,
     paddingHorizontal: 16,
     shadowColor: "#000",
@@ -1346,18 +2089,63 @@ const styles = StyleSheet.create({
   drawerNarratorsContent: {
     paddingBottom: 40,
   },
+  drawerBottomNav: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    width: "100%",
+    flexDirection: "row",
+    backgroundColor: "#282828",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === "ios" ? 35 : 12,
+    paddingHorizontal: 8,
+    justifyContent: "space-around",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 10,
+  },
+  drawerNavButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 8,
+  },
+  drawerNavIcon: {
+    fontSize: 24,
+    marginBottom: 4,
+    color: "#ffffff",
+  },
+  drawerNavIconActive: {
+    color: "#00d4ff",
+  },
+  drawerNavLabel: {
+    fontSize: 12,
+    color: "#ffffff",
+    fontWeight: "500",
+  },
+  drawerNavLabelActive: {
+    color: "#00d4ff",
+    fontWeight: "600",
+  },
   drawerNarratorItem: {
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: "#3a3a3a",
     marginBottom: 10,
-    backgroundColor: "#fff",
+    backgroundColor: "#1f1f1f",
   },
   drawerNarratorItemSelected: {
-    borderColor: "#0a84ff",
-    backgroundColor: "#f0f6ff",
+    borderColor: "#00d4ff",
+    backgroundColor: "#1a3a42",
   },
   drawerNarratorRow: {
     flexDirection: "row",
@@ -1368,15 +2156,15 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: "#c4cacf",
+    borderColor: "#555",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
-    backgroundColor: "#fff",
+    backgroundColor: "transparent",
   },
   drawerCheckboxSelected: {
-    borderColor: "#0a84ff",
-    backgroundColor: "#0a84ff",
+    borderColor: "#00d4ff",
+    backgroundColor: "#00d4ff",
   },
   drawerCheckmark: {
     color: "#fff",
@@ -1386,11 +2174,11 @@ const styles = StyleSheet.create({
   drawerNarratorText: {
     flex: 1,
     fontSize: 16,
-    color: "#1f2933",
+    color: "#ffffff",
     fontWeight: "500",
   },
   drawerNarratorTextSelected: {
-    color: "#0a84ff",
+    color: "#00d4ff",
   },
   learnContainer: {
     flex: 1,

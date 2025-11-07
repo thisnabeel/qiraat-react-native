@@ -15,9 +15,19 @@ const PageNavigation = ({
   onPageChange,
   onPreviousPage,
   onNextPage,
+  onOpenMenu,
+  isMenuOpen,
 }) => {
   return (
     <View style={styles.navigationContainer}>
+      {/* Hamburger menu button / Close button */}
+      <TouchableOpacity
+        style={styles.menuButton}
+        onPress={onOpenMenu}
+      >
+        <Text style={styles.menuIcon}>{isMenuOpen ? "✕" : "☰"}</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity
         style={styles.navButton}
         onPress={onNextPage}
@@ -68,6 +78,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
     paddingBottom: Platform.OS === "ios" ? 35 : 15, // Account for home indicator
+  },
+  menuButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#007AFF",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+    marginRight: 10,
+  },
+  menuIcon: {
+    fontSize: 20,
+    color: "#fff",
+    fontWeight: "bold",
   },
   navButton: {
     width: 50,
