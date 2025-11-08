@@ -6,7 +6,9 @@
     "start": "npx expo start",
     "android": "npx expo start --android",
     "ios": "npx expo start --ios",
-    "web": "npx expo start --web"
+    "web": "npx expo start --web",
+    "build:web": "npx expo export --platform web",
+    "deploy": "vercel --prod"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
