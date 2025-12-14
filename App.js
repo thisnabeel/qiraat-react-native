@@ -332,15 +332,100 @@ const NarratorPopup = ({
   position,
   selectedWord,
   savedVariations,
+  allVariations = {},
   onSaveVariation,
   onDeleteVariation,
 }) => {
+  const [keyboardMode, setKeyboardMode] = useState("harakat"); // "harakat" or "letters"
+  const [insertMode, setInsertMode] = useState("replace"); // "insertLeft", "replace", or "insertRight"
+  const inputRef = useRef(null);
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
+  const [currentLetterIndex, setCurrentLetterIndex] = useState(0); // Index of currently highlighted letter
+  const [history, setHistory] = useState([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const historyRef = useRef([]);
+  const historyIndexRef = useRef(-1);
+
+  // Get letter positions in the text (accounting for diacritics)
+  // Groups base letters with their following diacritics
+  const getLetterPositions = (text) => {
+    const positions = [];
+    let letterIndex = 0;
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      // Check if it's a base letter (not a diacritic)
+      if (!/[\u064B-\u065F\u0670]/.test(char)) {
+        // Find the end position (after the base letter and any following diacritics)
+        let end = i + 1;
+        while (end < text.length) {
+          const nextChar = text[end];
+          if (/[\u064B-\u065F\u0670]/.test(nextChar)) {
+            end++;
+          } else {
+            break;
+          }
+        }
+        positions.push({
+          index: letterIndex,
+          start: i,
+          end: end,
+        });
+        letterIndex++;
+        i = end - 1; // Skip to after the diacritics
+      }
+    }
+    return positions;
+  };
+
+  // Initialize history when popup opens or input changes externally
+  useEffect(() => {
+    if (visible && selectedNarrator) {
+      // Reset history when popup opens
+      const initialHistory = [inputValue];
+      historyRef.current = initialHistory;
+      historyIndexRef.current = 0;
+      setHistory(initialHistory);
+      setHistoryIndex(0);
+      
+      // Reset letter index to first letter or 0
+      const letterPositions = getLetterPositions(inputValue);
+      if (letterPositions.length > 0) {
+        setCurrentLetterIndex(0);
+      } else {
+        setCurrentLetterIndex(0);
+      }
+    }
+  }, [visible, selectedNarrator]);
+
+  // Update letter index when input value changes - ensure it stays valid
+  useEffect(() => {
+    if (!inputValue || inputValue.length === 0) {
+      if (currentLetterIndex !== 0) {
+        setCurrentLetterIndex(0);
+      }
+      return;
+    }
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (letterPositions.length === 0) {
+      if (currentLetterIndex !== 0) {
+        setCurrentLetterIndex(0);
+      }
+    } else {
+      // Ensure index is within bounds
+      const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
+      if (validIndex !== currentLetterIndex) {
+        setCurrentLetterIndex(validIndex);
+      }
+    }
+  }, [inputValue]); // Only depend on inputValue, not currentLetterIndex to avoid loops
+
   if (!visible || !position) return null;
 
   // Calculate intelligent positioning
   const screenHeight = Dimensions.get("window").height;
   const screenWidth = Dimensions.get("window").width;
-  const popupHeight = 300; // Estimated popup height
+  const popupHeight = 500; // Increased to accommodate keyboard
   const popupWidth = Math.min(screenWidth * 0.9, 400);
 
   let topPosition = position.y + position.height + 10;
@@ -368,6 +453,301 @@ const NarratorPopup = ({
       ? `${selectedWord.id}-${selectedNarrator.id}`
       : null;
   const isSaved = variationKey ? savedVariations.includes(variationKey) : false;
+  const savedValue = variationKey && allVariations[variationKey] ? allVariations[variationKey] : null;
+  // Has unsaved changes if: (saved but input differs) OR (not saved but has content)
+  const hasUnsavedChanges = (savedValue !== null && inputValue !== savedValue) || (savedValue === null && inputValue !== "");
+  // Green when: (saved and no changes) OR (not saved but no content - nothing to save)
+  const isSavedState = (isSaved && !hasUnsavedChanges) || (!isSaved && inputValue === "");
+
+  // Harakat (diacritics) - most common ones
+  const harakat = [
+    { char: "\u064E", name: "Fatha" },      // َ
+    { char: "\u0650", name: "Kasra" },     // ِ
+    { char: "\u064F", name: "Damma" },     // ُ
+    { char: "\u0652", name: "Sukun" },     // ْ
+    { char: "\u0651", name: "Shadda" },    // ّ
+    { char: "\u064B", name: "Fathatan" },   // ً
+    { char: "\u064D", name: "Kasratan" },  // ٍ
+    { char: "\u064C", name: "Dammatan" },  // ٌ
+  ];
+
+  // Arabic letters
+  const arabicLetters = [
+    "\u0627", "\u0628", "\u062A", "\u062B", "\u062C", "\u062D", "\u062E",
+    "\u062F", "\u0630", "\u0631", "\u0632", "\u0633", "\u0634", "\u0635",
+    "\u0636", "\u0637", "\u0638", "\u0639", "\u063A", "\u0641", "\u0642",
+    "\u0643", "\u0644", "\u0645", "\u0646", "\u0647", "\u0648", "\u064A",
+  ];
+
+  // Helper: Get character at current letter index
+  const getCharAtCurrentLetter = () => {
+    if (inputValue.length === 0) return null;
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length) {
+      const pos = letterPositions[currentLetterIndex].start;
+      if (pos >= 0 && pos < inputValue.length) {
+        return inputValue[pos];
+      }
+    }
+    return null;
+  };
+
+  // Helper: Remove all diacritics from a string
+  const removeDiacritics = (str) => {
+    if (!str) return '';
+    // Remove combining diacritics (U+064B to U+065F, U+0670, U+0640)
+    return str.replace(/[\u064B-\u065F\u0670\u0640]/g, '');
+  };
+
+  // Helper: Get base letter (without diacritics) at current letter index
+  const getBaseLetterAtCurrentLetter = () => {
+    if (inputValue.length === 0) return null;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length) {
+      const pos = letterPositions[currentLetterIndex].start;
+      const char = inputValue[pos];
+      
+      if (!char) return null;
+      
+      // Remove diacritics to get base letter
+      const base = removeDiacritics(char);
+      
+      // Check if it's an Arabic letter (excluding diacritics)
+      const arabicLetterRegex = /[\u0621-\u063A\u0641-\u064A\u0671-\u06D3]/;
+      if (base && arabicLetterRegex.test(base)) {
+        return base;
+      }
+    }
+    return null;
+  };
+
+  // Generate harakat variations for a letter
+  const getHarakatVariations = (baseLetter, isLastLetter = false) => {
+    if (!baseLetter) return [];
+    // Tanween harakat (Fathatan, Kasratan, Dammatan) should only show on last letter
+    const tanweenChars = ["\u064B", "\u064D", "\u064C"]; // Fathatan, Kasratan, Dammatan
+    return harakat
+      .filter((h) => isLastLetter || !tanweenChars.includes(h.char))
+      .map((h) => baseLetter + h.char);
+  };
+
+  // Add to history
+  const addToHistory = (value) => {
+    const newHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
+    newHistory.push(value);
+    // Limit history to 50 items
+    if (newHistory.length > 50) {
+      newHistory.shift();
+    } else {
+      historyIndexRef.current = newHistory.length - 1;
+    }
+    historyRef.current = newHistory;
+    setHistory(newHistory);
+    setHistoryIndex(historyIndexRef.current);
+  };
+
+  // Handle undo
+  const handleUndo = () => {
+    if (historyIndexRef.current > 0) {
+      historyIndexRef.current--;
+      const previousValue = historyRef.current[historyIndexRef.current];
+      setHistoryIndex(historyIndexRef.current);
+      onInputChange(previousValue);
+      // Reset cursor to end
+      setTimeout(() => {
+        if (inputRef.current) {
+          const cursorPos = previousValue.length;
+          inputRef.current.setNativeProps({
+            selection: { start: cursorPos, end: cursorPos },
+          });
+          setSelection({ start: cursorPos, end: cursorPos });
+        }
+      }, 0);
+    }
+  };
+
+  // Handle harakat variation press - replace only the harakat, keep the base letter
+  const handleHarakatPress = (variation) => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    let letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    // Extract the new harakat from the variation (everything after the base letter)
+    const newHarakat = variation.slice(baseLetter.length);
+    
+    // Replace only the harakat part, keep the base letter
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newHarakat +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // After updating, ensure currentLetterIndex is still valid
+    // The letter positions might have changed slightly, but the index should remain the same
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        // Index is still valid, keep it
+        setCurrentLetterIndex(currentLetterIndex);
+      } else if (newLetterPositions.length > 0) {
+        // Index is out of bounds, adjust it
+        const newIndex = Math.min(currentLetterIndex, newLetterPositions.length - 1);
+        setCurrentLetterIndex(Math.max(0, newIndex));
+      }
+    }, 0);
+  };
+
+  // Handle letter press (for letters mode)
+  const handleLetterPress = (letter) => {
+    if (inputValue.length === 0) {
+      // If empty, just insert the letter
+      const newValue = letter;
+      addToHistory(newValue);
+      onInputChange(newValue);
+      setCurrentLetterIndex(0);
+      return;
+    }
+
+    const letterPositions = getLetterPositions(inputValue);
+    if (letterPositions.length === 0) {
+      // No letters, just append
+      const newValue = inputValue + letter;
+      addToHistory(newValue);
+      onInputChange(newValue);
+      setCurrentLetterIndex(0);
+      return;
+    }
+
+    const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
+    const currentPos = letterPositions[validIndex];
+    let newValue = "";
+    let newLetterIndex = validIndex;
+
+    if (insertMode === "insertLeft") {
+      // Insert before current letter
+      newValue = inputValue.slice(0, currentPos.start) + letter + inputValue.slice(currentPos.start);
+      newLetterIndex = validIndex; // Stay on the same index (which is now the newly inserted letter)
+    } else if (insertMode === "replace") {
+      // Replace current letter but keep its harakat (diacritics)
+      const currentLetterWithDiacritics = inputValue.slice(currentPos.start, currentPos.end);
+      // Extract diacritics from the current letter (everything after the base letter)
+      const currentBaseLetter = inputValue[currentPos.start];
+      const currentDiacritics = currentLetterWithDiacritics.slice(1); // Everything after the base letter
+      // Replace with new letter + old diacritics
+      newValue = inputValue.slice(0, currentPos.start) + letter + currentDiacritics + inputValue.slice(currentPos.end);
+      newLetterIndex = validIndex; // Stay on the same index
+    } else if (insertMode === "insertRight") {
+      // Insert after current letter (after its diacritics)
+      newValue = inputValue.slice(0, currentPos.end) + letter + inputValue.slice(currentPos.end);
+      newLetterIndex = validIndex + 1; // Move to the newly inserted letter
+    }
+
+    addToHistory(newValue);
+    onInputChange(newValue);
+    setCurrentLetterIndex(newLetterIndex);
+
+    // Update selection
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (newLetterIndex >= 0 && newLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[newLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Get current keyboard buttons based on mode and current letter
+  const getKeyboardButtons = () => {
+    if (keyboardMode === "harakat") {
+      const letterPositions = getLetterPositions(inputValue);
+      // Ensure currentLetterIndex is valid
+      if (letterPositions.length === 0) {
+        return [];
+      }
+      const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
+      
+      // If index was invalid, update it
+      if (validIndex !== currentLetterIndex) {
+        setCurrentLetterIndex(validIndex);
+      }
+      
+      // Get the base letter at the current (validated) index
+      if (validIndex >= 0 && validIndex < letterPositions.length) {
+        const pos = letterPositions[validIndex].start;
+        const char = inputValue[pos];
+        if (char) {
+          const base = removeDiacritics(char);
+          const arabicLetterRegex = /[\u0621-\u063A\u0641-\u064A\u0671-\u06D3]/;
+          if (base && arabicLetterRegex.test(base)) {
+            // Check if this is the last letter
+            const isLastLetter = validIndex === letterPositions.length - 1;
+            return getHarakatVariations(base, isLastLetter);
+          }
+        }
+      }
+      return [];
+    } else {
+      return arabicLetters;
+    }
+  };
+
+  // Handle arrow key press - move through letters (RTL: left = forward, right = backward)
+  const handleArrowPress = (direction) => {
+    const letterPositions = getLetterPositions(inputValue);
+    if (letterPositions.length === 0) {
+      setCurrentLetterIndex(0);
+      return;
+    }
+
+    let newIndex = currentLetterIndex;
+    // In RTL: left arrow moves forward (to next letter, visually right), right arrow moves backward (to previous letter, visually left)
+    if (direction === "left" && newIndex < letterPositions.length - 1) {
+      newIndex++; // Move forward in RTL (visually right)
+    } else if (direction === "right" && newIndex > 0) {
+      newIndex--; // Move backward in RTL (visually left)
+    }
+    
+    setCurrentLetterIndex(newIndex);
+    
+    // Update selection to match the letter position
+    if (letterPositions[newIndex]) {
+      const pos = letterPositions[newIndex].start;
+      setSelection({ start: pos, end: pos });
+    }
+  };
+
+  // Check if arrows can move
+  const canMoveLeft = () => {
+    const letterPositions = getLetterPositions(inputValue);
+    return letterPositions.length > 0 && currentLetterIndex < letterPositions.length - 1;
+  };
+
+  const canMoveRight = () => {
+    return currentLetterIndex > 0;
+  };
 
   return (
     <Modal
@@ -386,11 +766,16 @@ const NarratorPopup = ({
               top: topPosition,
               left: leftPosition,
               width: popupWidth,
+              height: popupHeight,
             },
           ]}
         >
           {/* Content */}
-          <View style={styles.popupContent}>
+          <ScrollView 
+            style={styles.popupContent}
+            contentContainerStyle={styles.popupContentContainer}
+            showsVerticalScrollIndicator={true}
+          >
             {selectedNarrator ? (
               <>
                 <View style={styles.popupHeader}>
@@ -405,9 +790,19 @@ const NarratorPopup = ({
                   </Text>
                   <TouchableOpacity
                     onPress={() => onSaveVariation(variationKey)}
-                    style={styles.saveButton}
+                    style={[
+                      styles.saveButton,
+                      isSavedState && styles.saveButtonSaved,
+                      hasUnsavedChanges && styles.saveButtonNotSaved,
+                    ]}
                   >
-                    <Text style={styles.saveIcon}>{isSaved ? "✓" : "□"}</Text>
+                    <Text style={[
+                      styles.saveButtonText,
+                      isSavedState && styles.saveButtonTextSaved,
+                      hasUnsavedChanges && styles.saveButtonTextNotSaved,
+                    ]}>
+                      {hasUnsavedChanges ? "⚠️ Not Saved" : "Saved"}
+                    </Text>
                   </TouchableOpacity>
                 </View>
 
@@ -422,22 +817,238 @@ const NarratorPopup = ({
                     </TouchableOpacity>
                   )}
                   <View style={[styles.inputContainer, isSaved && { marginLeft: 8 }]}>
-                    <TextInput
+                    {/* Large display block with letter-by-letter highlighting */}
+                    <View style={styles.largeDisplayBlock}>
+                      {inputValue && inputValue.length > 0 ? (
+                        <Text style={styles.displayText}>
+                          {(() => {
+                            const letterPositions = getLetterPositions(inputValue);
+                            // Ensure currentLetterIndex is valid for highlighting
+                            let validIndex = 0;
+                            if (letterPositions.length > 0) {
+                              validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
+                              // Update state if index was invalid (but only once to avoid loops)
+                              if (validIndex !== currentLetterIndex && currentLetterIndex >= 0) {
+                                setTimeout(() => {
+                                  if (currentLetterIndex !== validIndex) {
+                                    setCurrentLetterIndex(validIndex);
+                                  }
+                                }, 0);
+                              }
+                            }
+                            
+                            const segments = [];
+                            let lastIndex = 0;
+                            
+                            letterPositions.forEach((pos, idx) => {
+                              const isHighlighted = idx === validIndex;
+                              
+                              // Add text before this letter (shouldn't happen if grouping is correct, but safety check)
+                              if (pos.start > lastIndex) {
+                                const beforeText = inputValue.slice(lastIndex, pos.start);
+                                segments.push(beforeText);
+                              }
+                              
+                              // Get the letter with all its diacritics
+                              const letterWithDiacritics = inputValue.slice(pos.start, pos.end);
+                              
+                              if (isHighlighted) {
+                                segments.push(
+                                  <Text
+                                    key={`letter-${idx}`}
+                                    style={styles.displayTextHighlighted}
+                                  >
+                                    {letterWithDiacritics}
+                                  </Text>
+                                );
+                              } else {
+                                segments.push(letterWithDiacritics);
+                              }
+                              
+                              lastIndex = pos.end;
+                            });
+                            
+                            // Add any remaining text after the last letter
+                            if (lastIndex < inputValue.length) {
+                              segments.push(inputValue.slice(lastIndex));
+                            }
+                            
+                            return segments;
+                          })()}
+                        </Text>
+                      ) : (
+                        <Text style={styles.displayPlaceholder}>Enter text...</Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+
+                {/* Custom Arabic Keyboard */}
+                <View style={styles.customKeyboard}>
+                  {/* Control row: Toggle, Arrows, Delete, Undo */}
+                  <View style={styles.keyboardControlRow}>
+                    <TouchableOpacity
+                      style={styles.keyboardToggle}
+                      onPress={() => setKeyboardMode(keyboardMode === "harakat" ? "letters" : "harakat")}
+                    >
+                      <Text style={styles.keyboardToggleText}>
+                        {keyboardMode === "harakat" ? "حروف" : "حركات"}
+                      </Text>
+                    </TouchableOpacity>
+                    
+                    <View style={styles.keyboardArrowsRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.keyboardArrowKey,
+                          !canMoveLeft() && styles.keyboardArrowKeyDisabled,
+                        ]}
+                        onPress={() => handleArrowPress("left")}
+                        disabled={!canMoveLeft()}
+                      >
+                        <Text style={[
+                          styles.keyboardKeyText,
+                          !canMoveLeft() && styles.keyboardKeyTextDisabled,
+                        ]}>←</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.keyboardArrowKey,
+                          !canMoveRight() && styles.keyboardArrowKeyDisabled,
+                        ]}
+                        onPress={() => handleArrowPress("right")}
+                        disabled={!canMoveRight()}
+                      >
+                        <Text style={[
+                          styles.keyboardKeyText,
+                          !canMoveRight() && styles.keyboardKeyTextDisabled,
+                        ]}>→</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.keyboardDeleteKey}
+                      onPress={() => {
+                        if (inputValue.length > 0 && selection.start > 0) {
+                          const newValue =
+                            inputValue.slice(0, selection.start - 1) +
+                            inputValue.slice(selection.start);
+                          addToHistory(newValue);
+                          onInputChange(newValue);
+                          const newPos = selection.start - 1;
+                          setSelection({ start: newPos, end: newPos });
+                          setTimeout(() => {
+                            if (inputRef.current) {
+                              inputRef.current.setNativeProps({
+                                selection: { start: newPos, end: newPos },
+                              });
+                            }
+                          }, 0);
+                        }
+                      }}
+                    >
+                      <Text style={styles.keyboardKeyText}>⌫</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                       style={[
-                        styles.input,
-                        inputValue && inputValue.length > 0 && { color: "transparent" },
+                        styles.keyboardUndoKey,
+                        historyIndex <= 0 && styles.keyboardUndoKeyDisabled,
                       ]}
-                      value={inputValue}
-                      onChangeText={onInputChange}
-                      placeholder="Enter text..."
-                      placeholderTextColor="#999"
-                      editable={true}
-                      multiline={false}
-                    />
-                    {/* Render text with red dots underneath letters followed by dots */}
-                    {inputValue && inputValue.length > 0 && (
-                      <View style={styles.renderedTextContainer} pointerEvents="none">
-                        <ArabicTextWithDots text={inputValue} />
+                      onPress={handleUndo}
+                      disabled={historyIndex <= 0}
+                    >
+                      <Text style={[
+                        styles.keyboardKeyText,
+                        historyIndex <= 0 && styles.keyboardKeyTextDisabled,
+                      ]}>
+                        ↶
+                      </Text>
+                      {historyIndex > 0 && (
+                        <Text style={styles.keyboardUndoCount}>
+                          {historyIndex}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Insert mode buttons (only in letters mode) */}
+                  {keyboardMode === "letters" && (
+                    <View style={styles.keyboardInsertModeRow}>
+                      <TouchableOpacity
+                        style={[
+                          styles.keyboardInsertModeButton,
+                          insertMode === "insertRight" && styles.keyboardInsertModeButtonActive,
+                        ]}
+                        onPress={() => setInsertMode("insertRight")}
+                      >
+                        <Text style={[
+                          styles.keyboardInsertModeText,
+                          insertMode === "insertRight" && styles.keyboardInsertModeTextActive,
+                        ]}>[</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.keyboardInsertModeButton,
+                          insertMode === "replace" && styles.keyboardInsertModeButtonActive,
+                        ]}
+                        onPress={() => setInsertMode("replace")}
+                      >
+                        <Text style={[
+                          styles.keyboardInsertModeText,
+                          insertMode === "replace" && styles.keyboardInsertModeTextActive,
+                        ]}>O</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[
+                          styles.keyboardInsertModeButton,
+                          insertMode === "insertLeft" && styles.keyboardInsertModeButtonActive,
+                        ]}
+                        onPress={() => setInsertMode("insertLeft")}
+                      >
+                        <Text style={[
+                          styles.keyboardInsertModeText,
+                          insertMode === "insertLeft" && styles.keyboardInsertModeTextActive,
+                        ]}>]</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {/* Harakat or Letters buttons */}
+                  <View style={styles.keyboardGrid}>
+                    {(() => {
+                      const buttons = getKeyboardButtons();
+                      const buttonCount = buttons.length;
+                      const isSmallButtonSet = keyboardMode === "harakat" && buttonCount === 5;
+                      return buttons.length > 0 ? (
+                        buttons.map((char, index) => (
+                          <TouchableOpacity
+                            key={index}
+                            style={[
+                              styles.keyboardKey,
+                              isSmallButtonSet && styles.keyboardKeyLarge,
+                            ]}
+                            onPress={() => 
+                              keyboardMode === "harakat" 
+                                ? handleHarakatPress(char)
+                                : handleLetterPress(char)
+                            }
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[
+                              styles.keyboardKeyText,
+                              isSmallButtonSet && styles.keyboardKeyTextLarge,
+                            ]}>{char}</Text>
+                          </TouchableOpacity>
+                        ))
+                      ) : null;
+                    })()}
+                    {getKeyboardButtons().length === 0 && (
+                      <View style={styles.keyboardEmptyState}>
+                        <Text style={styles.keyboardEmptyText}>
+                          {keyboardMode === "harakat" 
+                            ? "Place cursor on a letter to see harakat variations"
+                            : "Select letters mode to type"}
+                        </Text>
                       </View>
                     )}
                   </View>
@@ -474,7 +1085,7 @@ const NarratorPopup = ({
                 </ScrollView>
               </>
             )}
-          </View>
+          </ScrollView>
         </Pressable>
       </View>
     </Modal>
@@ -1848,7 +2459,7 @@ export default function App() {
       <NarratorPopup
         visible={popupVisible}
         onClose={handleClosePopup}
-        narrators={narrators}
+        narrators={narrators.filter((narrator) => narrator.id !== "hafs-an-asim")}
         selectedNarrator={selectedNarrator}
         onSelectNarrator={handleSelectNarrator}
         inputValue={inputValue}
@@ -1856,6 +2467,7 @@ export default function App() {
         position={wordPosition}
         selectedWord={selectedWord}
         savedVariations={savedVariations}
+        allVariations={allVariations}
         onSaveVariation={handleSaveVariation}
         onDeleteVariation={handleDeleteVariation}
       />
@@ -2020,7 +2632,8 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
     alignItems: "center",
-    maxHeight: 300,
+    maxHeight: "90%",
+    maxWidth: "90%",
   },
   caret: {
     width: 0,
@@ -2035,7 +2648,11 @@ const styles = StyleSheet.create({
   },
   popupContent: {
     width: "100%",
+    flex: 1,
+  },
+  popupContentContainer: {
     padding: 20,
+    flexGrow: 1,
   },
   drawerOverlay: {
     position: "absolute",
@@ -2344,12 +2961,31 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   saveButton: {
-    padding: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
   },
-  saveIcon: {
-    fontSize: 24,
-    color: "#007AFF",
-    fontWeight: "bold",
+  saveButtonSaved: {
+    backgroundColor: "#10b981",
+    borderColor: "#10b981",
+  },
+  saveButtonNotSaved: {
+    backgroundColor: "#fbbf24",
+    borderColor: "#fbbf24",
+  },
+  saveButtonText: {
+    fontSize: 14,
+    color: "#374151",
+    fontWeight: "600",
+  },
+  saveButtonTextSaved: {
+    color: "#ffffff",
+  },
+  saveButtonTextNotSaved: {
+    color: "#ffffff",
   },
   narratorList: {
     maxHeight: 300,
@@ -2368,6 +3004,166 @@ const styles = StyleSheet.create({
     position: "relative",
     flex: 1,
   },
+  customKeyboard: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#e5e7eb",
+  },
+  keyboardControlRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    gap: 8,
+  },
+  keyboardToggle: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: "#f3f4f6",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+  },
+  keyboardToggleText: {
+    fontSize: 13,
+    color: "#374151",
+    fontWeight: "600",
+  },
+  keyboardArrowsRow: {
+    flexDirection: "row",
+    gap: 6,
+    flex: 1,
+    justifyContent: "center",
+  },
+  keyboardArrowKey: {
+    width: 44,
+    height: 36,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  keyboardArrowKeyDisabled: {
+    backgroundColor: "#f3f4f6",
+    borderColor: "#e5e7eb",
+    opacity: 0.5,
+  },
+  keyboardDeleteKey: {
+    width: 44,
+    height: 36,
+    backgroundColor: "#fee2e2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  keyboardUndoKey: {
+    width: 44,
+    height: 36,
+    backgroundColor: "#dbeafe",
+    borderWidth: 1,
+    borderColor: "#93c5fd",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+  },
+  keyboardUndoKeyDisabled: {
+    backgroundColor: "#f3f4f6",
+    borderColor: "#d1d5db",
+    opacity: 0.5,
+  },
+  keyboardUndoCount: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#3b82f6",
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "700",
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    textAlign: "center",
+    lineHeight: 16,
+    paddingHorizontal: 3,
+    overflow: "hidden",
+  },
+  keyboardKeyTextDisabled: {
+    color: "#9ca3af",
+  },
+  keyboardInsertModeRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  keyboardInsertModeButton: {
+    minWidth: 50,
+    height: 36,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
+  keyboardInsertModeButtonActive: {
+    backgroundColor: "#3b82f6",
+    borderColor: "#2563eb",
+  },
+  keyboardInsertModeText: {
+    fontSize: 16,
+    color: "#1f2937",
+    fontWeight: "600",
+  },
+  keyboardInsertModeTextActive: {
+    color: "#ffffff",
+  },
+  keyboardGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 5,
+    justifyContent: "center",
+  },
+  keyboardKey: {
+    width: 36,
+    height: 36,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  keyboardKeyLarge: {
+    width: 50,
+    height: 60,
+  },
+  keyboardKeyText: {
+    fontSize: 18,
+    color: "#1f2937",
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+  },
+  keyboardKeyTextLarge: {
+    fontSize: 32,
+  },
+  keyboardEmptyState: {
+    width: "100%",
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  keyboardEmptyText: {
+    fontSize: 12,
+    color: "#9ca3af",
+    textAlign: "center",
+  },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
@@ -2380,6 +3176,40 @@ const styles = StyleSheet.create({
     writingDirection: "rtl",
     textAlign: "right",
     minHeight: 44,
+  },
+  largeDisplayBlock: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    padding: 0,
+    paddingVertical: 0,
+    backgroundColor: "#ffffff",
+    minHeight: 62,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  displayText: {
+    fontSize: 32,
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    color: "#1a1a1a",
+    lineHeight: 60,
+    includeFontPadding: false,
+    textAlign: "center",
+    writingDirection: "rtl",
+    paddingVertical: 4,
+  },
+  displayTextHighlighted: {
+    backgroundColor: "#10b981",
+    borderRadius: 4,
+    paddingHorizontal: 3,
+    paddingVertical: 2,
+    color: "#ffffff",
+  },
+  displayPlaceholder: {
+    fontSize: 24,
+    color: "#999",
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    textAlign: "right",
   },
   renderedTextContainer: {
     position: "absolute",
