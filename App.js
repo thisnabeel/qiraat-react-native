@@ -345,6 +345,7 @@ const NarratorPopup = ({
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historyRef = useRef([]);
   const historyIndexRef = useRef(-1);
+  const [isShaddaSelected, setIsShaddaSelected] = useState(false);
 
   // Get letter positions in the text (accounting for diacritics)
   // Groups base letters with their following diacritics
@@ -403,6 +404,7 @@ const NarratorPopup = ({
       if (currentLetterIndex !== 0) {
         setCurrentLetterIndex(0);
       }
+      setIsShaddaSelected(false); // Deselect shadda when input changes
       return;
     }
     
@@ -411,11 +413,13 @@ const NarratorPopup = ({
       if (currentLetterIndex !== 0) {
         setCurrentLetterIndex(0);
       }
+      setIsShaddaSelected(false); // Deselect shadda when no letters
     } else {
       // Ensure index is within bounds
       const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
       if (validIndex !== currentLetterIndex) {
         setCurrentLetterIndex(validIndex);
+        setIsShaddaSelected(false); // Deselect shadda when index changes
       }
     }
   }, [inputValue]); // Only depend on inputValue, not currentLetterIndex to avoid loops
@@ -454,10 +458,15 @@ const NarratorPopup = ({
       : null;
   const isSaved = variationKey ? savedVariations.includes(variationKey) : false;
   const savedValue = variationKey && allVariations[variationKey] ? allVariations[variationKey] : null;
-  // Has unsaved changes if: (saved but input differs) OR (not saved but has content)
-  const hasUnsavedChanges = (savedValue !== null && inputValue !== savedValue) || (savedValue === null && inputValue !== "");
-  // Green when: (saved and no changes) OR (not saved but no content - nothing to save)
-  const isSavedState = (isSaved && !hasUnsavedChanges) || (!isSaved && inputValue === "");
+  // Get the original word content to compare against when no variation is saved
+  const originalWordContent = selectedWord ? selectedWord.content : "";
+  // Has unsaved changes if: 
+  // - (saved but input differs from saved value) OR 
+  // - (not saved but input differs from original word content)
+  const hasUnsavedChanges = (savedValue !== null && inputValue !== savedValue) || 
+                            (savedValue === null && inputValue !== originalWordContent);
+  // Green when: (saved and no changes) OR (not saved but matches original - no changes from default)
+  const isSavedState = (isSaved && !hasUnsavedChanges) || (!isSaved && inputValue === originalWordContent);
 
   // Harakat (diacritics) - most common ones
   const harakat = [
@@ -477,6 +486,7 @@ const NarratorPopup = ({
     "\u062F", "\u0630", "\u0631", "\u0632", "\u0633", "\u0634", "\u0635",
     "\u0636", "\u0637", "\u0638", "\u0639", "\u063A", "\u0641", "\u0642",
     "\u0643", "\u0644", "\u0645", "\u0646", "\u0647", "\u0648", "\u064A",
+    "\u0623", "\u0625", "\u0622", "\u0624", "\u0626", "\u0621", // Hamza letters: أ إ آ ؤ ئ ء
   ];
 
   // Helper: Get character at current letter index
@@ -576,6 +586,75 @@ const NarratorPopup = ({
     
     const baseLetter = getBaseLetterAtCurrentLetter();
     if (!baseLetter) return;
+    
+    // Extract the harakat from the variation (everything after the base letter)
+    const harakatFromVariation = variation.slice(baseLetter.length);
+    const shaddaChar = "\u0651";
+    const fathaChar = "\u064E";
+    const kasraChar = "\u0650";
+    const dammaChar = "\u064F";
+    
+    // Check if this is a shadda button press
+    const isShadda = harakatFromVariation === shaddaChar;
+    
+    // Check if this is a vowel (fatha, kasra, damma)
+    const isVowel = harakatFromVariation === fathaChar || 
+                     harakatFromVariation === kasraChar || 
+                     harakatFromVariation === dammaChar;
+    
+    // If shadda is selected and a vowel is pressed, combine them
+    if (isShaddaSelected && isVowel) {
+      const combinedHarakat = shaddaChar + harakatFromVariation;
+      
+      const letterPos = letterPositions[currentLetterIndex];
+      let letterStart = letterPos.start;
+      
+      // Find the end position (after the base letter and any existing diacritics)
+      let letterEnd = letterStart + 1;
+      while (letterEnd < inputValue.length) {
+        const char = inputValue[letterEnd];
+        if (/[\u064B-\u065F\u0670]/.test(char)) {
+          letterEnd++;
+        } else {
+          break;
+        }
+      }
+      
+      // Replace only the harakat part, keep the base letter
+      const newValue =
+        inputValue.slice(0, letterStart) +
+        baseLetter +
+        combinedHarakat +
+        inputValue.slice(letterEnd);
+      
+      // Add to history before updating
+      addToHistory(newValue);
+      onInputChange(newValue);
+      
+      // Deselect shadda
+      setIsShaddaSelected(false);
+      
+      // After updating, ensure currentLetterIndex is still valid
+      setTimeout(() => {
+        const newLetterPositions = getLetterPositions(newValue);
+        if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+          const newPos = newLetterPositions[currentLetterIndex].start;
+          setSelection({ start: newPos, end: newPos });
+        }
+      }, 0);
+      return;
+    }
+    
+    // If shadda button is pressed, toggle selection
+    if (isShadda) {
+      setIsShaddaSelected(!isShaddaSelected);
+      return; // Don't apply shadda yet, just toggle selection
+    }
+    
+    // If shadda is selected and another button is pressed (not a vowel), deselect shadda
+    if (isShaddaSelected && !isVowel) {
+      setIsShaddaSelected(false);
+    }
     
     const letterPos = letterPositions[currentLetterIndex];
     let letterStart = letterPos.start;
@@ -719,6 +798,7 @@ const NarratorPopup = ({
     const letterPositions = getLetterPositions(inputValue);
     if (letterPositions.length === 0) {
       setCurrentLetterIndex(0);
+      setIsShaddaSelected(false); // Deselect shadda when moving
       return;
     }
 
@@ -728,6 +808,11 @@ const NarratorPopup = ({
       newIndex++; // Move forward in RTL (visually right)
     } else if (direction === "right" && newIndex > 0) {
       newIndex--; // Move backward in RTL (visually left)
+    }
+    
+    // If moving to a different letter, deselect shadda
+    if (newIndex !== currentLetterIndex) {
+      setIsShaddaSelected(false);
     }
     
     setCurrentLetterIndex(newIndex);
@@ -1019,27 +1104,37 @@ const NarratorPopup = ({
                       const buttons = getKeyboardButtons();
                       const buttonCount = buttons.length;
                       const isSmallButtonSet = keyboardMode === "harakat" && buttonCount === 5;
+                      const shaddaChar = "\u0651";
                       return buttons.length > 0 ? (
-                        buttons.map((char, index) => (
-                          <TouchableOpacity
-                            key={index}
-                            style={[
-                              styles.keyboardKey,
-                              isSmallButtonSet && styles.keyboardKeyLarge,
-                            ]}
-                            onPress={() => 
-                              keyboardMode === "harakat" 
-                                ? handleHarakatPress(char)
-                                : handleLetterPress(char)
-                            }
-                            activeOpacity={0.7}
-                          >
-                            <Text style={[
-                              styles.keyboardKeyText,
-                              isSmallButtonSet && styles.keyboardKeyTextLarge,
-                            ]}>{char}</Text>
-                          </TouchableOpacity>
-                        ))
+                        buttons.map((char, index) => {
+                          // Check if this is the shadda button and if it's selected
+                          const baseLetter = getBaseLetterAtCurrentLetter();
+                          const isShaddaButton = baseLetter && char === baseLetter + shaddaChar;
+                          const isShaddaSelectedForThisButton = isShaddaButton && isShaddaSelected;
+                          
+                          return (
+                            <TouchableOpacity
+                              key={index}
+                              style={[
+                                styles.keyboardKey,
+                                isSmallButtonSet && styles.keyboardKeyLarge,
+                                isShaddaSelectedForThisButton && styles.keyboardKeyShaddaSelected,
+                              ]}
+                              onPress={() => 
+                                keyboardMode === "harakat" 
+                                  ? handleHarakatPress(char)
+                                  : handleLetterPress(char)
+                              }
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[
+                                styles.keyboardKeyText,
+                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                isShaddaSelectedForThisButton && styles.keyboardKeyTextShaddaSelected,
+                              ]}>{char}</Text>
+                            </TouchableOpacity>
+                          );
+                        })
                       ) : null;
                     })()}
                     {getKeyboardButtons().length === 0 && (
@@ -3152,6 +3247,13 @@ const styles = StyleSheet.create({
   },
   keyboardKeyTextLarge: {
     fontSize: 32,
+  },
+  keyboardKeyShaddaSelected: {
+    backgroundColor: "#fbbf24",
+    borderColor: "#fbbf24",
+  },
+  keyboardKeyTextShaddaSelected: {
+    color: "#ffffff",
   },
   keyboardEmptyState: {
     width: "100%",
