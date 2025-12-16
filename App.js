@@ -346,6 +346,24 @@ const NarratorPopup = ({
   const historyRef = useRef([]);
   const historyIndexRef = useRef(-1);
   const [isShaddaSelected, setIsShaddaSelected] = useState(false);
+  const [longPressButton, setLongPressButton] = useState(null); // { char, tanweenChar, buttonIndex, position }
+  const [longPressPosition, setLongPressPosition] = useState(null); // { x, y }
+  const [dragStartY, setDragStartY] = useState(null);
+  const [isHoveringTanween, setIsHoveringTanween] = useState(false);
+  const [isHoveringShaddaTanween, setIsHoveringShaddaTanween] = useState(false);
+  const buttonRefs = useRef({});
+  const tanweenRefs = useRef({});
+  const shaddaTanweenRefs = useRef({});
+  
+  // Helper to get tanween version of a harakat
+  const getTanweenVersion = (harakatChar) => {
+    const tanweenMap = {
+      "\u064E": "\u064B", // Fatha → Fathatan
+      "\u064F": "\u064C", // Damma → Dammatan
+      "\u0650": "\u064D", // Kasra → Kasratan
+    };
+    return tanweenMap[harakatChar] || null;
+  };
 
   // Get letter positions in the text (accounting for diacritics)
   // Groups base letters with their following diacritics
@@ -860,6 +878,7 @@ const NarratorPopup = ({
             style={styles.popupContent}
             contentContainerStyle={styles.popupContentContainer}
             showsVerticalScrollIndicator={true}
+            scrollEnabled={!longPressButton}
           >
             {selectedNarrator ? (
               <>
@@ -1112,27 +1131,170 @@ const NarratorPopup = ({
                           const isShaddaButton = baseLetter && char === baseLetter + shaddaChar;
                           const isShaddaSelectedForThisButton = isShaddaButton && isShaddaSelected;
                           
+                          // Get the original letter at current position (with its current harakat)
+                          const letterPositions = getLetterPositions(inputValue);
+                          const originalLetter = (currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length) 
+                            ? inputValue.slice(letterPositions[currentLetterIndex].start, letterPositions[currentLetterIndex].end)
+                            : null;
+                          
+                          // Extract harakat from the button char (everything after base letter)
+                          const harakatChar = baseLetter ? char.slice(baseLetter.length) : "";
+                          const tanweenChar = getTanweenVersion(harakatChar);
+                          const hasTanween = tanweenChar !== null;
+                          const isLongPressed = longPressButton && longPressButton.buttonIndex === index;
+                          
                           return (
-                            <TouchableOpacity
-                              key={index}
-                              style={[
-                                styles.keyboardKey,
-                                isSmallButtonSet && styles.keyboardKeyLarge,
-                                isShaddaSelectedForThisButton && styles.keyboardKeyShaddaSelected,
-                              ]}
-                              onPress={() => 
-                                keyboardMode === "harakat" 
-                                  ? handleHarakatPress(char)
-                                  : handleLetterPress(char)
-                              }
-                              activeOpacity={0.7}
+                            <View 
+                              key={index} 
+                              style={{ position: 'relative', zIndex: isLongPressed ? 100 : 1 }}
+                              onStartShouldSetResponder={() => isLongPressed}
+                              onMoveShouldSetResponder={() => isLongPressed}
+                              onResponderMove={(e) => {
+                                if (isLongPressed && hasTanween && tanweenChar && e?.nativeEvent) {
+                                  // Store event values before setTimeout
+                                  const touchX = e.nativeEvent.pageX;
+                                  const touchY = e.nativeEvent.pageY;
+                                  // Check if touch is over tanween button or shadda+tanween button
+                                  setTimeout(() => {
+                                    tanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                      const isOverTanween = 
+                                        touchX >= pageX && 
+                                        touchX <= pageX + width &&
+                                        touchY >= pageY && 
+                                        touchY <= pageY + height;
+                                      setIsHoveringTanween(isOverTanween);
+                                    });
+                                    shaddaTanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                      const isOverShaddaTanween = 
+                                        touchX >= pageX && 
+                                        touchX <= pageX + width &&
+                                        touchY >= pageY && 
+                                        touchY <= pageY + height;
+                                      setIsHoveringShaddaTanween(isOverShaddaTanween);
+                                    });
+                                  }, 0);
+                                }
+                              }}
+                              onResponderRelease={(e) => {
+                                if (isLongPressed) {
+                                  // Check if released over tanween button or shadda+tanween button
+                                  if (isHoveringTanween && tanweenChar) {
+                                    handleHarakatPress(baseLetter + tanweenChar);
+                                  } else if (isHoveringShaddaTanween && tanweenChar) {
+                                    const shaddaChar = "\u0651";
+                                    handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                  }
+                                  setLongPressButton(null);
+                                  setDragStartY(null);
+                                  setIsHoveringTanween(false);
+                                  setIsHoveringShaddaTanween(false);
+                                }
+                              }}
                             >
-                              <Text style={[
-                                styles.keyboardKeyText,
-                                isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                isShaddaSelectedForThisButton && styles.keyboardKeyTextShaddaSelected,
-                              ]}>{char}</Text>
-                            </TouchableOpacity>
+                              <Pressable
+                                ref={(ref) => {
+                                  if (ref) buttonRefs.current[index] = ref;
+                                }}
+                                style={[
+                                  styles.keyboardKey,
+                                  isSmallButtonSet && styles.keyboardKeyLarge,
+                                  isShaddaSelectedForThisButton && styles.keyboardKeyShaddaSelected,
+                                  isLongPressed && styles.keyboardKeyLongPressed,
+                                ]}
+                                onPress={() => {
+                                  if (!isLongPressed) {
+                                    keyboardMode === "harakat" 
+                                      ? handleHarakatPress(char)
+                                      : handleLetterPress(char);
+                                  }
+                                }}
+                                onLongPress={() => {
+                                  if (hasTanween && keyboardMode === "harakat") {
+                                    // Measure button position
+                                    buttonRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                      const tanweenCharFull = baseLetter + tanweenChar;
+                                      setLongPressButton({
+                                        char: char,
+                                        tanweenChar: tanweenCharFull,
+                                        buttonIndex: index,
+                                        position: { x: pageX, y: pageY, width, height },
+                                      });
+                                      setDragStartY(pageY);
+                                    });
+                                  }
+                                }}
+                                delayLongPress={300}
+                                onPressOut={() => {
+                                  // Don't handle release here, let the wrapper View handle it
+                                }}
+                              >
+                                <Text style={[
+                                  styles.keyboardKeyText,
+                                  isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                  isShaddaSelectedForThisButton && styles.keyboardKeyTextShaddaSelected,
+                                ]}>{char}</Text>
+                              </Pressable>
+                              
+                              {/* Tanween popup - only shows when long-pressed */}
+                              {isLongPressed && tanweenChar && (
+                                <>
+                                  {/* Tanween only button */}
+                                  <Pressable
+                                    ref={(ref) => {
+                                      if (ref) tanweenRefs.current[index] = ref;
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
+                                      {
+                                        top: (isSmallButtonSet ? 50 : 36) + 8,
+                                        left: 0,
+                                      },
+                                      isHoveringTanween && styles.keyboardKeyTanweenHovered,
+                                    ]}
+                                    onPress={() => {
+                                      handleHarakatPress(baseLetter + tanweenChar);
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
+                                      setIsHoveringTanween(false);
+                                      setIsHoveringShaddaTanween(false);
+                                    }}
+                                  >
+                                    <Text style={[
+                                      styles.keyboardKeyText,
+                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                    ]}>{baseLetter + tanweenChar}</Text>
+                                  </Pressable>
+                                  
+                                  {/* Shadda + Tanween button */}
+                                  <Pressable
+                                    ref={(ref) => {
+                                      if (ref) shaddaTanweenRefs.current[index] = ref;
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
+                                      {
+                                        top: (isSmallButtonSet ? 50 : 36) + 8 + (isSmallButtonSet ? 50 : 36) + 8,
+                                        left: 0,
+                                      },
+                                      isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
+                                    ]}
+                                    onPress={() => {
+                                      const shaddaChar = "\u0651";
+                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
+                                      setIsHoveringTanween(false);
+                                      setIsHoveringShaddaTanween(false);
+                                    }}
+                                  >
+                                    <Text style={[
+                                      styles.keyboardKeyText,
+                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                    ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
+                                  </Pressable>
+                                </>
+                              )}
+                            </View>
                           );
                         })
                       ) : null;
@@ -3248,12 +3410,55 @@ const styles = StyleSheet.create({
   keyboardKeyTextLarge: {
     fontSize: 32,
   },
+  keyboardKeyPreviewText: {
+    fontSize: 10,
+    color: "#9ca3af",
+    marginTop: 2,
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+  },
+  keyboardKeyPreviewTextLarge: {
+    fontSize: 12,
+  },
+  keyboardKeyTextTanween: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+  },
+  keyboardKeyTextTanweenLarge: {
+    fontSize: 16,
+  },
   keyboardKeyShaddaSelected: {
     backgroundColor: "#fbbf24",
     borderColor: "#fbbf24",
   },
   keyboardKeyTextShaddaSelected: {
     color: "#ffffff",
+  },
+  keyboardKeyLongPressed: {
+    backgroundColor: "#e5e7eb",
+  },
+  keyboardKeyTanween: {
+    width: 66,
+    height: 66,
+    backgroundColor: "#ffffff",
+    borderWidth: 2,
+    borderColor: "#3b82f6",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    zIndex: 1000,
+    position: "absolute",
+  },
+  keyboardKeyTanweenHovered: {
+    backgroundColor: "#dbeafe",
+    borderColor: "#2563eb",
+    borderWidth: 3,
   },
   keyboardEmptyState: {
     width: "100%",
