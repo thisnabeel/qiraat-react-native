@@ -551,12 +551,12 @@ const NarratorPopup = ({
   };
 
   // Generate harakat variations for a letter
-  const getHarakatVariations = (baseLetter, isLastLetter = false) => {
+  const getHarakatVariations = (baseLetter) => {
     if (!baseLetter) return [];
-    // Tanween harakat (Fathatan, Kasratan, Dammatan) should only show on last letter
+    // Tanween is now handled via long-press popup, so we don't include it in the main buttons
     const tanweenChars = ["\u064B", "\u064D", "\u064C"]; // Fathatan, Kasratan, Dammatan
     return harakat
-      .filter((h) => isLastLetter || !tanweenChars.includes(h.char))
+      .filter((h) => !tanweenChars.includes(h.char))
       .map((h) => baseLetter + h.char);
   };
 
@@ -799,9 +799,7 @@ const NarratorPopup = ({
           const base = removeDiacritics(char);
           const arabicLetterRegex = /[\u0621-\u063A\u0641-\u064A\u0671-\u06D3]/;
           if (base && arabicLetterRegex.test(base)) {
-            // Check if this is the last letter
-            const isLastLetter = validIndex === letterPositions.length - 1;
-            return getHarakatVariations(base, isLastLetter);
+            return getHarakatVariations(base);
           }
         }
       }
@@ -1273,7 +1271,7 @@ const NarratorPopup = ({
                                     style={[
                                       styles.keyboardKeyTanween,
                                       {
-                                        top: (isSmallButtonSet ? 50 : 36) + 8 + (isSmallButtonSet ? 50 : 36) + 8,
+                                        top: (isSmallButtonSet ? 50 : 36) + 16 + (isSmallButtonSet ? 50 : 36) + 10,
                                         left: 0,
                                       },
                                       isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
@@ -3440,7 +3438,8 @@ const styles = StyleSheet.create({
   },
   keyboardKeyTanween: {
     width: 66,
-    height: 66,
+    height: 70,
+    paddingTop: -10,
     backgroundColor: "#ffffff",
     borderWidth: 2,
     borderColor: "#3b82f6",
@@ -3453,7 +3452,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
     zIndex: 1000,
-    position: "absolute",
+    position: "absolute"
   },
   keyboardKeyTanweenHovered: {
     backgroundColor: "#dbeafe",
