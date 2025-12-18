@@ -25,7 +25,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app/";
 // const API_BASE = "http://localhost:3000";
-const API_BASE_URL = `${API_BASE}/api/mushafs/1/pages`;
+const API_BASE_URL = `${API_BASE}/api/mushafs/2/pages`;
 const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
 
@@ -450,24 +450,9 @@ const NarratorPopup = ({
   const popupHeight = 500; // Increased to accommodate keyboard
   const popupWidth = Math.min(screenWidth * 0.9, 400);
 
-  let topPosition = position.y + position.height + 10;
-  let leftPosition = position.x;
-
-  // Adjust if popup would go off bottom of screen
-  if (topPosition + popupHeight > screenHeight - 100) {
-    // 100px buffer for navigation
-    topPosition = position.y - popupHeight - 10; // Show above the word
-  }
-
-  // Adjust if popup would go off right side of screen
-  if (leftPosition + popupWidth > screenWidth) {
-    leftPosition = screenWidth - popupWidth - 20; // 20px margin
-  }
-
-  // Adjust if popup would go off left side of screen
-  if (leftPosition < 20) {
-    leftPosition = 20; // 20px margin
-  }
+  // Always center the popup on screen
+  const topPosition = (screenHeight - popupHeight) / 2;
+  const leftPosition = (screenWidth - popupWidth) / 2;
 
   // Check if this variation is saved
   const variationKey =
