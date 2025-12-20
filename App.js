@@ -23,11 +23,16 @@ import PageNavigation from "./PageNavigation";
 import InlineComparison from "./InlineComparison";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_BASE = "https://qiraat-api-v2-production.up.railway.app/";
+const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
 // const API_BASE = "http://localhost:3000";
-const API_BASE_URL = `${API_BASE}/api/mushafs/2/pages`;
+const MUSHAF_ID = 2;
+const API_BASE_URL = `${API_BASE}/api/mushafs/${MUSHAF_ID}/pages`;
 const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
+
+// Determine which font to use based on mushaf ID
+const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "NaskhNastaleeqIndoPakQWBW";
+// const QURAN_FONT_FAMILY = "MeQuran";
 
 // Helper function to render highlighted text (extracted from ComparisonTable logic)
 const renderHighlightedText = (text1, text2, wordStyle, differentCharStyle) => {
@@ -351,9 +356,11 @@ const NarratorPopup = ({
   const [dragStartY, setDragStartY] = useState(null);
   const [isHoveringTanween, setIsHoveringTanween] = useState(false);
   const [isHoveringShaddaTanween, setIsHoveringShaddaTanween] = useState(false);
+  const [isHoveringSukoon, setIsHoveringSukoon] = useState(false);
   const buttonRefs = useRef({});
   const tanweenRefs = useRef({});
   const shaddaTanweenRefs = useRef({});
+  const sukoonRefs = useRef({});
   
   // Helper to get tanween version of a harakat
   const getTanweenVersion = (harakatChar) => {
@@ -490,6 +497,7 @@ const NarratorPopup = ({
     "\u0636", "\u0637", "\u0638", "\u0639", "\u063A", "\u0641", "\u0642",
     "\u0643", "\u0644", "\u0645", "\u0646", "\u0647", "\u0648", "\u064A",
     "\u0623", "\u0625", "\u0622", "\u0624", "\u0626", "\u0621", // Hamza letters: أ إ آ ؤ ئ ء
+    "\u0649", // ى - Yaa without dots and without hamza (alif maksura)
   ];
 
   // Helper: Get character at current letter index
@@ -1125,6 +1133,10 @@ const NarratorPopup = ({
                           const tanweenChar = getTanweenVersion(harakatChar);
                           const hasTanween = tanweenChar !== null;
                           const isLongPressed = longPressButton && longPressButton.buttonIndex === index;
+                          // For harakat mode, check if this is the sukoon button (letter + sukoon)
+                          const sukoonChar = "\u0652"; // Sukoon
+                          const isSukoonButton = keyboardMode === "harakat" && baseLetter && char === baseLetter + sukoonChar;
+                          const plainLetter = isSukoonButton ? baseLetter : null;
                           
                           return (
                             <View 
@@ -1133,44 +1145,65 @@ const NarratorPopup = ({
                               onStartShouldSetResponder={() => isLongPressed}
                               onMoveShouldSetResponder={() => isLongPressed}
                               onResponderMove={(e) => {
-                                if (isLongPressed && hasTanween && tanweenChar && e?.nativeEvent) {
+                                if (isLongPressed && e?.nativeEvent) {
                                   // Store event values before setTimeout
                                   const touchX = e.nativeEvent.pageX;
                                   const touchY = e.nativeEvent.pageY;
-                                  // Check if touch is over tanween button or shadda+tanween button
-                                  setTimeout(() => {
-                                    tanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
-                                      const isOverTanween = 
-                                        touchX >= pageX && 
-                                        touchX <= pageX + width &&
-                                        touchY >= pageY && 
-                                        touchY <= pageY + height;
-                                      setIsHoveringTanween(isOverTanween);
-                                    });
-                                    shaddaTanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
-                                      const isOverShaddaTanween = 
-                                        touchX >= pageX && 
-                                        touchX <= pageX + width &&
-                                        touchY >= pageY && 
-                                        touchY <= pageY + height;
-                                      setIsHoveringShaddaTanween(isOverShaddaTanween);
-                                    });
-                                  }, 0);
+                                  
+                                  if (hasTanween && tanweenChar && keyboardMode === "harakat") {
+                                    // Check if touch is over tanween button or shadda+tanween button
+                                    setTimeout(() => {
+                                      tanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                        const isOverTanween = 
+                                          touchX >= pageX && 
+                                          touchX <= pageX + width &&
+                                          touchY >= pageY && 
+                                          touchY <= pageY + height;
+                                        setIsHoveringTanween(isOverTanween);
+                                      });
+                                      shaddaTanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                        const isOverShaddaTanween = 
+                                          touchX >= pageX && 
+                                          touchX <= pageX + width &&
+                                          touchY >= pageY && 
+                                          touchY <= pageY + height;
+                                        setIsHoveringShaddaTanween(isOverShaddaTanween);
+                                      });
+                                    }, 0);
+                                  } else if (isSukoonButton && keyboardMode === "harakat" && plainLetter) {
+                                    // Check if touch is over plain letter button (for sukoon button)
+                                    setTimeout(() => {
+                                      sukoonRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                        const isOverSukoon = 
+                                          touchX >= pageX && 
+                                          touchX <= pageX + width &&
+                                          touchY >= pageY && 
+                                          touchY <= pageY + height;
+                                        setIsHoveringSukoon(isOverSukoon);
+                                      });
+                                    }, 0);
+                                  }
                                 }
                               }}
                               onResponderRelease={(e) => {
                                 if (isLongPressed) {
-                                  // Check if released over tanween button or shadda+tanween button
-                                  if (isHoveringTanween && tanweenChar) {
-                                    handleHarakatPress(baseLetter + tanweenChar);
-                                  } else if (isHoveringShaddaTanween && tanweenChar) {
-                                    const shaddaChar = "\u0651";
-                                    handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                  if (keyboardMode === "harakat") {
+                                    // Check if released over tanween button or shadda+tanween button
+                                    if (isHoveringTanween && tanweenChar) {
+                                      handleHarakatPress(baseLetter + tanweenChar);
+                                    } else if (isHoveringShaddaTanween && tanweenChar) {
+                                      const shaddaChar = "\u0651";
+                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                    } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
+                                      // Released over plain letter button (for sukoon button)
+                                      handleHarakatPress(plainLetter);
+                                    }
                                   }
                                   setLongPressButton(null);
                                   setDragStartY(null);
                                   setIsHoveringTanween(false);
                                   setIsHoveringShaddaTanween(false);
+                                  setIsHoveringSukoon(false);
                                 }
                               }}
                             >
@@ -1204,6 +1237,17 @@ const NarratorPopup = ({
                                       });
                                       setDragStartY(pageY);
                                     });
+                                  } else if (isSukoonButton && keyboardMode === "harakat" && plainLetter) {
+                                    // For harakat mode, show plain letter option when long-pressing sukoon button
+                                    buttonRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                      setLongPressButton({
+                                        char: char,
+                                        plainLetter: plainLetter,
+                                        buttonIndex: index,
+                                        position: { x: pageX, y: pageY, width, height },
+                                      });
+                                      setDragStartY(pageY);
+                                    });
                                   }
                                 }}
                                 delayLongPress={300}
@@ -1218,8 +1262,8 @@ const NarratorPopup = ({
                                 ]}>{char}</Text>
                               </Pressable>
                               
-                              {/* Tanween popup - only shows when long-pressed */}
-                              {isLongPressed && tanweenChar && (
+                              {/* Tanween popup - only shows when long-pressed in harakat mode */}
+                              {isLongPressed && tanweenChar && keyboardMode === "harakat" && (
                                 <>
                                   {/* Tanween only button */}
                                   <Pressable
@@ -1276,6 +1320,34 @@ const NarratorPopup = ({
                                     ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                   </Pressable>
                                 </>
+                              )}
+                              
+                              {/* Plain letter popup - only shows when long-pressing sukoon button in harakat mode */}
+                              {isLongPressed && isSukoonButton && plainLetter && keyboardMode === "harakat" && (
+                                <Pressable
+                                  ref={(ref) => {
+                                    if (ref) sukoonRefs.current[index] = ref;
+                                  }}
+                                  style={[
+                                    styles.keyboardKeyTanween,
+                                    {
+                                      top: (isSmallButtonSet ? 50 : 36) + 8,
+                                      left: 0,
+                                    },
+                                    isHoveringSukoon && styles.keyboardKeyTanweenHovered,
+                                  ]}
+                                  onPress={() => {
+                                    handleHarakatPress(plainLetter);
+                                    setLongPressButton(null);
+                                    setDragStartY(null);
+                                    setIsHoveringSukoon(false);
+                                  }}
+                                >
+                                  <Text style={[
+                                    styles.keyboardKeyText,
+                                    isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                  ]}>{plainLetter}</Text>
+                                </Pressable>
                               )}
                             </View>
                           );
@@ -1338,9 +1410,46 @@ export default function App() {
   const [previousPage, setPreviousPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     NaskhNastaleeqIndoPakQWBW: require("./Naskh-Nastaleeq-IndoPak-QWBW.ttf"),
+    MeQuran: require("./assets/me_quran_volt_newmet.ttf"),
   });
+  
+  // Debug font loading
+  useEffect(() => {
+    if (fontError) {
+      console.error("Font loading error:", fontError);
+      if (typeof fontError === 'object') {
+        try {
+          console.error("Font error details:", JSON.stringify(fontError, null, 2));
+        } catch (e) {
+          console.error("Font error (stringified):", String(fontError));
+        }
+      }
+    }
+    if (fontsLoaded) {
+      console.log("✅ Fonts loaded successfully");
+      console.log("📝 Using font family:", QURAN_FONT_FAMILY);
+      console.log("📖 Mushaf ID:", MUSHAF_ID);
+      
+      // Test if font is available on web platform
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        try {
+          const testElement = document.createElement('div');
+          testElement.style.fontFamily = QURAN_FONT_FAMILY;
+          testElement.style.position = 'absolute';
+          testElement.style.visibility = 'hidden';
+          testElement.textContent = 'test';
+          document.body.appendChild(testElement);
+          const computedStyle = window.getComputedStyle(testElement);
+          console.log("🔍 Computed font family on web:", computedStyle.fontFamily);
+          document.body.removeChild(testElement);
+        } catch (e) {
+          console.log("⚠️ Could not test font on web:", e);
+        }
+      }
+    }
+  }, [fontsLoaded, fontError]);
   const [popupVisible, setPopupVisible] = useState(false);
   const [narrators, setNarrators] = useState([]);
   const [selectedNarrator, setSelectedNarrator] = useState(null);
@@ -1348,8 +1457,8 @@ export default function App() {
   const [selectedWord, setSelectedWord] = useState(null);
   const [selectedWordId, setSelectedWordId] = useState(null);
   const [wordPosition, setWordPosition] = useState(null);
-  const [currentPage, setCurrentPage] = useState(19);
-  const [pageInput, setPageInput] = useState("19");
+  const [currentPage, setCurrentPage] = useState(5);
+  const [pageInput, setPageInput] = useState("5");
   const [selectedNarrators, setSelectedNarrators] = useState([]);
   const [savedVariations, setSavedVariations] = useState([]);
   const [allVariations, setAllVariations] = useState({});
@@ -1858,11 +1967,24 @@ export default function App() {
       
       return data;
     } catch (err) {
-      console.error(`Error fetching page ${pageNum}:`, err);
-      if (pageNum === currentPage) {
-        setError(err.message);
-        if (showLoading) {
-          setLoading(false);
+      // Only log errors for current page or if it's a CORS error on web
+      const isCorsError = err.message.includes('Failed to fetch') || err.message.includes('CORS');
+      const isCurrentPage = pageNum === currentPage;
+      
+      if (isCurrentPage || (isCorsError && Platform.OS === 'web')) {
+        const errorMessage = isCorsError && Platform.OS === 'web'
+          ? 'CORS error: API server does not allow requests from this origin. This is normal for web development. The app works on iOS/Android.'
+          : err.message;
+        
+        if (isCurrentPage) {
+          console.error(`Error fetching page ${pageNum}:`, err);
+          setError(errorMessage);
+          if (showLoading) {
+            setLoading(false);
+          }
+        } else if (isCorsError && Platform.OS === 'web') {
+          // Silently handle CORS errors for pre-fetched pages on web
+          // This is expected behavior when API doesn't allow CORS
         }
       }
       return null;
@@ -2851,7 +2973,7 @@ const styles = StyleSheet.create({
   word: {
     fontSize: 24,
     color: "#1a1a1a",
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
     fontWeight: "500",
     writingDirection: "rtl",
     lineHeight: 46,
@@ -3388,7 +3510,7 @@ const styles = StyleSheet.create({
   keyboardKeyText: {
     fontSize: 18,
     color: "#1f2937",
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
   },
   keyboardKeyTextLarge: {
     fontSize: 32,
@@ -3397,7 +3519,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#9ca3af",
     marginTop: 2,
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
   },
   keyboardKeyPreviewTextLarge: {
     fontSize: 12,
@@ -3406,7 +3528,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6b7280",
     marginTop: 2,
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
   },
   keyboardKeyTextTanweenLarge: {
     fontSize: 16,
@@ -3463,7 +3585,7 @@ const styles = StyleSheet.create({
     fontSize: 6,
     backgroundColor: "#f9f9f9",
     color: "#1a1a1a",
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
     writingDirection: "rtl",
     textAlign: "right",
     minHeight: 44,
@@ -3481,7 +3603,7 @@ const styles = StyleSheet.create({
   },
   displayText: {
     fontSize: 32,
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
     color: "#1a1a1a",
     lineHeight: 60,
     includeFontPadding: false,
@@ -3499,7 +3621,7 @@ const styles = StyleSheet.create({
   displayPlaceholder: {
     fontSize: 24,
     color: "#999",
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
     textAlign: "right",
   },
   renderedTextContainer: {
@@ -3523,7 +3645,7 @@ const styles = StyleSheet.create({
   },
   renderedText: {
     fontSize: 16,
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontFamily: QURAN_FONT_FAMILY,
     writingDirection: "rtl",
     textAlign: "right",
     color: "#1a1a1a",
