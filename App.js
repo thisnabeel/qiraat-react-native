@@ -357,10 +357,14 @@ const NarratorPopup = ({
   const [isHoveringTanween, setIsHoveringTanween] = useState(false);
   const [isHoveringShaddaTanween, setIsHoveringShaddaTanween] = useState(false);
   const [isHoveringSukoon, setIsHoveringSukoon] = useState(false);
+  const [isHoveringStandingAlif, setIsHoveringStandingAlif] = useState(false);
+  const [isHoveringDaggerAlifOnly, setIsHoveringDaggerAlifOnly] = useState(false);
   const buttonRefs = useRef({});
   const tanweenRefs = useRef({});
   const shaddaTanweenRefs = useRef({});
   const sukoonRefs = useRef({});
+  const standingAlifRefs = useRef({});
+  const daggerAlifOnlyRefs = useRef({});
   
   // Helper to get tanween version of a harakat
   const getTanweenVersion = (harakatChar) => {
@@ -586,6 +590,125 @@ const NarratorPopup = ({
         }
       }, 0);
     }
+  };
+
+  // Handle dagger alif press (without fathah) - replace all diacritics with only dagger alif
+  const handleDaggerAlifOnlyPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
+    
+    // Replace all diacritics with only the dagger alif
+    const newDiacritics = daggerAlifChar;
+    
+    // Replace the letter with base letter + only dagger alif
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle dagger alif press - insert dagger alif as diacritic after fathah
+  const handleStandingAlifPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
+    const fathaChar = "\u064E"; // Fathah
+    
+    // Get existing diacritics
+    const existingDiacritics = inputValue.slice(letterStart + 1, letterEnd);
+    
+    // Ensure fathah is present, then add dagger alif after it
+    let newDiacritics = existingDiacritics;
+    if (!newDiacritics.includes(fathaChar)) {
+      // If no fathah, add it first
+      newDiacritics = fathaChar + newDiacritics;
+    }
+    
+    // Add dagger alif if not already present
+    if (!newDiacritics.includes(daggerAlifChar)) {
+      // Insert dagger alif after fathah
+      const fathaIndex = newDiacritics.indexOf(fathaChar);
+      if (fathaIndex !== -1) {
+        newDiacritics = newDiacritics.slice(0, fathaIndex + 1) + daggerAlifChar + newDiacritics.slice(fathaIndex + 1);
+      } else {
+        newDiacritics = newDiacritics + daggerAlifChar;
+      }
+    }
+    
+    // Replace the letter with base letter + new diacritics
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
   };
 
   // Handle harakat variation press - replace only the harakat, keep the base letter
@@ -1137,6 +1260,10 @@ const NarratorPopup = ({
                           const sukoonChar = "\u0652"; // Sukoon
                           const isSukoonButton = keyboardMode === "harakat" && baseLetter && char === baseLetter + sukoonChar;
                           const plainLetter = isSukoonButton ? baseLetter : null;
+                          // Check if this is a fathah button (for dagger alif)
+                          const fathaChar = "\u064E"; // Fathah
+                          const isFathahButton = keyboardMode === "harakat" && baseLetter && harakatChar === fathaChar;
+                          const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
                           
                           return (
                             <View 
@@ -1151,7 +1278,7 @@ const NarratorPopup = ({
                                   const touchY = e.nativeEvent.pageY;
                                   
                                   if (hasTanween && tanweenChar && keyboardMode === "harakat") {
-                                    // Check if touch is over tanween button or shadda+tanween button
+                                    // Check if touch is over tanween button, shadda+tanween button, or standing alif button
                                     setTimeout(() => {
                                       tanweenRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
                                         const isOverTanween = 
@@ -1169,6 +1296,24 @@ const NarratorPopup = ({
                                           touchY <= pageY + height;
                                         setIsHoveringShaddaTanween(isOverShaddaTanween);
                                       });
+                                      if (isFathahButton) {
+                                        standingAlifRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                          const isOverStandingAlif = 
+                                            touchX >= pageX && 
+                                            touchX <= pageX + width &&
+                                            touchY >= pageY && 
+                                            touchY <= pageY + height;
+                                          setIsHoveringStandingAlif(isOverStandingAlif);
+                                        });
+                                        daggerAlifOnlyRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                          const isOverDaggerAlifOnly = 
+                                            touchX >= pageX && 
+                                            touchX <= pageX + width &&
+                                            touchY >= pageY && 
+                                            touchY <= pageY + height;
+                                          setIsHoveringDaggerAlifOnly(isOverDaggerAlifOnly);
+                                        });
+                                      }
                                     }, 0);
                                   } else if (isSukoonButton && keyboardMode === "harakat" && plainLetter) {
                                     // Check if touch is over plain letter button (for sukoon button)
@@ -1188,12 +1333,18 @@ const NarratorPopup = ({
                               onResponderRelease={(e) => {
                                 if (isLongPressed) {
                                   if (keyboardMode === "harakat") {
-                                    // Check if released over tanween button or shadda+tanween button
+                                    // Check if released over tanween button, shadda+tanween button, standing alif, or plain letter
                                     if (isHoveringTanween && tanweenChar) {
                                       handleHarakatPress(baseLetter + tanweenChar);
                                     } else if (isHoveringShaddaTanween && tanweenChar) {
                                       const shaddaChar = "\u0651";
                                       handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                    } else if (isHoveringStandingAlif && isFathahButton) {
+                                      // Released over dagger alif with fathah button (for fathah button)
+                                      handleStandingAlifPress();
+                                    } else if (isHoveringDaggerAlifOnly && isFathahButton) {
+                                      // Released over dagger alif only button (for fathah button)
+                                      handleDaggerAlifOnlyPress();
                                     } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
                                       // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
@@ -1204,6 +1355,8 @@ const NarratorPopup = ({
                                   setIsHoveringTanween(false);
                                   setIsHoveringShaddaTanween(false);
                                   setIsHoveringSukoon(false);
+                                  setIsHoveringStandingAlif(false);
+                                  setIsHoveringDaggerAlifOnly(false);
                                 }
                               }}
                             >
@@ -1265,7 +1418,9 @@ const NarratorPopup = ({
                               {/* Tanween popup - only shows when long-pressed in harakat mode */}
                               {isLongPressed && tanweenChar && keyboardMode === "harakat" && (
                                 <>
-                                  {/* Tanween only button */}
+                                  {isFathahButton ? (
+                                    <>
+                                      {/* Row 1: Tanween buttons side by side */}
                                   <Pressable
                                     ref={(ref) => {
                                       if (ref) tanweenRefs.current[index] = ref;
@@ -1284,6 +1439,8 @@ const NarratorPopup = ({
                                       setDragStartY(null);
                                       setIsHoveringTanween(false);
                                       setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
                                     }}
                                   >
                                     <Text style={[
@@ -1292,7 +1449,123 @@ const NarratorPopup = ({
                                     ]}>{baseLetter + tanweenChar}</Text>
                                   </Pressable>
                                   
-                                  {/* Shadda + Tanween button */}
+                                      <Pressable
+                                        ref={(ref) => {
+                                          if (ref) shaddaTanweenRefs.current[index] = ref;
+                                        }}
+                                        style={[
+                                          styles.keyboardKeyTanween,
+                                          {
+                                            top: (isSmallButtonSet ? 50 : 36) + 8,
+                                            left: 66 + 8, // Button width + gap
+                                          },
+                                          isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
+                                        ]}
+                                        onPress={() => {
+                                          const shaddaChar = "\u0651";
+                                          handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                          setLongPressButton(null);
+                                          setDragStartY(null);
+                                          setIsHoveringTanween(false);
+                                          setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
+                                        }}
+                                      >
+                                        <Text style={[
+                                          styles.keyboardKeyText,
+                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
+                                      </Pressable>
+                                      
+                                      {/* Row 2: Dagger Alif buttons side by side */}
+                                      <Pressable
+                                        ref={(ref) => {
+                                          if (ref) standingAlifRefs.current[index] = ref;
+                                        }}
+                                        style={[
+                                          styles.keyboardKeyTanween,
+                                          {
+                                            top: (isSmallButtonSet ? 50 : 36) + 8 + (isSmallButtonSet ? 50 : 36) + 10,
+                                            left: 0,
+                                          },
+                                          isHoveringStandingAlif && styles.keyboardKeyTanweenHovered,
+                                        ]}
+                                        onPress={() => {
+                                          handleStandingAlifPress();
+                                          setLongPressButton(null);
+                                          setDragStartY(null);
+                                          setIsHoveringTanween(false);
+                                          setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
+                                        }}
+                                      >
+                                        <Text style={[
+                                          styles.keyboardKeyText,
+                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        ]}>{baseLetter + fathaChar + daggerAlifChar}</Text>
+                                      </Pressable>
+                                      
+                                      <Pressable
+                                        ref={(ref) => {
+                                          if (ref) daggerAlifOnlyRefs.current[index] = ref;
+                                        }}
+                                        style={[
+                                          styles.keyboardKeyTanween,
+                                          {
+                                            top: (isSmallButtonSet ? 50 : 36) + 8 + (isSmallButtonSet ? 50 : 36) + 10,
+                                            left: 66 + 8, // Button width + gap
+                                          },
+                                          isHoveringDaggerAlifOnly && styles.keyboardKeyTanweenHovered,
+                                        ]}
+                                        onPress={() => {
+                                          handleDaggerAlifOnlyPress();
+                                          setLongPressButton(null);
+                                          setDragStartY(null);
+                                          setIsHoveringTanween(false);
+                                          setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
+                                        }}
+                                      >
+                                        <Text style={[
+                                          styles.keyboardKeyText,
+                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        ]}>{baseLetter + daggerAlifChar}</Text>
+                                      </Pressable>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {/* For non-fathah buttons, keep vertical layout */}
+                                      <Pressable
+                                        ref={(ref) => {
+                                          if (ref) tanweenRefs.current[index] = ref;
+                                        }}
+                                        style={[
+                                          styles.keyboardKeyTanween,
+                                          {
+                                            top: (isSmallButtonSet ? 50 : 36) + 8,
+                                            left: 0,
+                                          },
+                                          isHoveringTanween && styles.keyboardKeyTanweenHovered,
+                                        ]}
+                                        onPress={() => {
+                                          handleHarakatPress(baseLetter + tanweenChar);
+                                          setLongPressButton(null);
+                                          setDragStartY(null);
+                                          setIsHoveringTanween(false);
+                                          setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
+                                        }}
+                                      >
+                                        <Text style={[
+                                          styles.keyboardKeyText,
+                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        ]}>{baseLetter + tanweenChar}</Text>
+                                      </Pressable>
+                                      
                                   <Pressable
                                     ref={(ref) => {
                                       if (ref) shaddaTanweenRefs.current[index] = ref;
@@ -1312,6 +1585,8 @@ const NarratorPopup = ({
                                       setDragStartY(null);
                                       setIsHoveringTanween(false);
                                       setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
                                     }}
                                   >
                                     <Text style={[
@@ -1319,6 +1594,8 @@ const NarratorPopup = ({
                                       isSmallButtonSet && styles.keyboardKeyTextLarge,
                                     ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                   </Pressable>
+                                    </>
+                                  )}
                                 </>
                               )}
                               
