@@ -1,12 +1,18 @@
 import React, { useState, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
 
-const ComparisonTable = ({ originalText, inputText }) => {
+const ComparisonTable = ({ originalText, inputText, fontFamily }) => {
   const textRef = useRef(null);
   const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
 
-  const isDiacritic = (char) => diacritics.includes(char);
+  const isDiacritic = (char) => {
+    // Check explicit diacritics array
+    if (diacritics.includes(char)) return true;
+    // Check Unicode range for Arabic diacritics (includes U+0658 and U+0659)
+    const code = char.charCodeAt(0);
+    return (code >= 0x064B && code <= 0x065F) || code === 0x0670;
+  };
 
   // Group characters into units: base letter + its diacritics
   const groupUnits = (text) => {
@@ -45,7 +51,7 @@ const ComparisonTable = ({ originalText, inputText }) => {
     );
   };
 
-  const renderHighlightedText = (text1, text2) => {
+  const renderHighlightedText = (text1, text2, fontFamily) => {
     const units1 = groupUnits(text1);
     const units2 = groupUnits(text2);
     const maxLength = Math.max(units1.length, units2.length);
@@ -101,12 +107,19 @@ const ComparisonTable = ({ originalText, inputText }) => {
       segments.push(currentSegment);
     }
 
+    const fontFamilyToUse = fontFamily || "NaskhNastaleeqIndoPakQWBW";
+    
     // Render segments with dots positioned absolutely
     const textElements = segments.map((segment, index) => (
       <Text
         key={index}
         style={[
           styles.comparisonChar,
+          { 
+            fontFamily: fontFamilyToUse,
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+          },
           segment.isDifferent && styles.differentChar,
         ]}
       >
@@ -132,8 +145,8 @@ const ComparisonTable = ({ originalText, inputText }) => {
 
     const calculateDotPosition = (charIndex, totalLength) => {
       if (!textLayout || totalLength === 0) {
-        // Fallback: average character width for fontSize 16 is ~12px
-        return (totalLength - charIndex) * 12;
+        // Fallback: average character width for fontSize 20 is ~15px
+        return (totalLength - charIndex) * 15;
       }
       const charWidth = textLayout.width / totalLength;
       return (totalLength - charIndex) * charWidth;
@@ -143,7 +156,14 @@ const ComparisonTable = ({ originalText, inputText }) => {
       <View style={styles.comparisonTextWrapper}>
         <Text
           ref={textRef}
-          style={styles.comparisonText}
+          style={[
+            styles.comparisonText, 
+            { 
+              fontFamily: fontFamilyToUse,
+              fontWeight: 'normal',
+              fontStyle: 'normal',
+            }
+          ]}
           onLayout={(event) => {
             const { width, height } = event.nativeEvent.layout;
             setTextLayout({ width, height });
@@ -174,9 +194,7 @@ const ComparisonTable = ({ originalText, inputText }) => {
       <View style={styles.comparisonRow}>
         <View style={styles.comparisonColumn}>
           <Text style={styles.comparisonLabel}>Hafs 'an 'Asim</Text>
-          <Text style={styles.comparisonText}>
-            {renderHighlightedText(originalText, inputText)}
-          </Text>
+          {renderHighlightedText(originalText, inputText, fontFamily)}
         </View>
 
         <View style={styles.arrowContainer}>
@@ -185,9 +203,7 @@ const ComparisonTable = ({ originalText, inputText }) => {
 
         <View style={styles.comparisonColumn}>
           <Text style={styles.comparisonLabel}>Tweaked</Text>
-          <Text style={styles.comparisonText}>
-            {renderHighlightedText(inputText, originalText)}
-          </Text>
+          {renderHighlightedText(inputText, originalText, fontFamily)}
         </View>
       </View>
     </View>
@@ -220,14 +236,12 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   comparisonText: {
-    fontSize: 16,
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontSize: 20,
     writingDirection: "rtl",
     textAlign: "right",
   },
   comparisonChar: {
-    fontSize: 16,
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
+    fontSize: 20,
     writingDirection: "rtl",
   },
   differentChar: {

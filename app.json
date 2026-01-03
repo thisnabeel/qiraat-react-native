@@ -17,7 +17,10 @@
       "bundleIdentifier": "com.aswaat.app",
       "buildNumber": "14",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIAppFonts": [
+          "aswaat-fontlab.ttf"
+        ]
       }
     },
     "android": {

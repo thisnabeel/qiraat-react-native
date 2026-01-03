@@ -1,12 +1,18 @@
 import React, { useState, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
 
-const InlineComparison = ({ originalText, inputText }) => {
+const InlineComparison = ({ originalText, inputText, fontFamily }) => {
   const textRef = useRef(null);
   const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
 
-  const isDiacritic = (char) => diacritics.includes(char);
+  const isDiacritic = (char) => {
+    // Check explicit diacritics array
+    if (diacritics.includes(char)) return true;
+    // Check Unicode range for Arabic diacritics (includes U+0658 and U+0659)
+    const code = char.charCodeAt(0);
+    return (code >= 0x064B && code <= 0x065F) || code === 0x0670;
+  };
 
   // Group characters into units: base letter + its diacritics
   const groupUnits = (text) => {
@@ -124,12 +130,14 @@ const InlineComparison = ({ originalText, inputText }) => {
       currentTextOffset += segment.text.length;
     });
 
+    const fontFamilyToUse = fontFamily || "NaskhNastaleeqIndoPakQWBW";
+    
     // Render all text segments as nested Text components (like ComparisonTable)
     // This keeps Arabic text continuous
     const textElements = segments.map((segment, index) => (
       <Text
         key={index}
-        style={[styles.word, segment.isDifferent ? styles.differentChar : null]}
+        style={[styles.word, { fontFamily: fontFamilyToUse }, segment.isDifferent ? styles.differentChar : null]}
       >
         {segment.text}
       </Text>
@@ -154,7 +162,7 @@ const InlineComparison = ({ originalText, inputText }) => {
         <View style={styles.textWithDotsWrapper}>
           <Text
             ref={textRef}
-            style={styles.word}
+            style={[styles.word, { fontFamily: fontFamilyToUse }]}
             onLayout={(event) => {
               const { width, height } = event.nativeEvent.layout;
               setTextLayout({ width, height });
@@ -197,7 +205,6 @@ const styles = StyleSheet.create({
   word: {
     fontSize: 22,
     color: "#1a1a1a",
-    fontFamily: "NaskhNastaleeqIndoPakQWBW",
     fontWeight: "500",
     writingDirection: "rtl",
     letterSpacing: 0.3,

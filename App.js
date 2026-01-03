@@ -31,8 +31,12 @@ const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
 
 // Determine which font to use based on mushaf ID
-const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "NaskhNastaleeqIndoPakQWBW";
+// const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "NaskhNastaleeqIndoPakQWBW";
+// On iOS, the font name must match the font file's internal PostScript name exactly
+// If "AswaatOne" doesn't work, try: "Aswaat", "AswaatFontLab", "Aswaat FontLab", or check Font Book for the exact name
+const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "AswaatOne";
 // const QURAN_FONT_FAMILY = "MeQuran";
+const HELPER_FONT_FAMILY = "AswaatHelpers";
 
 // Helper function to render highlighted text (extracted from ComparisonTable logic)
 const renderHighlightedText = (text1, text2, wordStyle, differentCharStyle) => {
@@ -151,6 +155,7 @@ const Line = ({
             <InlineComparison
               originalText={word.content}
               inputText={variationContent}
+              fontFamily={QURAN_FONT_FAMILY}
             />
           );
         }
@@ -359,12 +364,18 @@ const NarratorPopup = ({
   const [isHoveringSukoon, setIsHoveringSukoon] = useState(false);
   const [isHoveringStandingAlif, setIsHoveringStandingAlif] = useState(false);
   const [isHoveringDaggerAlifOnly, setIsHoveringDaggerAlifOnly] = useState(false);
+  const [isHoveringDiamond, setIsHoveringDiamond] = useState(false);
+  const [isHoveringImalahDot, setIsHoveringImalahDot] = useState(false);
+  const [isHoveringHelperDiamondDot, setIsHoveringHelperDiamondDot] = useState(false);
   const buttonRefs = useRef({});
   const tanweenRefs = useRef({});
   const shaddaTanweenRefs = useRef({});
   const sukoonRefs = useRef({});
   const standingAlifRefs = useRef({});
   const daggerAlifOnlyRefs = useRef({});
+  const diamondRefs = useRef({});
+  const imalahDotRefs = useRef({});
+  const helperDiamondDotRefs = useRef({});
   
   // Helper to get tanween version of a harakat
   const getTanweenVersion = (harakatChar) => {
@@ -383,13 +394,13 @@ const NarratorPopup = ({
     let letterIndex = 0;
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
-      // Check if it's a base letter (not a diacritic)
-      if (!/[\u064B-\u065F\u0670]/.test(char)) {
+      // Check if it's a base letter (not a diacritic or diamond marker)
+      if (!/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
         // Find the end position (after the base letter and any following diacritics)
         let end = i + 1;
         while (end < text.length) {
           const nextChar = text[end];
-          if (/[\u064B-\u065F\u0670]/.test(nextChar)) {
+          if (/[\u064B-\u065F\u0670\u25C6]/.test(nextChar)) {
             end++;
           } else {
             break;
@@ -520,8 +531,8 @@ const NarratorPopup = ({
   // Helper: Remove all diacritics from a string
   const removeDiacritics = (str) => {
     if (!str) return '';
-    // Remove combining diacritics (U+064B to U+065F, U+0670, U+0640)
-    return str.replace(/[\u064B-\u065F\u0670\u0640]/g, '');
+    // Remove combining diacritics (U+064B to U+065F, U+0670, U+0640) and diamond marker (U+25C6)
+    return str.replace(/[\u064B-\u065F\u0670\u0640\u25C6]/g, '');
   };
 
   // Helper: Get base letter (without diacritics) at current letter index
@@ -592,6 +603,58 @@ const NarratorPopup = ({
     }
   };
 
+  // Handle diamond press - replace all diacritics with only diamond marker
+  const handleDiamondPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    // Use a special marker character for diamond (we'll render it as SVG in display)
+    // Using U+25C6 (◆) as marker, but we'll render it specially
+    const diamondMarker = "\u25C6"; // Black diamond, we'll style it red in rendering
+    
+    // Replace all diacritics with only the diamond marker
+    const newDiacritics = diamondMarker;
+    
+    // Replace the letter with base letter + diamond marker
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
   // Handle dagger alif press (without fathah) - replace all diacritics with only dagger alif
   const handleDaggerAlifOnlyPress = () => {
     if (inputValue.length === 0) return;
@@ -609,7 +672,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -622,6 +685,154 @@ const NarratorPopup = ({
     const newDiacritics = daggerAlifChar;
     
     // Replace the letter with base letter + only dagger alif
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Helper function to replace diacritics with a helper font character
+  const handleHelperDotPress = (helperChar) => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    // Get existing harakat (kasrah in this case)
+    const kasraChar = "\u0650"; // Kasrah
+    // Replace diacritics with kasrah + helper character
+    const newDiacritics = kasraChar + helperChar;
+    
+    // Replace the letter with base letter + kasrah + helper character
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle imalah dot press - adds only imalah dot from helper font (no other diacritics)
+  const handleImalahDotPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    // Using U+0658 for imalah dot - only add the helper character, no kasrah
+    const imalahDotChar = "\u0658"; // ARABIC SMALL HIGH NOON
+    const newDiacritics = imalahDotChar;
+    
+    // Replace the letter with base letter + only imalah dot
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle helper diamond dot press - adds only diamond dot from helper font (no other diacritics)
+  const handleHelperDiamondDotPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    // Using U+0659 for helper diamond dot - only add the helper character, no kasrah
+    const helperDiamondDotChar = "\u0659"; // ARABIC PLACE OF SAJDAH
+    const newDiacritics = helperDiamondDotChar;
+    
+    // Replace the letter with base letter + only helper diamond dot
     const newValue =
       inputValue.slice(0, letterStart) +
       baseLetter +
@@ -659,7 +870,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -747,7 +958,7 @@ const NarratorPopup = ({
       let letterEnd = letterStart + 1;
       while (letterEnd < inputValue.length) {
         const char = inputValue[letterEnd];
-        if (/[\u064B-\u065F\u0670]/.test(char)) {
+        if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
           letterEnd++;
         } else {
           break;
@@ -797,7 +1008,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1038,7 +1249,17 @@ const NarratorPopup = ({
                     {/* Large display block with letter-by-letter highlighting */}
                     <View style={styles.largeDisplayBlock}>
                       {inputValue && inputValue.length > 0 ? (
-                        <Text style={styles.displayText}>
+                        <View style={{ position: 'relative', width: '100%' }}>
+                        <Text 
+                          style={[
+                            styles.displayText,
+                            Platform.OS === 'ios' && { 
+                              fontFamily: QURAN_FONT_FAMILY,
+                              fontWeight: 'normal',
+                              fontStyle: 'normal',
+                            }
+                          ]}
+                        >
                           {(() => {
                             const letterPositions = getLetterPositions(inputValue);
                             // Ensure currentLetterIndex is valid for highlighting
@@ -1069,18 +1290,28 @@ const NarratorPopup = ({
                               
                               // Get the letter with all its diacritics
                               const letterWithDiacritics = inputValue.slice(pos.start, pos.end);
+                                
+                                // Remove diamond marker from display text (we'll render it separately)
+                                const letterForDisplay = letterWithDiacritics.replace(/\u25C6/g, '');
                               
                               if (isHighlighted) {
                                 segments.push(
                                   <Text
                                     key={`letter-${idx}`}
-                                    style={styles.displayTextHighlighted}
+                                    style={[
+                                      styles.displayTextHighlighted,
+                                      Platform.OS === 'ios' && { 
+                                        fontFamily: QURAN_FONT_FAMILY,
+                                        fontWeight: 'normal',
+                                        fontStyle: 'normal',
+                                      }
+                                    ]}
                                   >
-                                    {letterWithDiacritics}
+                                    {letterForDisplay}
                                   </Text>
                                 );
                               } else {
-                                segments.push(letterWithDiacritics);
+                                  segments.push(letterForDisplay);
                               }
                               
                               lastIndex = pos.end;
@@ -1094,6 +1325,32 @@ const NarratorPopup = ({
                             return segments;
                           })()}
                         </Text>
+                          {(() => {
+                            const letterPositions = getLetterPositions(inputValue);
+                            const diamondPositions = [];
+                            letterPositions.forEach((pos, idx) => {
+                              const letterWithDiacritics = inputValue.slice(pos.start, pos.end);
+                              if (letterWithDiacritics.includes("\u25C6")) {
+                                diamondPositions.push(idx);
+                              }
+                            });
+                            return diamondPositions.map((letterIdx, diamondIdx) => (
+                              <View
+                                key={`diamond-${diamondIdx}`}
+                                style={[
+                                  {
+                                    position: 'absolute',
+                                    bottom: -6,
+                                    // Approximate positioning from right for RTL
+                                    right: `${Math.max(0, (letterPositions.length - letterIdx - 1) * 6)}%`,
+                                  },
+                                ]}
+                              >
+                                <View style={styles.diamondShape} />
+                              </View>
+                            ));
+                          })()}
+                        </View>
                       ) : (
                         <Text style={styles.displayPlaceholder}>Enter text...</Text>
                       )}
@@ -1264,6 +1521,10 @@ const NarratorPopup = ({
                           const fathaChar = "\u064E"; // Fathah
                           const isFathahButton = keyboardMode === "harakat" && baseLetter && harakatChar === fathaChar;
                           const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
+                          // Check if this is a kasrah button (for diamond)
+                          const kasraChar = "\u0650"; // Kasrah
+                          const isKasrahButton = keyboardMode === "harakat" && baseLetter && harakatChar === kasraChar;
+                          const diamondMarker = "\u25C6"; // Diamond marker (◆)
                           
                           return (
                             <View 
@@ -1314,6 +1575,24 @@ const NarratorPopup = ({
                                           setIsHoveringDaggerAlifOnly(isOverDaggerAlifOnly);
                                         });
                                       }
+                                      if (isKasrahButton) {
+                                        imalahDotRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                          const isOverImalahDot = 
+                                            touchX >= pageX && 
+                                            touchX <= pageX + width &&
+                                            touchY >= pageY && 
+                                            touchY <= pageY + height;
+                                          setIsHoveringImalahDot(isOverImalahDot);
+                                        });
+                                        helperDiamondDotRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                          const isOverHelperDiamondDot = 
+                                            touchX >= pageX && 
+                                            touchX <= pageX + width &&
+                                            touchY >= pageY && 
+                                            touchY <= pageY + height;
+                                          setIsHoveringHelperDiamondDot(isOverHelperDiamondDot);
+                                        });
+                                      }
                                     }, 0);
                                   } else if (isSukoonButton && keyboardMode === "harakat" && plainLetter) {
                                     // Check if touch is over plain letter button (for sukoon button)
@@ -1345,6 +1624,12 @@ const NarratorPopup = ({
                                     } else if (isHoveringDaggerAlifOnly && isFathahButton) {
                                       // Released over dagger alif only button (for fathah button)
                                       handleDaggerAlifOnlyPress();
+                                    } else if (isHoveringImalahDot && isKasrahButton) {
+                                      // Released over imalah dot button (for kasrah button)
+                                      handleImalahDotPress();
+                                    } else if (isHoveringHelperDiamondDot && isKasrahButton) {
+                                      // Released over helper diamond dot button (for kasrah button)
+                                      handleHelperDiamondDotPress();
                                     } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
                                       // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
@@ -1357,6 +1642,8 @@ const NarratorPopup = ({
                                   setIsHoveringSukoon(false);
                                   setIsHoveringStandingAlif(false);
                                   setIsHoveringDaggerAlifOnly(false);
+                                  setIsHoveringImalahDot(false);
+                                  setIsHoveringHelperDiamondDot(false);
                                 }
                               }}
                             >
@@ -1385,6 +1672,16 @@ const NarratorPopup = ({
                                       setLongPressButton({
                                         char: char,
                                         tanweenChar: tanweenCharFull,
+                                        buttonIndex: index,
+                                        position: { x: pageX, y: pageY, width, height },
+                                      });
+                                      setDragStartY(pageY);
+                                    });
+                                  } else if (isKasrahButton && keyboardMode === "harakat") {
+                                    // For kasrah button, show diamond option
+                                    buttonRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                      setLongPressButton({
+                                        char: char,
                                         buttonIndex: index,
                                         position: { x: pageX, y: pageY, width, height },
                                       });
@@ -1537,7 +1834,131 @@ const NarratorPopup = ({
                                     </>
                                   ) : (
                                     <>
-                                      {/* For non-fathah buttons, keep vertical layout */}
+                                      {/* For non-fathah buttons with tanween - use grid layout */}
+                                      {isKasrahButton ? (
+                                        <View style={[
+                                          styles.kasrahDropdownGrid,
+                                          {
+                                            top: (isSmallButtonSet ? 50 : 36) + 8,
+                                          }
+                                        ]}>
+                                          {/* Tanween button */}
+                                          <Pressable
+                                            ref={(ref) => {
+                                              if (ref) tanweenRefs.current[index] = ref;
+                                            }}
+                                            style={[
+                                              styles.keyboardKeyTanween,
+                                              isHoveringTanween && styles.keyboardKeyTanweenHovered,
+                                            ]}
+                                            onPress={() => {
+                                              handleHarakatPress(baseLetter + tanweenChar);
+                                              setLongPressButton(null);
+                                              setDragStartY(null);
+                                              setIsHoveringTanween(false);
+                                              setIsHoveringShaddaTanween(false);
+                                              setIsHoveringStandingAlif(false);
+                                              setIsHoveringDaggerAlifOnly(false);
+                                            }}
+                                          >
+                                            <Text style={[
+                                              styles.keyboardKeyText,
+                                              isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            ]}>{baseLetter + tanweenChar}</Text>
+                                          </Pressable>
+                                          
+                                          {/* Shadda+Tanween button */}
+                                          <Pressable
+                                            ref={(ref) => {
+                                              if (ref) shaddaTanweenRefs.current[index] = ref;
+                                            }}
+                                            style={[
+                                              styles.keyboardKeyTanween,
+                                              styles.dropdownGridButton,
+                                              isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
+                                            ]}
+                                            onPress={() => {
+                                              const shaddaChar = "\u0651";
+                                              handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                              setLongPressButton(null);
+                                              setDragStartY(null);
+                                              setIsHoveringTanween(false);
+                                              setIsHoveringShaddaTanween(false);
+                                              setIsHoveringStandingAlif(false);
+                                              setIsHoveringDaggerAlifOnly(false);
+                                            }}
+                                          >
+                                            <Text style={[
+                                              styles.keyboardKeyText,
+                                              isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
+                                          </Pressable>
+
+                                          {/* Imalah dot button */}
+                                          <Pressable
+                                            ref={(ref) => {
+                                              if (ref) imalahDotRefs.current[index] = ref;
+                                            }}
+                                            style={[
+                                              styles.keyboardKeyTanween,
+                                              styles.keyboardKeyHelperDot,
+                                              styles.dropdownGridButton,
+                                              isHoveringImalahDot && styles.keyboardKeyTanweenHovered,
+                                            ]}
+                                            onPress={() => {
+                                              handleImalahDotPress();
+                                              setLongPressButton(null);
+                                              setDragStartY(null);
+                                              setIsHoveringImalahDot(false);
+                                            }}
+                                          >
+                                            <View style={styles.helperDotContainer}>
+                                              <Text style={[
+                                                styles.keyboardKeyText,
+                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              ]}>{baseLetter}</Text>
+                                              <Text style={[
+                                                styles.helperDotText,
+                                                isSmallButtonSet && styles.helperDotTextLarge,
+                                                { fontFamily: QURAN_FONT_FAMILY }
+                                              ]}>{"\u0658"}</Text>
+                                            </View>
+                                          </Pressable>
+
+                                          {/* Helper diamond dot button */}
+                                          <Pressable
+                                            ref={(ref) => {
+                                              if (ref) helperDiamondDotRefs.current[index] = ref;
+                                            }}
+                                            style={[
+                                              styles.keyboardKeyTanween,
+                                              styles.keyboardKeyHelperDot,
+                                              styles.dropdownGridButton,
+                                              isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
+                                            ]}
+                                            onPress={() => {
+                                              handleHelperDiamondDotPress();
+                                              setLongPressButton(null);
+                                              setDragStartY(null);
+                                              setIsHoveringHelperDiamondDot(false);
+                                            }}
+                                          >
+                                            <View style={styles.helperDotContainer}>
+                                              <Text style={[
+                                                styles.keyboardKeyText,
+                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              ]}>{baseLetter}</Text>
+                                              <Text style={[
+                                                styles.helperDotText,
+                                                isSmallButtonSet && styles.helperDotTextLarge,
+                                                { fontFamily: QURAN_FONT_FAMILY }
+                                              ]}>{"\u0659"}</Text>
+                                            </View>
+                                          </Pressable>
+                                        </View>
+                                      ) : (
+                                        <>
+                                          {/* For other buttons, keep vertical layout */}
                                       <Pressable
                                         ref={(ref) => {
                                           if (ref) tanweenRefs.current[index] = ref;
@@ -1594,6 +2015,8 @@ const NarratorPopup = ({
                                       isSmallButtonSet && styles.keyboardKeyTextLarge,
                                     ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                   </Pressable>
+                                        </>
+                                      )}
                                     </>
                                   )}
                                 </>
@@ -1626,6 +2049,76 @@ const NarratorPopup = ({
                                   ]}>{plainLetter}</Text>
                                 </Pressable>
                               )}
+                              
+                              {/* Kasrah button dropdown (no tanween) - shows helper dot buttons in a grid */}
+                              {isLongPressed && isKasrahButton && keyboardMode === "harakat" && !hasTanween && (
+                                <View style={[
+                                  styles.kasrahDropdownGrid,
+                                  {
+                                    top: (isSmallButtonSet ? 50 : 36) + 8,
+                                  }
+                                ]}>
+                                  {/* Imalah dot button */}
+                                <Pressable
+                                  ref={(ref) => {
+                                      if (ref) imalahDotRefs.current[index] = ref;
+                                  }}
+                                  style={[
+                                    styles.keyboardKeyTanween,
+                                      styles.keyboardKeyHelperDot,
+                                      isHoveringImalahDot && styles.keyboardKeyTanweenHovered,
+                                  ]}
+                                  onPress={() => {
+                                      handleImalahDotPress();
+                                    setLongPressButton(null);
+                                    setDragStartY(null);
+                                      setIsHoveringImalahDot(false);
+                                  }}
+                                >
+                                    <View style={styles.helperDotContainer}>
+                                    <Text style={[
+                                      styles.keyboardKeyText,
+                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                    ]}>{baseLetter}</Text>
+                                      <Text style={[
+                                        styles.helperDotText,
+                                        isSmallButtonSet && styles.helperDotTextLarge,
+                                        { fontFamily: QURAN_FONT_FAMILY }
+                                      ]}>{"\u0658"}</Text>
+                                    </View>
+                                  </Pressable>
+
+                                  {/* Helper diamond dot button */}
+                                  <Pressable
+                                    ref={(ref) => {
+                                      if (ref) helperDiamondDotRefs.current[index] = ref;
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
+                                      styles.keyboardKeyHelperDot,
+                                      isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
+                                    ]}
+                                    onPress={() => {
+                                      handleHelperDiamondDotPress();
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
+                                      setIsHoveringHelperDiamondDot(false);
+                                    }}
+                                  >
+                                    <View style={styles.helperDotContainer}>
+                                      <Text style={[
+                                        styles.keyboardKeyText,
+                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                      ]}>{baseLetter}</Text>
+                                      <Text style={[
+                                        styles.helperDotText,
+                                        isSmallButtonSet && styles.helperDotTextLarge,
+                                        { fontFamily: QURAN_FONT_FAMILY }
+                                      ]}>{"\u0659"}</Text>
+                                    </View>
+                                  </Pressable>
+                                </View>
+                              )}
                             </View>
                           );
                         })
@@ -1647,6 +2140,7 @@ const NarratorPopup = ({
                 <ComparisonTable
                   originalText={selectedWord?.content || ""}
                   inputText={inputValue}
+                  fontFamily={QURAN_FONT_FAMILY}
                 />
               </>
             ) : (
@@ -1690,6 +2184,8 @@ export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     NaskhNastaleeqIndoPakQWBW: require("./Naskh-Nastaleeq-IndoPak-QWBW.ttf"),
     MeQuran: require("./assets/me_quran_volt_newmet.ttf"),
+    AswaatOne: require("./assets/aswaat-one.otf"),
+    AswaatHelpers: require("./aswaat-helpers-one-Regular.ttf"),
   });
   
   // Debug font loading
@@ -1708,23 +2204,22 @@ export default function App() {
       console.log("✅ Fonts loaded successfully");
       console.log("📝 Using font family:", QURAN_FONT_FAMILY);
       console.log("📖 Mushaf ID:", MUSHAF_ID);
+      console.log("📱 Platform:", Platform.OS);
       
-      // Test if font is available on web platform
-      if (Platform.OS === 'web' && typeof document !== 'undefined') {
-        try {
-          const testElement = document.createElement('div');
-          testElement.style.fontFamily = QURAN_FONT_FAMILY;
-          testElement.style.position = 'absolute';
-          testElement.style.visibility = 'hidden';
-          testElement.textContent = 'test';
-          document.body.appendChild(testElement);
-          const computedStyle = window.getComputedStyle(testElement);
-          console.log("🔍 Computed font family on web:", computedStyle.fontFamily);
-          document.body.removeChild(testElement);
-        } catch (e) {
-          console.log("⚠️ Could not test font on web:", e);
-        }
+      // Test if font is available on iOS
+      if (Platform.OS === 'ios') {
+        console.log("🍎 iOS: Testing font rendering with Unicode characters");
+        console.log("🍎 Test characters - Diamond dot (U+0659):", "\u0659");
+        console.log("🍎 Test characters - Imalah dot (U+0658):", "\u0658");
+        console.log("🍎 Test text with dots: جَعَل\u0659\u0658");
+        console.log("🍎 Font family being used:", QURAN_FONT_FAMILY);
+        console.log("🍎 Font file path: assets/aswaat-fontlab.ttf");
+        console.log("🍎 ⚠️ If characters don't render, the font file's internal name might not match 'AswaatOne'");
+        console.log("🍎 ⚠️ Try rebuilding the app: npx expo run:ios --clear");
+        console.log("🍎 💡 Possible font names to try: 'Aswaat', 'AswaatOne', 'Aswaat FontLab', or the file's PostScript name");
       }
+      
+
     }
   }, [fontsLoaded, fontError]);
   const [popupVisible, setPopupVisible] = useState(false);
@@ -3836,12 +4331,67 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
     zIndex: 1000,
-    position: "absolute"
+  },
+  keyboardKeyDiamond: {
+    backgroundColor: "#fef2f2",
+    borderColor: "#dc2626",
+    borderWidth: 3,
+  },
+  diamondContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    width: "100%",
+    height: "100%",
+  },
+  diamondBelow: {
+    position: "absolute",
+    bottom: -10,
+    alignItems: "center",
+    justifyContent: "center",
+    width: "100%",
+  },
+  diamondShape: {
+    width: 10,
+    height: 10,
+    backgroundColor: "#dc2626",
+    transform: [{ rotate: "45deg" }],
+    borderWidth: 0,
+  },
+  keyboardKeyHelperDot: {
+    backgroundColor: "#f0fdf4",
+    borderColor: "#16a34a",
+    borderWidth: 3,
+  },
+  helperDotContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    flexDirection: "row",
+  },
+  helperDotText: {
+    fontSize: 18,
+    color: "#1f2937",
+    marginLeft: 2,
+  },
+  helperDotTextLarge: {
+    fontSize: 24,
   },
   keyboardKeyTanweenHovered: {
     backgroundColor: "#dbeafe",
     borderColor: "#2563eb",
     borderWidth: 3,
+  },
+  kasrahDropdownGrid: {
+    position: "absolute",
+    left: 0,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    width: 142, // 2 columns * 66px width + 10px gap
+    gap: 10,
+    zIndex: 1000,
   },
   keyboardEmptyState: {
     width: "100%",
@@ -3881,6 +4431,8 @@ const styles = StyleSheet.create({
   displayText: {
     fontSize: 32,
     fontFamily: QURAN_FONT_FAMILY,
+    fontWeight: 'normal',
+    fontStyle: 'normal',
     color: "#1a1a1a",
     lineHeight: 60,
     includeFontPadding: false,
@@ -3894,6 +4446,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     paddingVertical: 2,
     color: "#ffffff",
+    fontFamily: QURAN_FONT_FAMILY,
   },
   displayPlaceholder: {
     fontSize: 24,
