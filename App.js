@@ -2237,6 +2237,8 @@ export default function App() {
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isDrawerFullyOpen, setIsDrawerFullyOpen] = useState(false);
   const [currentTab, setCurrentTab] = useState("Recite");
+  const [expandedParents, setExpandedParents] = useState(new Set());
+  const [parentNarrators, setParentNarrators] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [pageCache, setPageCache] = useState({}); // Cache for pre-fetched pages (for React re-renders)
   const [variationCache, setVariationCache] = useState({}); // Cache for variations per page (for React re-renders)
@@ -2946,23 +2948,79 @@ export default function App() {
         // Create synthetic "Hafs 'an 'Asim" narrator (frontend-only)
         const hafsNarrator = {
           id: "hafs-an-asim", // Special ID for frontend-only narrator
-          title: "Hafs 'an 'Asim",
+          title: "Hafs",
+          highlight_color: "#00d4ff",
+          region: { title: "Kufa" },
         };
         
-        // Sort other narrators: "Shu'bah an Asim" first, then others
-        const sortedData = [...data].sort((a, b) => {
-          const aTitle = a.title || "";
-          const bTitle = b.title || "";
-          const shubahTitle = "Shu'bah an Asim";
-          
-          if (aTitle === shubahTitle) return -1;
-          if (bTitle === shubahTitle) return 1;
-          return aTitle.localeCompare(bTitle);
+        // Transform nested API data into parent-child structure
+        // Group children by their parent narrator
+        const parentMap = new Map();
+        
+        data.forEach((childNarrator) => {
+          if (childNarrator.narrator_id && childNarrator.narrator) {
+            const parentId = childNarrator.narrator.id;
+            if (!parentMap.has(parentId)) {
+              parentMap.set(parentId, {
+                id: parentId,
+                title: childNarrator.narrator.title,
+                highlight_color: childNarrator.narrator.highlight_color,
+                region: childNarrator.narrator.region,
+                children: [],
+              });
+            }
+            parentMap.get(parentId).children.push({
+              id: childNarrator.id,
+              title: childNarrator.title,
+              highlight_color: childNarrator.highlight_color,
+              region: childNarrator.region,
+            });
+          }
         });
         
-        // Add Hafs at the beginning of the list
-        const allNarrators = [hafsNarrator, ...sortedData];
-        setNarrators(allNarrators);
+        // Convert map to array and sort
+        const parents = Array.from(parentMap.values()).sort((a, b) => 
+          a.title.localeCompare(b.title)
+        );
+        
+        // Find Aasim and add Hafs as the first child
+        const asimIndex = parents.findIndex(p => {
+          const titleLower = p.title.toLowerCase();
+          return titleLower.includes("asim") || 
+                 titleLower.includes("aasim") ||
+                 titleLower.includes("asem") ||
+                 titleLower === "aasim";
+        });
+        
+        if (asimIndex !== -1) {
+          // Add Hafs as the first child of Aasim
+          parents[asimIndex].children.unshift({
+            id: "hafs-an-asim",
+            title: "Hafs",
+            highlight_color: "#00d4ff",
+            region: { title: "Kufa" },
+            isHafs: true, // Mark as Hafs for special handling
+          });
+        }
+        
+        setParentNarrators(parents);
+        
+        // Expand all parents by default
+        const allParentIds = parents.map(p => p.id);
+        setExpandedParents(new Set(allParentIds));
+        
+        // Flatten all narrators (children only - those with narrator_id and narrator)
+        // Filter out parent narrators (those without narrator_id or narrator)
+        const allChildNarrators = data
+          .filter((child) => child.narrator_id && child.narrator) // Only include child narrators
+          .map((child) => ({
+            id: child.id,
+            title: child.title,
+            highlight_color: child.highlight_color,
+            region: child.region,
+          }));
+        
+        setNarrators([hafsNarrator, ...allChildNarrators]);
 
         // Load saved narrator selections (AsyncStorage on native, localStorage on web)
         let savedNarrators = [];
@@ -2978,7 +3036,7 @@ export default function App() {
           console.error("Error loading saved narrators:", err);
         }
         
-        // If no narrators are saved, default to "Hafs 'an 'Asim"
+        // Always ensure Hafs is selected
         if (savedNarrators.length === 0) {
           setSelectedNarrators([hafsNarrator.id]);
           // Save the default selection
@@ -2992,7 +3050,24 @@ export default function App() {
             console.error("Error saving default narrator:", err);
           }
         } else {
-          setSelectedNarrators(savedNarrators);
+          // Ensure Hafs is always in the selection
+          const hasHafs = savedNarrators.includes(hafsNarrator.id);
+          if (!hasHafs) {
+            const updatedSelection = [hafsNarrator.id, ...savedNarrators];
+            setSelectedNarrators(updatedSelection);
+            // Save the updated selection
+            try {
+              if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+                localStorage.setItem("selectedNarrators", JSON.stringify(updatedSelection));
+              } else {
+                await AsyncStorage.setItem("selectedNarrators", JSON.stringify(updatedSelection));
+              }
+            } catch (err) {
+              console.error("Error saving updated narrator selection:", err);
+            }
+          } else {
+            setSelectedNarrators(savedNarrators);
+          }
         }
       } catch (err) {
         console.error("Error fetching narrators:", err);
@@ -3005,17 +3080,21 @@ export default function App() {
   // Save narrator selections whenever they change
   useEffect(() => {
     const persist = async () => {
-      // Always save, even if empty (will default to Hafs on next load if empty)
+      // Always ensure Hafs is in the selection before saving
+      const selectionToSave = selectedNarrators.includes("hafs-an-asim")
+        ? selectedNarrators
+        : ["hafs-an-asim", ...selectedNarrators];
+      
       try {
         if (Platform.OS === "web" && typeof localStorage !== "undefined") {
           localStorage.setItem(
             "selectedNarrators",
-            JSON.stringify(selectedNarrators)
+            JSON.stringify(selectionToSave)
           );
         } else {
           await AsyncStorage.setItem(
             "selectedNarrators",
-            JSON.stringify(selectedNarrators)
+            JSON.stringify(selectionToSave)
           );
         }
       } catch (err) {
@@ -3101,40 +3180,92 @@ export default function App() {
     setPageInput(text);
   };
 
+  // Helper function to find which parent a child narrator belongs to
+  const findParentForChild = (childId) => {
+    // Hafs belongs to Aasim
+    if (childId === "hafs-an-asim") {
+      return parentNarrators.find(p => {
+        const titleLower = p.title.toLowerCase();
+        return titleLower.includes("asim") || 
+               titleLower.includes("aasim") ||
+               titleLower.includes("asem");
+      });
+    }
+    
+    // Find parent by checking all parent narrators' children
+    for (const parent of parentNarrators) {
+      if (parent.children.some(child => child.id === childId)) {
+        return parent;
+      }
+    }
+    return null;
+  };
+
   const handleToggleNarrator = (narratorId) => {
+    // Prevent toggling Hafs off - it's always selected
+    if (narratorId === "hafs-an-asim") {
+      return; // Do nothing - Hafs is always selected
+    }
+    
     setSelectedNarrators((prev) => {
-      const isHafs = narratorId === "hafs-an-asim";
+      // Ensure Hafs is always in the selection
+      const hasHafs = prev.includes("hafs-an-asim");
+      const withoutHafs = prev.filter((id) => id !== "hafs-an-asim");
       
-      // If clicking Hafs 'an 'Asim
-      if (isHafs) {
-        if (prev.includes(narratorId)) {
-          // Deselecting Hafs - only allow if there are other narrators selected
-          // If Hafs is the only one selected, prevent deselection (it's the default)
-          if (prev.length === 1 && prev[0] === "hafs-an-asim") {
-            return prev; // Don't change - keep Hafs selected
-          }
-          return prev.filter((id) => id !== narratorId);
-        } else {
-          // Selecting Hafs - deselect all others
-          return [narratorId];
+      // Find the parent of the clicked narrator
+      const clickedParent = findParentForChild(narratorId);
+      if (!clickedParent) {
+        return prev; // If we can't find the parent, don't change selection
+      }
+      
+      // Find which parent the currently selected children belong to (excluding Hafs)
+      let currentParentId = null;
+      if (withoutHafs.length > 0) {
+        const firstSelectedChild = withoutHafs[0];
+        const firstSelectedParent = findParentForChild(firstSelectedChild);
+        if (firstSelectedParent) {
+          currentParentId = firstSelectedParent.id;
         }
+      }
+      
+      // If clicking any other narrator
+      if (withoutHafs.includes(narratorId)) {
+        // Deselecting narrator - only allow if it's from the same parent
+        if (currentParentId === clickedParent.id) {
+          const newSelection = withoutHafs.filter((id) => id !== narratorId);
+          // Always include Hafs
+          return ["hafs-an-asim", ...newSelection];
+        }
+        return prev; // Can't deselect if it's the only one from that parent
       } else {
-        // If clicking any other narrator
-        if (prev.includes(narratorId)) {
-          // Deselecting other narrator
-          const newSelection = prev.filter((id) => id !== narratorId);
-          // If nothing is selected now, default back to Hafs
-          if (newSelection.length === 0) {
-            return ["hafs-an-asim"];
-          }
-          return newSelection;
+        // Selecting narrator
+        // If clicking a child from a different parent, clear all other selections
+        if (currentParentId && currentParentId !== clickedParent.id) {
+          // Clear all selections from other parents, keep only Hafs and the new selection
+          return ["hafs-an-asim", narratorId];
         } else {
-          // Selecting other narrator - deselect Hafs first
-          const withoutHafs = prev.filter((id) => id !== "hafs-an-asim");
-          return [...withoutHafs, narratorId];
+          // Same parent - add to selection
+          return ["hafs-an-asim", ...withoutHafs, narratorId];
         }
       }
     });
+  };
+
+  const handleToggleParent = (parentId) => {
+    setExpandedParents((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(parentId)) {
+        newSet.delete(parentId);
+      } else {
+        newSet.add(parentId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleResetToHafs = () => {
+    // Reset to only Hafs (which is always selected)
+    setSelectedNarrators(["hafs-an-asim"]);
   };
 
   const handleSaveVariation = async (variationKey) => {
@@ -3286,6 +3417,69 @@ export default function App() {
         <View style={styles.mainContainer}>
           {currentTab === "Recite" && (
             <>
+              {/* Top bar with selected narrators */}
+              <View style={styles.mushafTopBar}>
+                <TouchableOpacity
+                  onPress={isDrawerFullyOpen ? closeDrawer : openDrawer}
+                  style={styles.mushafMenuButton}
+                >
+                  <Text style={styles.mushafMenuIcon}>☰</Text>
+                </TouchableOpacity>
+                
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.mushafNarratorPills}
+                >
+                  {selectedNarrators
+                    .filter(id => id !== "hafs-an-asim") // Exclude Hafs from pills
+                    .map((narratorId) => {
+                      // Find narrator details
+                      let narrator = null;
+                      for (const parent of parentNarrators) {
+                        const child = parent.children.find(c => c.id === narratorId);
+                        if (child) {
+                          narrator = child;
+                          break;
+                        }
+                      }
+                      // Also check in the flat narrators list
+                      if (!narrator) {
+                        narrator = narrators.find(n => n.id === narratorId);
+                      }
+                      
+                      if (!narrator) return null;
+                      
+                      const highlightColor = narrator.highlight_color || "#00d4ff";
+                      
+                      return (
+                        <View
+                          key={narratorId}
+                          style={[
+                            styles.mushafNarratorPill,
+                            { borderColor: highlightColor },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.mushafNarratorPillText,
+                              { color: highlightColor },
+                            ]}
+                          >
+                            {narrator.title}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                </ScrollView>
+                
+                <View style={styles.mushafRightIcons}>
+                  <TouchableOpacity style={styles.mushafIconButton}>
+                    <Text style={styles.mushafIcon}>🔍</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+              
               <GestureDetector gesture={pageSwipeGesture}>
                 <View style={styles.contentContainer}>
                   {/* Previous page (slides in from right when swiping right) */}
@@ -3488,48 +3682,127 @@ export default function App() {
           <Animated.View
             style={[styles.drawer, { transform: [{ translateX: drawerAnim }] }]}
           >
-            {/* <View style={styles.drawerHeader}>
-              <Text style={styles.drawerTitle}>Narrators</Text>
-              <Text style={styles.drawerSubtitle}>
-                Select narrators to display their saved variations.
-              </Text>
-            </View> */}
+            <View style={styles.drawerHeader}>
+              <View style={styles.drawerHeaderTop}>
+                <View style={styles.drawerHeaderIcon}>
+                  <Text style={styles.drawerHeaderIconText}>📖</Text>
+                </View>
+                <View style={styles.drawerHeaderTextContainer}>
+                  <Text style={styles.drawerTitle}>القراءات</Text>
+                </View>
+              </View>
+              {(() => {
+                // Check if there are any narrators selected besides Hafs
+                const hasOtherNarrators = selectedNarrators.some(id => id !== "hafs-an-asim");
+                const isDisabled = !hasOtherNarrators;
+                
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.resetButton,
+                      isDisabled && styles.resetButtonDisabled,
+                    ]}
+                    onPress={isDisabled ? undefined : handleResetToHafs}
+                    activeOpacity={isDisabled ? 1 : 0.7}
+                    disabled={isDisabled}
+                  >
+                    <Text style={[
+                      styles.resetButtonIcon,
+                      isDisabled && styles.resetButtonIconDisabled,
+                    ]}>↻</Text>
+                    <Text style={[
+                      styles.resetButtonText,
+                      isDisabled && styles.resetButtonTextDisabled,
+                    ]}>Reset to Hafs</Text>
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
             <ScrollView
               contentContainerStyle={styles.drawerNarratorsContent}
               showsVerticalScrollIndicator={false}
             >
-              {narrators.map((narrator) => {
-                const isSelected = selectedNarrators.includes(narrator.id);
+              {/* Parent narrators with children */}
+              {parentNarrators.map((parent) => {
+                const isExpanded = expandedParents.has(parent.id);
                 return (
-                  <TouchableOpacity
-                    key={narrator.id}
-                    style={[
-                      styles.drawerNarratorItem,
-                      isSelected && styles.drawerNarratorItemSelected,
-                    ]}
-                    onPress={() => handleToggleNarrator(narrator.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.drawerNarratorRow}>
-                      <View
-                        style={[
-                          styles.drawerCheckbox,
-                          isSelected && styles.drawerCheckboxSelected,
-                        ]}
-                      >
-                        {isSelected && <Text style={styles.drawerCheckmark}>✓</Text>}
+                  <View key={parent.id} style={styles.parentCard}>
+                    <TouchableOpacity
+                      style={styles.parentCardHeader}
+                      onPress={() => handleToggleParent(parent.id)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.parentCardInfo}>
+                        <Text style={styles.parentCardTitle}>{parent.title}</Text>
+                        <View style={styles.parentCardLocation}>
+                          <Text style={styles.locationIcon}>📍</Text>
+                          <Text style={styles.parentCardLocationText}>
+                            {parent.region?.title || ""}
+                          </Text>
+                        </View>
                       </View>
-                      <Text
-                        style={[
-                          styles.drawerNarratorText,
-                          isSelected && styles.drawerNarratorTextSelected,
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {narrator.title}
+                      <Text style={styles.chevronIcon}>
+                        {isExpanded ? "▼" : "▶"}
                       </Text>
-                    </View>
-                  </TouchableOpacity>
+                    </TouchableOpacity>
+                    {isExpanded && (
+                      <View style={styles.childrenContainer}>
+                        <View style={styles.childrenVerticalLine} />
+                        <View style={styles.childrenContent}>
+                          {parent.children.map((child) => {
+                            const isHafs = child.id === "hafs-an-asim";
+                            const isSelected = selectedNarrators.includes(child.id);
+                            const ChildComponent = isHafs ? View : TouchableOpacity;
+                            return (
+                              <ChildComponent
+                                key={child.id}
+                                style={[
+                                  styles.childCard,
+                                  isHafs && styles.childCardDisabled,
+                                ]}
+                                onPress={isHafs ? undefined : () => handleToggleNarrator(child.id)}
+                                activeOpacity={isHafs ? 1 : 0.7}
+                              >
+                                <View style={styles.childCardContent}>
+                                  <View style={styles.childCardInfo}>
+                                    <Text style={styles.childCardTitle}>
+                                      {child.title}
+                                    </Text>
+                                    <View style={styles.childCardLocation}>
+                                      <Text style={styles.locationIcon}>📍</Text>
+                                      <Text style={styles.childCardLocationText}>
+                                        {child.region?.title || ""}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                  <View
+                                    style={[
+                                      styles.drawerCheckbox,
+                                      isHafs && styles.drawerCheckboxDisabled,
+                                      isSelected && !isHafs && styles.drawerCheckboxSelected,
+                                      isSelected && isHafs && styles.drawerCheckboxDisabledSelected,
+                                    ]}
+                                  >
+                                    {isSelected && (
+                                      <Text style={styles.drawerCheckmark}>✓</Text>
+                                    )}
+                                  </View>
+                                </View>
+                                {isSelected && !isHafs && child.highlight_color && (
+                                  <View
+                                    style={[
+                                      styles.childCardBar,
+                                      { backgroundColor: child.highlight_color },
+                                    ]}
+                                  />
+                                )}
+                              </ChildComponent>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
+                  </View>
                 );
               })}
             </ScrollView>
@@ -3675,6 +3948,55 @@ const styles = StyleSheet.create({
   },
   navRightSpacer: {
     width: 28,
+  },
+  mushafTopBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#282828",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: "#00d4ff",
+    minHeight: 50,
+  },
+  mushafMenuButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginRight: 12,
+  },
+  mushafMenuIcon: {
+    fontSize: 22,
+    color: "#ffffff",
+  },
+  mushafNarratorPills: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    paddingRight: 12,
+  },
+  mushafNarratorPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    marginRight: 8,
+    backgroundColor: "transparent",
+  },
+  mushafNarratorPillText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  mushafRightIcons: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  mushafIconButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  mushafIcon: {
+    fontSize: 20,
+    color: "#ffffff",
   },
   contentContainer: {
     flex: 1,
@@ -3824,21 +4146,174 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   drawerHeader: {
+    marginBottom: 20,
+  },
+  drawerHeaderTop: {
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 16,
   },
+  drawerHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#00d4ff",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  drawerHeaderIconText: {
+    fontSize: 20,
+  },
+  drawerHeaderTextContainer: {
+    flex: 1,
+  },
   drawerTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "700",
-    color: "#1a1a1a",
+    color: "#ffffff",
     marginBottom: 4,
   },
   drawerSubtitle: {
-    fontSize: 13,
-    color: "#6c757d",
-    lineHeight: 18,
+    fontSize: 14,
+    color: "#aaaaaa",
+    lineHeight: 20,
+  },
+  resetButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#3a3a3a",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  resetButtonDisabled: {
+    backgroundColor: "#2a2a2a",
+    opacity: 0.5,
+  },
+  resetButtonIcon: {
+    fontSize: 16,
+    color: "#ffffff",
+    marginRight: 8,
+  },
+  resetButtonIconDisabled: {
+    color: "#888888",
+  },
+  resetButtonText: {
+    fontSize: 14,
+    color: "#ffffff",
+    fontWeight: "500",
+  },
+  resetButtonTextDisabled: {
+    color: "#888888",
   },
   drawerNarratorsContent: {
     paddingBottom: 40,
+  },
+  parentCard: {
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: "hidden",
+  },
+  parentCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#027778",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  parentCardInfo: {
+    flex: 1,
+  },
+  parentCardTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  parentCardLocation: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  locationIcon: {
+    fontSize: 12,
+    marginRight: 6,
+  },
+  parentCardLocationText: {
+    fontSize: 14,
+    color: "#ffffff",
+    opacity: 0.9,
+  },
+  chevronIcon: {
+    fontSize: 14,
+    color: "#ffffff",
+    marginLeft: 12,
+  },
+  childrenContainer: {
+    marginTop: 8,
+    flexDirection: "row",
+    position: "relative",
+  },
+  childrenVerticalLine: {
+    width: 2,
+    backgroundColor: "#555",
+    marginLeft: 16,
+    marginRight: 12,
+  },
+  childrenContent: {
+    flex: 1,
+  },
+  childCard: {
+    backgroundColor: "#3a3a3a",
+    borderRadius: 12,
+    marginBottom: 8,
+    overflow: "hidden",
+    position: "relative",
+  },
+  childCardDisabled: {
+    opacity: 0.7,
+  },
+  childCardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  childCardInfo: {
+    flex: 1,
+  },
+  childCardTitle: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#ffffff",
+    marginBottom: 4,
+  },
+  childCardTitleDisabled: {
+    color: "#666666",
+    opacity: 0.5,
+  },
+  childCardLocation: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  childCardLocationText: {
+    fontSize: 13,
+    color: "#aaaaaa",
+  },
+  childCardLocationTextDisabled: {
+    color: "#666666",
+    opacity: 0.5,
+  },
+  childCardBar: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
   },
   drawerBottomNav: {
     position: "absolute",
@@ -3913,9 +4388,19 @@ const styles = StyleSheet.create({
     marginRight: 12,
     backgroundColor: "transparent",
   },
+  drawerCheckboxDisabled: {
+    borderColor: "#666",
+    backgroundColor: "#555",
+    opacity: 0.6,
+  },
   drawerCheckboxSelected: {
     borderColor: "#00d4ff",
     backgroundColor: "#00d4ff",
+  },
+  drawerCheckboxDisabledSelected: {
+    borderColor: "#666",
+    backgroundColor: "#666",
+    opacity: 0.6,
   },
   drawerCheckmark: {
     color: "#fff",
