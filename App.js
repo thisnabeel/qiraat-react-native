@@ -372,6 +372,8 @@ const NarratorPopup = ({
   const [isHoveringMaddYa, setIsHoveringMaddYa] = useState(false);
   const [isHoveringMaddCombined, setIsHoveringMaddCombined] = useState(false);
   const [isHoveringInvertedDammah, setIsHoveringInvertedDammah] = useState(false);
+  const [isHoveringExtenderHamzaDammah, setIsHoveringExtenderHamzaDammah] = useState(false);
+  const [isHoveringExtenderHamzaKasrah, setIsHoveringExtenderHamzaKasrah] = useState(false);
   const buttonRefs = useRef({});
   const tanweenRefs = useRef({});
   const shaddaTanweenRefs = useRef({});
@@ -386,6 +388,8 @@ const NarratorPopup = ({
   const maddCombinedRefs = useRef({});
   const helperDiamondDotRefs = useRef({});
   const invertedDammahRefs = useRef({});
+  const extenderHamzaDammahRefs = useRef({});
+  const extenderHamzaKasrahRefs = useRef({});
   
   // Helper to get tanween version of a harakat
   const getTanweenVersion = (harakatChar) => {
@@ -517,6 +521,7 @@ const NarratorPopup = ({
 
   // Arabic letters
   const arabicLetters = [
+    "\u0640", // Tatweel (extended character/extender stem)
     "\u0627", "\u0628", "\u062A", "\u062B", "\u062C", "\u062D", "\u062E",
     "\u062F", "\u0630", "\u0631", "\u0632", "\u0633", "\u0634", "\u0635",
     "\u0636", "\u0637", "\u0638", "\u0639", "\u063A", "\u0641", "\u0642",
@@ -541,8 +546,9 @@ const NarratorPopup = ({
   // Helper: Remove all diacritics from a string
   const removeDiacritics = (str) => {
     if (!str) return '';
-    // Remove combining diacritics (U+064B to U+065F, U+0670, U+0640) and diamond marker (U+25C6)
-    return str.replace(/[\u064B-\u065F\u0670\u0640\u25C6]/g, '');
+    // Remove combining diacritics (U+064B to U+065F, U+0670) and diamond marker (U+25C6)
+    // Note: U+0640 (Tatweel) is treated as a base letter, not a diacritic
+    return str.replace(/[\u064B-\u065F\u0670\u25C6]/g, '');
   };
 
   // Helper: Get base letter (without diacritics) at current letter index
@@ -560,7 +566,7 @@ const NarratorPopup = ({
       const base = removeDiacritics(char);
       
       // Check if it's an Arabic letter (excluding diacritics)
-      const arabicLetterRegex = /[\u0621-\u063A\u0641-\u064A\u0671-\u06D3]/;
+      const arabicLetterRegex = /[\u0621-\u063A\u0640\u0641-\u064A\u0671-\u06D3]/;
       if (base && arabicLetterRegex.test(base)) {
         return base;
       }
@@ -811,6 +817,120 @@ const NarratorPopup = ({
     } else if (!newDiacritics.includes(invertedDammahChar)) {
       // Add inverted dammah if not already present and no dammah to replace
       newDiacritics = newDiacritics + invertedDammahChar;
+    }
+    
+    // Replace diacritics
+    const newValue = 
+      inputValue.slice(0, letterStart + 1) + 
+      newDiacritics + 
+      inputValue.slice(letterEnd);
+    
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle extender Hamza + Dammah press (U+0640 + U+0654 + U+064F)
+  const handleExtenderHamzaDammahPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter || baseLetter !== "\u0640") return; // Only work on extender
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    const hamzaChar = "\u0654"; // Hamza above
+    const dammaChar = "\u064F"; // Dammah
+    
+    // Get existing diacritics
+    const existingDiacritics = inputValue.slice(letterStart + 1, letterEnd);
+    
+    // Add hamza and dammah if not already present
+    let newDiacritics = existingDiacritics;
+    if (!newDiacritics.includes(hamzaChar)) {
+      newDiacritics = newDiacritics + hamzaChar;
+    }
+    if (!newDiacritics.includes(dammaChar)) {
+      newDiacritics = newDiacritics + dammaChar;
+    }
+    
+    // Replace diacritics
+    const newValue = 
+      inputValue.slice(0, letterStart + 1) + 
+      newDiacritics + 
+      inputValue.slice(letterEnd);
+    
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle extender Hamza + Kasrah press (U+0640 + U+0654 + U+0650)
+  const handleExtenderHamzaKasrahPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter || baseLetter !== "\u0640") return; // Only work on extender
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    const hamzaChar = "\u0654"; // Hamza above
+    const kasraChar = "\u0650"; // Kasrah
+    
+    // Get existing diacritics
+    const existingDiacritics = inputValue.slice(letterStart + 1, letterEnd);
+    
+    // Add hamza and kasrah if not already present
+    let newDiacritics = existingDiacritics;
+    if (!newDiacritics.includes(hamzaChar)) {
+      newDiacritics = newDiacritics + hamzaChar;
+    }
+    if (!newDiacritics.includes(kasraChar)) {
+      newDiacritics = newDiacritics + kasraChar;
     }
     
     // Replace diacritics
@@ -1386,6 +1506,66 @@ const NarratorPopup = ({
     }, 0);
   };
 
+  // Handle extend stem + hamza press (U+0640 + U+0654)
+  const handleExtendStemHamzaPress = () => {
+    const tatweelChar = "\u0640"; // Tatweel (extended character)
+    const hamzaChar = "\u0654"; // Hamza above
+    const combinedChars = tatweelChar + hamzaChar;
+    
+    if (inputValue.length === 0) {
+      // If empty, just insert the combined characters
+      const newValue = combinedChars;
+      addToHistory(newValue);
+      onInputChange(newValue);
+      setCurrentLetterIndex(0);
+      return;
+    }
+
+    const letterPositions = getLetterPositions(inputValue);
+    if (letterPositions.length === 0) {
+      // No letters, just append
+      const newValue = inputValue + combinedChars;
+      addToHistory(newValue);
+      onInputChange(newValue);
+      setCurrentLetterIndex(0);
+      return;
+    }
+
+    const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
+    const currentPos = letterPositions[validIndex];
+    let newValue = "";
+    let newLetterIndex = validIndex;
+
+    if (insertMode === "insertLeft") {
+      // Insert before current letter
+      newValue = inputValue.slice(0, currentPos.start) + combinedChars + inputValue.slice(currentPos.start);
+      newLetterIndex = validIndex;
+    } else if (insertMode === "replace") {
+      // Replace current letter but keep its harakat (diacritics)
+      const currentLetterWithDiacritics = inputValue.slice(currentPos.start, currentPos.end);
+      const currentDiacritics = currentLetterWithDiacritics.slice(1);
+      newValue = inputValue.slice(0, currentPos.start) + combinedChars + currentDiacritics + inputValue.slice(currentPos.end);
+      newLetterIndex = validIndex;
+    } else if (insertMode === "insertRight") {
+      // Insert after current letter (after its diacritics)
+      newValue = inputValue.slice(0, currentPos.end) + combinedChars + inputValue.slice(currentPos.end);
+      newLetterIndex = validIndex + 1;
+    }
+
+    addToHistory(newValue);
+    onInputChange(newValue);
+    setCurrentLetterIndex(newLetterIndex);
+
+    // Update selection
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (newLetterIndex >= 0 && newLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[newLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
   // Get current keyboard buttons based on mode and current letter
   const getKeyboardButtons = () => {
     if (keyboardMode === "harakat") {
@@ -1407,7 +1587,7 @@ const NarratorPopup = ({
         const char = inputValue[pos];
         if (char) {
           const base = removeDiacritics(char);
-          const arabicLetterRegex = /[\u0621-\u063A\u0641-\u064A\u0671-\u06D3]/;
+          const arabicLetterRegex = /[\u0621-\u063A\u0640\u0641-\u064A\u0671-\u06D3]/;
           if (base && arabicLetterRegex.test(base)) {
             return getHarakatVariations(base);
           }
@@ -1779,7 +1959,19 @@ const NarratorPopup = ({
                       const isSmallButtonSet = keyboardMode === "harakat" && buttonCount === 5;
                       const shaddaChar = "\u0651";
                       return buttons.length > 0 ? (
-                        buttons.map((char, index) => {
+                        <>
+                          {/* Extend Stem + Hamza button (only in letters mode) */}
+                          {keyboardMode === "letters" && (
+                            <Pressable
+                              style={styles.keyboardKey}
+                              onPress={handleExtendStemHamzaPress}
+                            >
+                              <Text style={styles.keyboardKeyText}>
+                                {"\u0640\u0654"}
+                              </Text>
+                            </Pressable>
+                          )}
+                          {buttons.map((char, index) => {
                           // Check if this is the shadda button and if it's selected
                           const baseLetter = getBaseLetterAtCurrentLetter();
                           const isShaddaButton = baseLetter && char === baseLetter + shaddaChar;
@@ -1903,6 +2095,17 @@ const NarratorPopup = ({
                                             touchY <= pageY + height;
                                           setIsHoveringInvertedDammah(isOverInvertedDammah);
                                         });
+                                        // Check extender hamza + dammah button (only if base letter is extender)
+                                        if (baseLetter === "\u0640") {
+                                          extenderHamzaDammahRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                            const isOverExtenderHamzaDammah = 
+                                              touchX >= pageX && 
+                                              touchX <= pageX + width &&
+                                              touchY >= pageY && 
+                                              touchY <= pageY + height;
+                                            setIsHoveringExtenderHamzaDammah(isOverExtenderHamzaDammah);
+                                          });
+                                        }
                                       }
                                       if (isKasrahButton) {
                                         imalahDotRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
@@ -1921,6 +2124,17 @@ const NarratorPopup = ({
                                             touchY <= pageY + height;
                                           setIsHoveringHelperDiamondDot(isOverHelperDiamondDot);
                                         });
+                                        // Check extender hamza + kasrah button (only if base letter is extender)
+                                        if (baseLetter === "\u0640") {
+                                          extenderHamzaKasrahRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                            const isOverExtenderHamzaKasrah = 
+                                              touchX >= pageX && 
+                                              touchX <= pageX + width &&
+                                              touchY >= pageY && 
+                                              touchY <= pageY + height;
+                                            setIsHoveringExtenderHamzaKasrah(isOverExtenderHamzaKasrah);
+                                          });
+                                        }
                                       }
                                     }, 0);
                                   } else if (isSukoonButton && keyboardMode === "harakat" && plainLetter) {
@@ -1968,12 +2182,18 @@ const NarratorPopup = ({
                                     } else if (isHoveringInvertedDammah && isDammahButton) {
                                       // Released over inverted dammah button
                                       handleInvertedDammahPress();
+                                    } else if (isHoveringExtenderHamzaDammah && isDammahButton && baseLetter === "\u0640") {
+                                      // Released over extender hamza + dammah button
+                                      handleExtenderHamzaDammahPress();
                                     } else if (isHoveringImalahDot && isKasrahButton) {
                                       // Released over imalah dot button (for kasrah button)
                                       handleImalahDotPress();
                                     } else if (isHoveringHelperDiamondDot && isKasrahButton) {
                                       // Released over helper diamond dot button (for kasrah button)
                                       handleHelperDiamondDotPress();
+                                    } else if (isHoveringExtenderHamzaKasrah && isKasrahButton && baseLetter === "\u0640") {
+                                      // Released over extender hamza + kasrah button
+                                      handleExtenderHamzaKasrahPress();
                                     } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
                                       // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
@@ -1991,8 +2211,10 @@ const NarratorPopup = ({
                                   setIsHoveringMaddYa(false);
                                   setIsHoveringMaddCombined(false);
                                   setIsHoveringInvertedDammah(false);
+                                  setIsHoveringExtenderHamzaDammah(false);
                                   setIsHoveringImalahDot(false);
                                   setIsHoveringHelperDiamondDot(false);
+                                  setIsHoveringExtenderHamzaKasrah(false);
                                 }
                               }}
                             >
@@ -2383,6 +2605,41 @@ const NarratorPopup = ({
                                               ]}>{"\u0659"}</Text>
                                             </View>
                                           </Pressable>
+
+                                          {/* Extender Hamza + Kasrah button (only for extender) */}
+                                          {isKasrahButton && baseLetter === "\u0640" && (
+                                            <Pressable
+                                              ref={(ref) => {
+                                                if (ref) extenderHamzaKasrahRefs.current[index] = ref;
+                                              }}
+                                              style={[
+                                                styles.keyboardKeyTanween,
+                                                styles.dropdownGridButton,
+                                                isHoveringExtenderHamzaKasrah && styles.keyboardKeyTanweenHovered,
+                                              ]}
+                                              onPress={() => {
+                                                handleExtenderHamzaKasrahPress();
+                                                setLongPressButton(null);
+                                                setDragStartY(null);
+                                                setIsHoveringTanween(false);
+                                                setIsHoveringShaddaTanween(false);
+                                                setIsHoveringStandingAlif(false);
+                                                setIsHoveringDaggerAlifOnly(false);
+                                                setIsHoveringMaddAlif(false);
+                                                setIsHoveringMaddWaw(false);
+                                                setIsHoveringMaddYa(false);
+                                                setIsHoveringMaddCombined(false);
+                                                setIsHoveringImalahDot(false);
+                                                setIsHoveringHelperDiamondDot(false);
+                                                setIsHoveringExtenderHamzaKasrah(false);
+                                              }}
+                                            >
+                                              <Text style={[
+                                                styles.keyboardKeyText,
+                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              ]}>{"\u0640\u0654\u0650"}</Text>
+                                            </Pressable>
+                                          )}
                                         </View>
                                       ) : (
                                         <View style={[
@@ -2482,6 +2739,39 @@ const NarratorPopup = ({
                                                 styles.keyboardKeyText,
                                                 isSmallButtonSet && styles.keyboardKeyTextLarge,
                                               ]}>{baseLetter + "\u0657"}</Text>
+                                            </Pressable>
+                                          )}
+                                          {/* Extender Hamza + Dammah button (only for extender and dammah) */}
+                                          {isDammahButton && baseLetter === "\u0640" && (
+                                            <Pressable
+                                              ref={(ref) => {
+                                                if (ref) extenderHamzaDammahRefs.current[index] = ref;
+                                              }}
+                                              style={[
+                                                styles.keyboardKeyTanween,
+                                                styles.dropdownGridButton,
+                                                isHoveringExtenderHamzaDammah && styles.keyboardKeyTanweenHovered,
+                                              ]}
+                                              onPress={() => {
+                                                handleExtenderHamzaDammahPress();
+                                                setLongPressButton(null);
+                                                setDragStartY(null);
+                                                setIsHoveringTanween(false);
+                                                setIsHoveringShaddaTanween(false);
+                                                setIsHoveringStandingAlif(false);
+                                                setIsHoveringDaggerAlifOnly(false);
+                                                setIsHoveringMaddAlif(false);
+                                                setIsHoveringMaddWaw(false);
+                                                setIsHoveringMaddYa(false);
+                                                setIsHoveringMaddCombined(false);
+                                                setIsHoveringInvertedDammah(false);
+                                                setIsHoveringExtenderHamzaDammah(false);
+                                              }}
+                                            >
+                                              <Text style={[
+                                                styles.keyboardKeyText,
+                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              ]}>{"\u0640\u0654\u064F"}</Text>
                                             </Pressable>
                                           )}
                                         </View>
@@ -2586,11 +2876,39 @@ const NarratorPopup = ({
                                       ]}>{"\u0659"}</Text>
                                     </View>
                                   </Pressable>
+
+                                  {/* Extender Hamza + Kasrah button (only for extender) */}
+                                  {baseLetter === "\u0640" && (
+                                    <Pressable
+                                      ref={(ref) => {
+                                        if (ref) extenderHamzaKasrahRefs.current[index] = ref;
+                                      }}
+                                      style={[
+                                        styles.keyboardKeyTanween,
+                                        styles.dropdownGridButton,
+                                        isHoveringExtenderHamzaKasrah && styles.keyboardKeyTanweenHovered,
+                                      ]}
+                                      onPress={() => {
+                                        handleExtenderHamzaKasrahPress();
+                                        setLongPressButton(null);
+                                        setDragStartY(null);
+                                        setIsHoveringImalahDot(false);
+                                        setIsHoveringHelperDiamondDot(false);
+                                        setIsHoveringExtenderHamzaKasrah(false);
+                                      }}
+                                    >
+                                      <Text style={[
+                                        styles.keyboardKeyText,
+                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                      ]}>{"\u0640\u0654\u0650"}</Text>
+                                    </Pressable>
+                                  )}
                                 </View>
                               )}
                             </View>
                           );
-                        })
+                        })}
+                        </>
                       ) : null;
                     })()}
                     {getKeyboardButtons().length === 0 && (
