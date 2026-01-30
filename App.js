@@ -1960,17 +1960,6 @@ const NarratorPopup = ({
                       const shaddaChar = "\u0651";
                       return buttons.length > 0 ? (
                         <>
-                          {/* Extend Stem + Hamza button (only in letters mode) */}
-                          {keyboardMode === "letters" && (
-                            <Pressable
-                              style={styles.keyboardKey}
-                              onPress={handleExtendStemHamzaPress}
-                            >
-                              <Text style={styles.keyboardKeyText}>
-                                {"\u0640\u0654"}
-                              </Text>
-                            </Pressable>
-                          )}
                           {buttons.map((char, index) => {
                           // Check if this is the shadda button and if it's selected
                           const baseLetter = getBaseLetterAtCurrentLetter();
