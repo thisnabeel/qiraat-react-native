@@ -374,6 +374,8 @@ const NarratorPopup = ({
   const [isHoveringInvertedDammah, setIsHoveringInvertedDammah] = useState(false);
   const [isHoveringExtenderHamzaDammah, setIsHoveringExtenderHamzaDammah] = useState(false);
   const [isHoveringExtenderHamzaKasrah, setIsHoveringExtenderHamzaKasrah] = useState(false);
+  const [isHoveringExtenderHamzaFathah, setIsHoveringExtenderHamzaFathah] = useState(false);
+  const [isHoveringMaddRoundedZero, setIsHoveringMaddRoundedZero] = useState(false);
   const buttonRefs = useRef({});
   const tanweenRefs = useRef({});
   const shaddaTanweenRefs = useRef({});
@@ -390,6 +392,8 @@ const NarratorPopup = ({
   const invertedDammahRefs = useRef({});
   const extenderHamzaDammahRefs = useRef({});
   const extenderHamzaKasrahRefs = useRef({});
+  const extenderHamzaFathahRefs = useRef({});
+  const maddRoundedZeroRefs = useRef({});
   
   // Helper to get tanween version of a harakat
   const getTanweenVersion = (harakatChar) => {
@@ -409,12 +413,12 @@ const NarratorPopup = ({
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
       // Check if it's a base letter (not a diacritic or diamond marker)
-      if (!/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (!/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
         // Find the end position (after the base letter and any following diacritics)
         let end = i + 1;
         while (end < text.length) {
           const nextChar = text[end];
-          if (/[\u064B-\u065F\u0670\u25C6]/.test(nextChar)) {
+          if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(nextChar)) {
             end++;
           } else {
             break;
@@ -546,9 +550,9 @@ const NarratorPopup = ({
   // Helper: Remove all diacritics from a string
   const removeDiacritics = (str) => {
     if (!str) return '';
-    // Remove combining diacritics (U+064B to U+065F, U+0670) and diamond marker (U+25C6)
+    // Remove combining diacritics (U+064B to U+065F, U+0670, U+06E4) and diamond marker (U+25C6)
     // Note: U+0640 (Tatweel) is treated as a base letter, not a diacritic
-    return str.replace(/[\u064B-\u065F\u0670\u25C6]/g, '');
+    return str.replace(/[\u064B-\u065F\u0670\u06E4\u25C6]/g, '');
   };
 
   // Helper: Get base letter (without diacritics) at current letter index
@@ -931,6 +935,116 @@ const NarratorPopup = ({
     }
     if (!newDiacritics.includes(kasraChar)) {
       newDiacritics = newDiacritics + kasraChar;
+    }
+    
+    // Replace diacritics
+    const newValue = 
+      inputValue.slice(0, letterStart + 1) + 
+      newDiacritics + 
+      inputValue.slice(letterEnd);
+    
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle extender Hamza + Fathah press (U+0640 + U+0654 + U+064E)
+  const handleExtenderHamzaFathahPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter || baseLetter !== "\u0640") return; // Only work on extender
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    const hamzaChar = "\u0654"; // Hamza above
+    const fathaChar = "\u064E"; // Fathah
+    
+    // Get existing diacritics
+    const existingDiacritics = inputValue.slice(letterStart + 1, letterEnd);
+    
+    // Add hamza and fathah if not already present
+    let newDiacritics = existingDiacritics;
+    if (!newDiacritics.includes(hamzaChar)) {
+      newDiacritics = newDiacritics + hamzaChar;
+    }
+    if (!newDiacritics.includes(fathaChar)) {
+      newDiacritics = newDiacritics + fathaChar;
+    }
+    
+    // Replace diacritics
+    const newValue = 
+      inputValue.slice(0, letterStart + 1) + 
+      newDiacritics + 
+      inputValue.slice(letterEnd);
+    
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Handle madd rounded zero press (U+06E4)
+  const handleMaddRoundedZeroPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    const maddRoundedZeroChar = "\u06E4"; // Arabic Small High Rounded Zero (U+06E4)
+    
+    // Get existing diacritics
+    const existingDiacritics = inputValue.slice(letterStart + 1, letterEnd);
+    
+    // Add madd rounded zero if not already present
+    let newDiacritics = existingDiacritics;
+    if (!newDiacritics.includes(maddRoundedZeroChar)) {
+      newDiacritics = newDiacritics + maddRoundedZeroChar;
     }
     
     // Replace diacritics
@@ -2074,6 +2188,25 @@ const NarratorPopup = ({
                                             touchY <= pageY + height;
                                           setIsHoveringMaddCombined(isOverMaddCombined);
                                         });
+                                        maddRoundedZeroRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                          const isOverMaddRoundedZero = 
+                                            touchX >= pageX && 
+                                            touchX <= pageX + width &&
+                                            touchY >= pageY && 
+                                            touchY <= pageY + height;
+                                          setIsHoveringMaddRoundedZero(isOverMaddRoundedZero);
+                                        });
+                                        // Check extender hamza + fathah button (only if base letter is extender)
+                                        if (baseLetter === "\u0640") {
+                                          extenderHamzaFathahRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                            const isOverExtenderHamzaFathah = 
+                                              touchX >= pageX && 
+                                              touchX <= pageX + width &&
+                                              touchY >= pageY && 
+                                              touchY <= pageY + height;
+                                            setIsHoveringExtenderHamzaFathah(isOverExtenderHamzaFathah);
+                                          });
+                                        }
                                       }
                                       if (isDammahButton) {
                                         invertedDammahRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
@@ -2168,6 +2301,12 @@ const NarratorPopup = ({
                                     } else if (isHoveringMaddCombined && isFathahButton) {
                                       // Released over madd combined button
                                       handleMaddCombinedPress();
+                                    } else if (isHoveringExtenderHamzaFathah && isFathahButton && baseLetter === "\u0640") {
+                                      // Released over extender hamza + fathah button
+                                      handleExtenderHamzaFathahPress();
+                                    } else if (isHoveringMaddRoundedZero && isFathahButton) {
+                                      // Released over madd rounded zero button
+                                      handleMaddRoundedZeroPress();
                                     } else if (isHoveringInvertedDammah && isDammahButton) {
                                       // Released over inverted dammah button
                                       handleInvertedDammahPress();
@@ -2199,8 +2338,10 @@ const NarratorPopup = ({
                                   setIsHoveringMaddWaw(false);
                                   setIsHoveringMaddYa(false);
                                   setIsHoveringMaddCombined(false);
+                                  setIsHoveringMaddRoundedZero(false);
                                   setIsHoveringInvertedDammah(false);
                                   setIsHoveringExtenderHamzaDammah(false);
+                                  setIsHoveringExtenderHamzaFathah(false);
                                   setIsHoveringImalahDot(false);
                                   setIsHoveringHelperDiamondDot(false);
                                   setIsHoveringExtenderHamzaKasrah(false);
@@ -2282,46 +2423,52 @@ const NarratorPopup = ({
                                         top: (isSmallButtonSet ? 50 : 36) + 8,
                                       }
                                     ]}>
-                                      {/* Tanween button */}
-                                      <Pressable
-                                        ref={(ref) => {
-                                          if (ref) tanweenRefs.current[index] = ref;
-                                        }}
-                                        style={[
-                                          styles.keyboardKeyTanween,
-                                          styles.dropdownGridButton,
-                                          isHoveringTanween && styles.keyboardKeyTanweenHovered,
-                                        ]}
-                                        onPress={() => {
-                                          handleHarakatPress(baseLetter + tanweenChar);
-                                          setLongPressButton(null);
-                                          setDragStartY(null);
-                                          setIsHoveringTanween(false);
-                                          setIsHoveringShaddaTanween(false);
+                                      {/* Row 1: Tanween, Shadda+Tanween, Dagger Alif with fathah */}
+                                      <View style={{ flexDirection: "row", marginBottom: 4 }}>
+                                        {/* Tanween button */}
+                                  <Pressable
+                                    ref={(ref) => {
+                                      if (ref) tanweenRefs.current[index] = ref;
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
+                                            styles.dropdownGridButton,
+                                      isHoveringTanween && styles.keyboardKeyTanweenHovered,
+                                            { marginRight: 4 },
+                                    ]}
+                                    onPress={() => {
+                                      handleHarakatPress(baseLetter + tanweenChar);
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
+                                      setIsHoveringTanween(false);
+                                      setIsHoveringShaddaTanween(false);
                                           setIsHoveringStandingAlif(false);
                                           setIsHoveringDaggerAlifOnly(false);
-                                          setIsHoveringMaddAlif(false);
-                                          setIsHoveringMaddWaw(false);
-                                          setIsHoveringMaddYa(false);
-                                          setIsHoveringMaddCombined(false);
-                                          setIsHoveringInvertedDammah(false);
-                                        }}
-                                      >
-                                        <Text style={[
-                                          styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                        ]}>{baseLetter + tanweenChar}</Text>
-                                      </Pressable>
-                                      
-                                      {/* Shadda+Tanween button */}
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
+                                    }}
+                                  >
+                                    <Text style={[
+                                      styles.keyboardKeyText,
+                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                    ]}>{baseLetter + tanweenChar}</Text>
+                                  </Pressable>
+                                  
+                                        {/* Shadda+Tanween button */}
                                       <Pressable
                                         ref={(ref) => {
                                           if (ref) shaddaTanweenRefs.current[index] = ref;
                                         }}
                                         style={[
                                           styles.keyboardKeyTanween,
-                                          styles.dropdownGridButton,
+                                            styles.dropdownGridButton,
                                           isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
+                                            { marginRight: 4 },
                                         ]}
                                         onPress={() => {
                                           const shaddaChar = "\u0651";
@@ -2332,11 +2479,13 @@ const NarratorPopup = ({
                                           setIsHoveringShaddaTanween(false);
                                           setIsHoveringStandingAlif(false);
                                           setIsHoveringDaggerAlifOnly(false);
-                                          setIsHoveringMaddAlif(false);
-                                          setIsHoveringMaddWaw(false);
-                                          setIsHoveringMaddYa(false);
-                                          setIsHoveringMaddCombined(false);
-                                          setIsHoveringInvertedDammah(false);
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
                                         }}
                                       >
                                         <Text style={[
@@ -2345,7 +2494,7 @@ const NarratorPopup = ({
                                         ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                       </Pressable>
                                       
-                                      {/* Dagger Alif with fathah button */}
+                                        {/* Dagger Alif with fathah button */}
                                       <Pressable
                                         ref={(ref) => {
                                           if (ref) standingAlifRefs.current[index] = ref;
@@ -2367,7 +2516,9 @@ const NarratorPopup = ({
                                           setIsHoveringMaddWaw(false);
                                           setIsHoveringMaddYa(false);
                                           setIsHoveringMaddCombined(false);
+                                          setIsHoveringMaddRoundedZero(false);
                                           setIsHoveringInvertedDammah(false);
+                                          setIsHoveringExtenderHamzaFathah(false);
                                         }}
                                       >
                                         <Text style={[
@@ -2375,16 +2526,20 @@ const NarratorPopup = ({
                                           isSmallButtonSet && styles.keyboardKeyTextLarge,
                                         ]}>{baseLetter + fathaChar + daggerAlifChar}</Text>
                                       </Pressable>
+                                      </View>
                                       
-                                      {/* Dagger Alif only button */}
+                                      {/* Row 2: Dagger Alif only, Madd Alif, Madd Combined */}
+                                      <View style={{ flexDirection: "row" }}>
+                                        {/* Dagger Alif only button */}
                                       <Pressable
                                         ref={(ref) => {
                                           if (ref) daggerAlifOnlyRefs.current[index] = ref;
                                         }}
                                         style={[
                                           styles.keyboardKeyTanween,
-                                          styles.dropdownGridButton,
+                                            styles.dropdownGridButton,
                                           isHoveringDaggerAlifOnly && styles.keyboardKeyTanweenHovered,
+                                            { marginRight: 4 },
                                         ]}
                                         onPress={() => {
                                           handleDaggerAlifOnlyPress();
@@ -2394,11 +2549,13 @@ const NarratorPopup = ({
                                           setIsHoveringShaddaTanween(false);
                                           setIsHoveringStandingAlif(false);
                                           setIsHoveringDaggerAlifOnly(false);
-                                          setIsHoveringMaddAlif(false);
-                                          setIsHoveringMaddWaw(false);
-                                          setIsHoveringMaddYa(false);
-                                          setIsHoveringMaddCombined(false);
-                                          setIsHoveringInvertedDammah(false);
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
                                         }}
                                       >
                                         <Text style={[
@@ -2406,69 +2563,144 @@ const NarratorPopup = ({
                                           isSmallButtonSet && styles.keyboardKeyTextLarge,
                                         ]}>{baseLetter + daggerAlifChar}</Text>
                                       </Pressable>
+                                        
+                                        {/* Madd Alif button */}
+                                        <Pressable
+                                          ref={(ref) => {
+                                            if (ref) maddAlifRefs.current[index] = ref;
+                                          }}
+                                          style={[
+                                            styles.keyboardKeyTanween,
+                                            styles.dropdownGridButton,
+                                            isHoveringMaddAlif && styles.keyboardKeyTanweenHovered,
+                                            { marginRight: 4 },
+                                          ]}
+                                          onPress={() => {
+                                            handleMaddAlifPress();
+                                            setLongPressButton(null);
+                                            setDragStartY(null);
+                                            setIsHoveringTanween(false);
+                                            setIsHoveringShaddaTanween(false);
+                                            setIsHoveringStandingAlif(false);
+                                            setIsHoveringDaggerAlifOnly(false);
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
+                                          }}
+                                        >
+                                          <Text style={[
+                                            styles.keyboardKeyText,
+                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          ]}>{baseLetter + fathaChar + "\u0627"}</Text>
+                                        </Pressable>
+                                        
+                                        {/* Madd Combined button */}
+                                        <Pressable
+                                          ref={(ref) => {
+                                            if (ref) maddCombinedRefs.current[index] = ref;
+                                          }}
+                                          style={[
+                                            styles.keyboardKeyTanween,
+                                            styles.dropdownGridButton,
+                                            isHoveringMaddCombined && styles.keyboardKeyTanweenHovered,
+                                            { marginRight: 4 },
+                                          ]}
+                                          onPress={() => {
+                                            handleMaddCombinedPress();
+                                            setLongPressButton(null);
+                                            setDragStartY(null);
+                                            setIsHoveringTanween(false);
+                                            setIsHoveringShaddaTanween(false);
+                                            setIsHoveringStandingAlif(false);
+                                            setIsHoveringDaggerAlifOnly(false);
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
+                                          }}
+                                        >
+                                          <Text style={[
+                                            styles.keyboardKeyText,
+                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          ]}>{baseLetter + "\u0653"}</Text>
+                                        </Pressable>
+                                        
+                                        {/* Madd Rounded Zero button (U+06E4) */}
+                                        <Pressable
+                                          ref={(ref) => {
+                                            if (ref) maddRoundedZeroRefs.current[index] = ref;
+                                          }}
+                                          style={[
+                                            styles.keyboardKeyTanween,
+                                            styles.dropdownGridButton,
+                                            isHoveringMaddRoundedZero && styles.keyboardKeyTanweenHovered,
+                                          ]}
+                                          onPress={() => {
+                                            handleMaddRoundedZeroPress();
+                                            setLongPressButton(null);
+                                            setDragStartY(null);
+                                            setIsHoveringTanween(false);
+                                            setIsHoveringShaddaTanween(false);
+                                            setIsHoveringStandingAlif(false);
+                                            setIsHoveringDaggerAlifOnly(false);
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
+                                          }}
+                                        >
+                                          <Text style={[
+                                            styles.keyboardKeyText,
+                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          ]}>{baseLetter + "\u06E4"}</Text>
+                                        </Pressable>
+                                      </View>
                                       
-                                      {/* Madd Alif button */}
-                                      <Pressable
-                                        ref={(ref) => {
-                                          if (ref) maddAlifRefs.current[index] = ref;
-                                        }}
-                                        style={[
-                                          styles.keyboardKeyTanween,
-                                          styles.dropdownGridButton,
-                                          isHoveringMaddAlif && styles.keyboardKeyTanweenHovered,
-                                        ]}
-                                        onPress={() => {
-                                          handleMaddAlifPress();
-                                          setLongPressButton(null);
-                                          setDragStartY(null);
-                                          setIsHoveringTanween(false);
-                                          setIsHoveringShaddaTanween(false);
-                                          setIsHoveringStandingAlif(false);
-                                          setIsHoveringDaggerAlifOnly(false);
-                                          setIsHoveringMaddAlif(false);
-                                          setIsHoveringMaddWaw(false);
-                                          setIsHoveringMaddYa(false);
-                                          setIsHoveringMaddCombined(false);
-                                          setIsHoveringInvertedDammah(false);
-                                        }}
-                                      >
-                                        <Text style={[
-                                          styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                        ]}>{baseLetter + fathaChar + "\u0627"}</Text>
-                                      </Pressable>
-                                      
-                                      {/* Madd Combined button (U+0653 + U+0656) */}
-                                      <Pressable
-                                        ref={(ref) => {
-                                          if (ref) maddCombinedRefs.current[index] = ref;
-                                        }}
-                                        style={[
-                                          styles.keyboardKeyTanween,
-                                          styles.dropdownGridButton,
-                                          isHoveringMaddCombined && styles.keyboardKeyTanweenHovered,
-                                        ]}
-                                        onPress={() => {
-                                          handleMaddCombinedPress();
-                                          setLongPressButton(null);
-                                          setDragStartY(null);
-                                          setIsHoveringTanween(false);
-                                          setIsHoveringShaddaTanween(false);
-                                          setIsHoveringStandingAlif(false);
-                                          setIsHoveringDaggerAlifOnly(false);
-                                          setIsHoveringMaddAlif(false);
-                                          setIsHoveringMaddWaw(false);
-                                          setIsHoveringMaddYa(false);
-                                          setIsHoveringMaddCombined(false);
-                                          setIsHoveringInvertedDammah(false);
-                                        }}
-                                      >
-                                        <Text style={[
-                                          styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                        ]}>{baseLetter + "\u0653"}</Text>
-                                      </Pressable>
-                                      
+                                      {/* Extender Hamza + Fathah button (only for extender) */}
+                                      {baseLetter === "\u0640" && (
+                                        <Pressable
+                                          ref={(ref) => {
+                                            if (ref) extenderHamzaFathahRefs.current[index] = ref;
+                                          }}
+                                          style={[
+                                            styles.keyboardKeyTanween,
+                                            styles.dropdownGridButton,
+                                            isHoveringExtenderHamzaFathah && styles.keyboardKeyTanweenHovered,
+                                            { marginTop: 4 },
+                                          ]}
+                                          onPress={() => {
+                                            handleExtenderHamzaFathahPress();
+                                            setLongPressButton(null);
+                                            setDragStartY(null);
+                                            setIsHoveringTanween(false);
+                                            setIsHoveringShaddaTanween(false);
+                                            setIsHoveringStandingAlif(false);
+                                            setIsHoveringDaggerAlifOnly(false);
+                                            setIsHoveringMaddAlif(false);
+                                            setIsHoveringMaddWaw(false);
+                                            setIsHoveringMaddYa(false);
+                                            setIsHoveringMaddCombined(false);
+                                            setIsHoveringMaddRoundedZero(false);
+                                            setIsHoveringInvertedDammah(false);
+                                            setIsHoveringExtenderHamzaFathah(false);
+                                          }}
+                                        >
+                                          <Text style={[
+                                            styles.keyboardKeyText,
+                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          ]}>{"\u0640\u0654\u064E"}</Text>
+                                        </Pressable>
+                                      )}
                                     </View>
                                   ) : (
                                     <>
@@ -2638,65 +2870,65 @@ const NarratorPopup = ({
                                           }
                                         ]}>
                                           {/* Tanween button */}
-                                          <Pressable
-                                            ref={(ref) => {
-                                              if (ref) tanweenRefs.current[index] = ref;
-                                            }}
-                                            style={[
-                                              styles.keyboardKeyTanween,
+                                      <Pressable
+                                        ref={(ref) => {
+                                          if (ref) tanweenRefs.current[index] = ref;
+                                        }}
+                                        style={[
+                                          styles.keyboardKeyTanween,
                                               styles.dropdownGridButton,
-                                              isHoveringTanween && styles.keyboardKeyTanweenHovered,
-                                            ]}
-                                            onPress={() => {
-                                              handleHarakatPress(baseLetter + tanweenChar);
-                                              setLongPressButton(null);
-                                              setDragStartY(null);
-                                              setIsHoveringTanween(false);
-                                              setIsHoveringShaddaTanween(false);
-                                              setIsHoveringStandingAlif(false);
-                                              setIsHoveringDaggerAlifOnly(false);
+                                          isHoveringTanween && styles.keyboardKeyTanweenHovered,
+                                        ]}
+                                        onPress={() => {
+                                          handleHarakatPress(baseLetter + tanweenChar);
+                                          setLongPressButton(null);
+                                          setDragStartY(null);
+                                          setIsHoveringTanween(false);
+                                          setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
                                               setIsHoveringMaddAlif(false);
                                               setIsHoveringMaddWaw(false);
                                               setIsHoveringMaddYa(false);
                                               setIsHoveringMaddCombined(false);
-                                            }}
-                                          >
-                                            <Text style={[
-                                              styles.keyboardKeyText,
-                                              isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                            ]}>{baseLetter + tanweenChar}</Text>
-                                          </Pressable>
-                                          
+                                        }}
+                                      >
+                                        <Text style={[
+                                          styles.keyboardKeyText,
+                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        ]}>{baseLetter + tanweenChar}</Text>
+                                      </Pressable>
+                                      
                                           {/* Shadda+Tanween button */}
-                                          <Pressable
-                                            ref={(ref) => {
-                                              if (ref) shaddaTanweenRefs.current[index] = ref;
-                                            }}
-                                            style={[
-                                              styles.keyboardKeyTanween,
+                                  <Pressable
+                                    ref={(ref) => {
+                                      if (ref) shaddaTanweenRefs.current[index] = ref;
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
                                               styles.dropdownGridButton,
-                                              isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
-                                            ]}
-                                            onPress={() => {
-                                              const shaddaChar = "\u0651";
-                                              handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
-                                              setLongPressButton(null);
-                                              setDragStartY(null);
-                                              setIsHoveringTanween(false);
-                                              setIsHoveringShaddaTanween(false);
-                                              setIsHoveringStandingAlif(false);
-                                              setIsHoveringDaggerAlifOnly(false);
+                                      isHoveringShaddaTanween && styles.keyboardKeyTanweenHovered,
+                                    ]}
+                                    onPress={() => {
+                                      const shaddaChar = "\u0651";
+                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
+                                      setIsHoveringTanween(false);
+                                      setIsHoveringShaddaTanween(false);
+                                          setIsHoveringStandingAlif(false);
+                                          setIsHoveringDaggerAlifOnly(false);
                                               setIsHoveringMaddAlif(false);
                                               setIsHoveringMaddWaw(false);
                                               setIsHoveringMaddYa(false);
                                               setIsHoveringMaddCombined(false);
-                                            }}
-                                          >
-                                            <Text style={[
-                                              styles.keyboardKeyText,
-                                              isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                            ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
-                                          </Pressable>
+                                    }}
+                                  >
+                                    <Text style={[
+                                      styles.keyboardKeyText,
+                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                    ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
+                                  </Pressable>
                                           
                                           {/* Inverted Dammah button (only for dammah) */}
                                           {isDammahButton && (
@@ -3840,9 +4072,9 @@ export default function App() {
               }
             } catch (err) {
               console.error("Error saving updated narrator selection:", err);
-            }
-          } else {
-            setSelectedNarrators(savedNarrators);
+          }
+        } else {
+          setSelectedNarrators(savedNarrators);
           }
         }
       } catch (err) {
@@ -4004,7 +4236,7 @@ export default function App() {
         }
       }
       
-      // If clicking any other narrator
+        // If clicking any other narrator
       if (withoutHafs.includes(narratorId)) {
         // Deselecting narrator - only allow if it's from the same parent
         if (currentParentId === clickedParent.id) {
@@ -4013,7 +4245,7 @@ export default function App() {
           return ["hafs-an-asim", ...newSelection];
         }
         return prev; // Can't deselect if it's the only one from that parent
-      } else {
+        } else {
         // Selecting narrator
         // If clicking a child from a different parent, clear all other selections
         if (currentParentId && currentParentId !== clickedParent.id) {
@@ -4503,7 +4735,7 @@ export default function App() {
                 const isExpanded = expandedParents.has(parent.id);
                 return (
                   <View key={parent.id} style={styles.parentCard}>
-                    <TouchableOpacity
+                  <TouchableOpacity
                       style={styles.parentCardHeader}
                       onPress={() => handleToggleParent(parent.id)}
                       activeOpacity={0.7}
@@ -4532,7 +4764,7 @@ export default function App() {
                             return (
                               <ChildComponent
                                 key={child.id}
-                                style={[
+                    style={[
                                   styles.childCard,
                                   isHafs && styles.childCardDisabled,
                                 ]}
@@ -4551,22 +4783,22 @@ export default function App() {
                                       </Text>
                                     </View>
                                   </View>
-                                  <View
-                                    style={[
-                                      styles.drawerCheckbox,
+                      <View
+                        style={[
+                          styles.drawerCheckbox,
                                       isHafs && styles.drawerCheckboxDisabled,
                                       isSelected && !isHafs && styles.drawerCheckboxSelected,
                                       isSelected && isHafs && styles.drawerCheckboxDisabledSelected,
-                                    ]}
-                                  >
+                        ]}
+                      >
                                     {isSelected && (
                                       <Text style={styles.drawerCheckmark}>✓</Text>
                                     )}
-                                  </View>
+                      </View>
                                 </View>
                                 {isSelected && !isHafs && child.highlight_color && (
                                   <View
-                                    style={[
+                        style={[
                                       styles.childCardBar,
                                       { backgroundColor: child.highlight_color },
                                     ]}
@@ -4575,7 +4807,7 @@ export default function App() {
                               </ChildComponent>
                             );
                           })}
-                        </View>
+                    </View>
                       </View>
                     )}
                   </View>
