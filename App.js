@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useFonts } from "expo-font";
 import {
   StyleSheet,
@@ -18,9 +18,11 @@ import {
   Easing,
 } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { Slider } from "@miblanchard/react-native-slider";
 import ComparisonTable from "./ComparisonTable";
 import PageNavigation from "./PageNavigation";
 import InlineComparison from "./InlineComparison";
+import segmentsData from "./segments.json";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
@@ -367,6 +369,7 @@ const NarratorPopup = ({
   const [isHoveringDiamond, setIsHoveringDiamond] = useState(false);
   const [isHoveringImalahDot, setIsHoveringImalahDot] = useState(false);
   const [isHoveringHelperDiamondDot, setIsHoveringHelperDiamondDot] = useState(false);
+  const [isHoveringSubscriptAlef, setIsHoveringSubscriptAlef] = useState(false);
   const [isHoveringMaddAlif, setIsHoveringMaddAlif] = useState(false);
   const [isHoveringMaddWaw, setIsHoveringMaddWaw] = useState(false);
   const [isHoveringMaddYa, setIsHoveringMaddYa] = useState(false);
@@ -389,6 +392,7 @@ const NarratorPopup = ({
   const maddYaRefs = useRef({});
   const maddCombinedRefs = useRef({});
   const helperDiamondDotRefs = useRef({});
+  const subscriptAlefRefs = useRef({});
   const invertedDammahRefs = useRef({});
   const extenderHamzaDammahRefs = useRef({});
   const extenderHamzaKasrahRefs = useRef({});
@@ -1370,6 +1374,55 @@ const NarratorPopup = ({
     }, 0);
   };
 
+  // Handle subscript alef press - adds only subscript alef from helper font (no other diacritics)
+  const handleSubscriptAlefPress = () => {
+    if (inputValue.length === 0) return;
+    
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+    
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+    
+    // Find the end position (after the base letter and any existing diacritics)
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const char = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+    
+    // Using U+0656 for subscript alef - only add the helper character, no kasrah
+    const subscriptAlefChar = "\u0656"; // ARABIC SUBSCRIPT ALEF
+    const newDiacritics = subscriptAlefChar;
+    
+    // Replace the letter with base letter + only subscript alef
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+    
+    // Add to history before updating
+    addToHistory(newValue);
+    onInputChange(newValue);
+    
+    // Keep cursor on the same letter
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
   // Handle dagger alif press - insert dagger alif as diacritic after fathah
   const handleStandingAlifPress = () => {
     if (inputValue.length === 0) return;
@@ -2246,6 +2299,14 @@ const NarratorPopup = ({
                                             touchY <= pageY + height;
                                           setIsHoveringHelperDiamondDot(isOverHelperDiamondDot);
                                         });
+                                        subscriptAlefRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                          const isOverSubscriptAlef = 
+                                            touchX >= pageX && 
+                                            touchX <= pageX + width &&
+                                            touchY >= pageY && 
+                                            touchY <= pageY + height;
+                                          setIsHoveringSubscriptAlef(isOverSubscriptAlef);
+                                        });
                                         // Check extender hamza + kasrah button (only if base letter is extender)
                                         if (baseLetter === "\u0640") {
                                           extenderHamzaKasrahRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
@@ -2319,6 +2380,9 @@ const NarratorPopup = ({
                                     } else if (isHoveringHelperDiamondDot && isKasrahButton) {
                                       // Released over helper diamond dot button (for kasrah button)
                                       handleHelperDiamondDotPress();
+                                    } else if (isHoveringSubscriptAlef && isKasrahButton) {
+                                      // Released over subscript alef button (for kasrah button)
+                                      handleSubscriptAlefPress();
                                     } else if (isHoveringExtenderHamzaKasrah && isKasrahButton && baseLetter === "\u0640") {
                                       // Released over extender hamza + kasrah button
                                       handleExtenderHamzaKasrahPress();
@@ -2344,6 +2408,7 @@ const NarratorPopup = ({
                                   setIsHoveringExtenderHamzaFathah(false);
                                   setIsHoveringImalahDot(false);
                                   setIsHoveringHelperDiamondDot(false);
+                                  setIsHoveringSubscriptAlef(false);
                                   setIsHoveringExtenderHamzaKasrah(false);
                                 }
                               }}
@@ -2827,6 +2892,37 @@ const NarratorPopup = ({
                                             </View>
                                           </Pressable>
 
+                                          {/* Subscript Alef button */}
+                                          <Pressable
+                                            ref={(ref) => {
+                                              if (ref) subscriptAlefRefs.current[index] = ref;
+                                            }}
+                                            style={[
+                                              styles.keyboardKeyTanween,
+                                              styles.keyboardKeyHelperDot,
+                                              styles.dropdownGridButton,
+                                              isHoveringSubscriptAlef && styles.keyboardKeyTanweenHovered,
+                                            ]}
+                                            onPress={() => {
+                                              handleSubscriptAlefPress();
+                                              setLongPressButton(null);
+                                              setDragStartY(null);
+                                              setIsHoveringSubscriptAlef(false);
+                                            }}
+                                          >
+                                            <View style={styles.helperDotContainer}>
+                                              <Text style={[
+                                                styles.keyboardKeyText,
+                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              ]}>{baseLetter}</Text>
+                                              <Text style={[
+                                                styles.helperDotText,
+                                                isSmallButtonSet && styles.helperDotTextLarge,
+                                                { fontFamily: QURAN_FONT_FAMILY }
+                                              ]}>{"\u0656"}</Text>
+                                            </View>
+                                          </Pressable>
+
                                           {/* Extender Hamza + Kasrah button (only for extender) */}
                                           {isKasrahButton && baseLetter === "\u0640" && (
                                             <Pressable
@@ -2852,6 +2948,7 @@ const NarratorPopup = ({
                                                 setIsHoveringMaddCombined(false);
                                                 setIsHoveringImalahDot(false);
                                                 setIsHoveringHelperDiamondDot(false);
+                                                setIsHoveringSubscriptAlef(false);
                                                 setIsHoveringExtenderHamzaKasrah(false);
                                               }}
                                             >
@@ -3039,27 +3136,27 @@ const NarratorPopup = ({
                                   }
                                 ]}>
                                   {/* Imalah dot button */}
-                                <Pressable
-                                  ref={(ref) => {
+                                  <Pressable
+                                    ref={(ref) => {
                                       if (ref) imalahDotRefs.current[index] = ref;
-                                  }}
-                                  style={[
-                                    styles.keyboardKeyTanween,
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
                                       styles.keyboardKeyHelperDot,
                                       isHoveringImalahDot && styles.keyboardKeyTanweenHovered,
-                                  ]}
-                                  onPress={() => {
+                                    ]}
+                                    onPress={() => {
                                       handleImalahDotPress();
-                                    setLongPressButton(null);
-                                    setDragStartY(null);
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
                                       setIsHoveringImalahDot(false);
-                                  }}
-                                >
+                                    }}
+                                  >
                                     <View style={styles.helperDotContainer}>
-                                    <Text style={[
-                                      styles.keyboardKeyText,
-                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                    ]}>{baseLetter}</Text>
+                                      <Text style={[
+                                        styles.keyboardKeyText,
+                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                      ]}>{baseLetter}</Text>
                                       <Text style={[
                                         styles.helperDotText,
                                         isSmallButtonSet && styles.helperDotTextLarge,
@@ -3098,6 +3195,36 @@ const NarratorPopup = ({
                                     </View>
                                   </Pressable>
 
+                                  {/* Subscript Alef button */}
+                                  <Pressable
+                                    ref={(ref) => {
+                                      if (ref) subscriptAlefRefs.current[index] = ref;
+                                    }}
+                                    style={[
+                                      styles.keyboardKeyTanween,
+                                      styles.keyboardKeyHelperDot,
+                                      isHoveringSubscriptAlef && styles.keyboardKeyTanweenHovered,
+                                    ]}
+                                    onPress={() => {
+                                      handleSubscriptAlefPress();
+                                      setLongPressButton(null);
+                                      setDragStartY(null);
+                                      setIsHoveringSubscriptAlef(false);
+                                    }}
+                                  >
+                                    <View style={styles.helperDotContainer}>
+                                      <Text style={[
+                                        styles.keyboardKeyText,
+                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                      ]}>{baseLetter}</Text>
+                                      <Text style={[
+                                        styles.helperDotText,
+                                        isSmallButtonSet && styles.helperDotTextLarge,
+                                        { fontFamily: QURAN_FONT_FAMILY }
+                                      ]}>{"\u0656"}</Text>
+                                    </View>
+                                  </Pressable>
+
                                   {/* Extender Hamza + Kasrah button (only for extender) */}
                                   {baseLetter === "\u0640" && (
                                     <Pressable
@@ -3115,6 +3242,7 @@ const NarratorPopup = ({
                                         setDragStartY(null);
                                         setIsHoveringImalahDot(false);
                                         setIsHoveringHelperDiamondDot(false);
+                                        setIsHoveringSubscriptAlef(false);
                                         setIsHoveringExtenderHamzaKasrah(false);
                                       }}
                                     >
@@ -3239,6 +3367,27 @@ export default function App() {
   const [wordPosition, setWordPosition] = useState(null);
   const [currentPage, setCurrentPage] = useState(5);
   const [pageInput, setPageInput] = useState("5");
+  const [showPageSlider, setShowPageSlider] = useState(false);
+  const [sliderValue, setSliderValue] = useState(5); // Temporary value for slider (doesn't trigger page load)
+  const TOTAL_PAGES = 604; // Total pages in the Quran
+  const juzSegments = useMemo(
+    () =>
+      segmentsData
+        .filter((s) => s.fields.category === "juz")
+        .sort((a, b) => b.fields.first_page - a.fields.first_page), // RTL: highest page first
+    []
+  );
+  const surahSegments = useMemo(
+    () =>
+      segmentsData
+        .filter((s) => s.fields.category === "surah")
+        .sort((a, b) => b.fields.first_page - a.fields.first_page), // RTL: highest page first
+    []
+  );
+  const [currentJuzIndex, setCurrentJuzIndex] = useState(0);
+  const [currentSurahIndex, setCurrentSurahIndex] = useState(0);
+  const juzScrollViewRef = useRef(null);
+  const surahScrollViewRef = useRef(null);
   const [selectedNarrators, setSelectedNarrators] = useState([]);
   const [savedVariations, setSavedVariations] = useState([]);
   const [allVariations, setAllVariations] = useState({});
@@ -3906,6 +4055,70 @@ export default function App() {
     }
   }, [selectedNarrators, currentPage]);
 
+  // Sync Juz and Surah indices with current page (array is sorted descending for RTL)
+  useEffect(() => {
+    // Find current Juz (array is sorted descending: highest page first)
+    // Find the Juz where first_page <= currentPage <= last_page
+    let juzIndex = juzSegments.length - 1; // Default to last (lowest page)
+    for (let i = 0; i < juzSegments.length; i++) {
+      const juz = juzSegments[i];
+      if (currentPage >= juz.fields.first_page && currentPage <= juz.fields.last_page) {
+        juzIndex = i;
+        break;
+      }
+      // If currentPage is less than this Juz's first_page, continue to next (lower page number)
+      // If we reach the end without a match, use the last index (lowest page)
+    }
+    setCurrentJuzIndex(juzIndex);
+
+    // Find current Surah (array is sorted descending: highest page first)
+    let surahIndex = surahSegments.length - 1; // Default to last (lowest page)
+    for (let i = 0; i < surahSegments.length; i++) {
+      const surah = surahSegments[i];
+      if (currentPage >= surah.fields.first_page && currentPage <= surah.fields.last_page) {
+        surahIndex = i;
+        break;
+      }
+      // If currentPage is less than this Surah's first_page, continue to next (lower page number)
+      // If we reach the end without a match, use the last index (lowest page)
+    }
+    setCurrentSurahIndex(surahIndex);
+  }, [currentPage, juzSegments, surahSegments]);
+
+  // Scroll carousels to center current item when modal opens
+  useEffect(() => {
+    if (showPageSlider) {
+      setSliderValue(currentPage);
+      
+      const screenWidth = Dimensions.get('window').width;
+      const modalWidth = screenWidth * 0.85; // Modal is 85% of screen width
+      const itemWidth = 80; // Approximate item width (padding + content)
+      const carouselWidth = modalWidth - 48; // Account for modal padding
+      
+      // Scroll Juz carousel to center current item
+      setTimeout(() => {
+        if (juzScrollViewRef.current && currentJuzIndex < juzSegments.length) {
+          const scrollX = Math.max(0, (currentJuzIndex * itemWidth) - (carouselWidth / 2) + (itemWidth / 2));
+          juzScrollViewRef.current.scrollTo({
+            x: scrollX,
+            animated: true,
+          });
+        }
+      }, 100);
+
+      // Scroll Surah carousel to center current item
+      setTimeout(() => {
+        if (surahScrollViewRef.current && currentSurahIndex < surahSegments.length) {
+          const scrollX = Math.max(0, (currentSurahIndex * itemWidth) - (carouselWidth / 2) + (itemWidth / 2));
+          surahScrollViewRef.current.scrollTo({
+            x: scrollX,
+            animated: true,
+          });
+        }
+      }, 100);
+    }
+  }, [showPageSlider, currentPage, currentJuzIndex, currentSurahIndex, juzSegments.length, surahSegments.length]);
+
   // Expose a reusable refresher for variations (used after save/delete)
   const refreshVariations = async () => {
     try {
@@ -4482,7 +4695,10 @@ export default function App() {
                 </ScrollView>
                 
                 <View style={styles.mushafRightIcons}>
-                  <TouchableOpacity style={styles.mushafIconButton}>
+                  <TouchableOpacity 
+                    style={styles.mushafIconButton}
+                    onPress={() => setShowPageSlider(true)}
+                  >
                     <Text style={styles.mushafIcon}>🔍</Text>
                   </TouchableOpacity>
                 </View>
@@ -4886,6 +5102,169 @@ export default function App() {
         onSaveVariation={handleSaveVariation}
         onDeleteVariation={handleDeleteVariation}
       />
+
+      {/* Page Slider Modal */}
+      <Modal
+        visible={showPageSlider}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPageSlider(false)}
+      >
+        <View style={styles.pageSliderModalOverlay}>
+          <View style={styles.pageSliderModalContent}>
+            <View style={styles.pageSliderHeader}>
+              <Text style={styles.pageSliderTitle}>Go to Page</Text>
+              <TouchableOpacity
+                onPress={() => setShowPageSlider(false)}
+                style={styles.pageSliderCloseButton}
+              >
+                <Text style={styles.pageSliderCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            
+            {/* Juz Carousel */}
+            <View style={styles.carouselContainer}>
+              <Text style={styles.carouselLabel}>Juz</Text>
+              <ScrollView
+                ref={juzScrollViewRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.carouselContent}
+                style={styles.carouselScrollView}
+              >
+                {juzSegments.map((juz, index) => (
+                  <TouchableOpacity
+                    key={juz.pk}
+                    style={[
+                      styles.carouselItem,
+                      index === currentJuzIndex && styles.carouselItemActive,
+                    ]}
+                    onPress={() => {
+                      const pageNum = juz.fields.first_page;
+                      setCurrentPage(pageNum);
+                      setSliderValue(pageNum);
+                      setPageInput(pageNum.toString());
+                      handlePageChange(pageNum.toString());
+                      setShowPageSlider(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.carouselItemText,
+                        index === currentJuzIndex && styles.carouselItemTextActive,
+                      ]}
+                    >
+                      {juz.fields.title}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Surah Carousel */}
+            <View style={styles.carouselContainer}>
+              <Text style={styles.carouselLabel}>Surah</Text>
+              <ScrollView
+                ref={surahScrollViewRef}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.carouselContent}
+                style={styles.carouselScrollView}
+              >
+                {surahSegments.map((surah, index) => (
+                  <TouchableOpacity
+                    key={surah.pk}
+                    style={[
+                      styles.carouselItem,
+                      index === currentSurahIndex && styles.carouselItemActive,
+                    ]}
+                    onPress={() => {
+                      const pageNum = surah.fields.first_page;
+                      setCurrentPage(pageNum);
+                      setSliderValue(pageNum);
+                      setPageInput(pageNum.toString());
+                      handlePageChange(pageNum.toString());
+                      setShowPageSlider(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.carouselItemText,
+                        index === currentSurahIndex && styles.carouselItemTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {surah.fields.title}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+            
+            <View style={styles.pageSliderContainer}>
+              <TextInput
+                style={styles.pageSliderPageNumberInput}
+                value={sliderValue.toString()}
+                onChangeText={(text) => {
+                  const num = parseInt(text);
+                  if (!isNaN(num) && num >= 1 && num <= TOTAL_PAGES) {
+                    setSliderValue(num);
+                  }
+                }}
+                onSubmitEditing={(e) => {
+                  const num = parseInt(e.nativeEvent.text);
+                  if (!isNaN(num) && num >= 1 && num <= TOTAL_PAGES) {
+                    setCurrentPage(num);
+                    setSliderValue(num);
+                    setPageInput(num.toString());
+                    handlePageChange(num.toString());
+                    setShowPageSlider(false);
+                  }
+                }}
+                keyboardType="numeric"
+                selectTextOnFocus
+                textAlign="center"
+              />
+              <View style={styles.pageSliderWrapper}>
+                <Slider
+                  value={TOTAL_PAGES - sliderValue + 1}
+                  minimumValue={1}
+                  maximumValue={TOTAL_PAGES}
+                  step={1}
+                  onValueChange={(value) => {
+                    const pageNum = Array.isArray(value) ? value[0] : value;
+                    // Convert slider value to actual page (inverted for RTL)
+                    // Slider left (min) = page 604, Slider right (max) = page 1
+                    const actualPage = TOTAL_PAGES - Math.round(pageNum) + 1;
+                    setSliderValue(actualPage); // Only update display, don't trigger page load
+                  }}
+                  onSlidingComplete={(value) => {
+                    const pageNum = Array.isArray(value) ? value[0] : value;
+                    // Convert slider value to actual page (inverted for RTL)
+                    const actualPage = TOTAL_PAGES - Math.round(pageNum) + 1;
+                    setCurrentPage(actualPage);
+                    setSliderValue(actualPage);
+                    setPageInput(actualPage.toString());
+                    handlePageChange(actualPage.toString());
+                    setShowPageSlider(false);
+                  }}
+                  minimumTrackTintColor="#e0e0e0"
+                  maximumTrackTintColor="#027778"
+                  thumbTintColor="#027778"
+                  thumbStyle={styles.pageSliderThumb}
+                  trackStyle={styles.pageSliderTrack}
+                  containerStyle={styles.pageSliderContainerStyle}
+                  thumbTouchSize={{ width: 50, height: 50 }}
+                />
+              </View>
+              <View style={styles.pageSliderLabels}>
+                <Text style={styles.pageSliderLabel}>{TOTAL_PAGES}</Text>
+                <Text style={styles.pageSliderLabel}>1</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </GestureHandlerRootView>
   );
 }
@@ -6001,5 +6380,136 @@ const styles = StyleSheet.create({
   deleteIcon: {
     fontSize: 16,
     color: "#d32f2f",
+  },
+  pageSliderModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pageSliderModalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "85%",
+    maxWidth: 400,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  pageSliderHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 24,
+  },
+  pageSliderTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#1a1a1a",
+  },
+  pageSliderCloseButton: {
+    padding: 4,
+  },
+  pageSliderCloseText: {
+    fontSize: 24,
+    color: "#666",
+    fontWeight: "300",
+  },
+  pageSliderContainer: {
+    alignItems: "stretch",
+  },
+  pageSliderPageNumber: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#027778",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  pageSliderPageNumberInput: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#027778",
+    textAlign: "center",
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#027778",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: "#f9f9f9",
+  },
+  pageSliderWrapper: {
+    marginHorizontal: 10,
+    marginBottom: 12,
+  },
+  pageSliderContainerStyle: {
+    flex: 1,
+  },
+  pageSliderThumb: {
+    width: 24,
+    height: 24,
+    backgroundColor: "#027778",
+    shadowColor: "#027778",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  pageSliderTrack: {
+    height: 4,
+    borderRadius: 2,
+  },
+  pageSliderLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingHorizontal: 10,
+  },
+  pageSliderLabel: {
+    fontSize: 14,
+    color: "#666",
+  },
+  carouselContainer: {
+    marginBottom: 20,
+  },
+  carouselLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 8,
+  },
+  carouselScrollView: {
+    maxHeight: 50,
+  },
+  carouselContent: {
+    paddingRight: 10,
+  },
+  carouselItem: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginRight: 8,
+    borderRadius: 8,
+    backgroundColor: "#f5f5f5",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+    minWidth: 60,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  carouselItemActive: {
+    backgroundColor: "#027778",
+    borderColor: "#027778",
+  },
+  carouselItemText: {
+    fontSize: 14,
+    color: "#666",
+    fontWeight: "500",
+  },
+  carouselItemTextActive: {
+    color: "#fff",
+    fontWeight: "600",
   },
 });

@@ -11,6 +11,7 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
+    "@miblanchard/react-native-slider": "^2.6.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@vseslav/react-native-horizontal-picker": "^0.1.1",
     "expo": "~54.0.20",
