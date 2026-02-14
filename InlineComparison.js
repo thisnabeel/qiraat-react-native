@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
 
-const InlineComparison = ({ originalText, inputText, fontFamily }) => {
+const InlineComparison = ({ originalText, inputText, fontFamily, textStyle }) => {
   const textRef = useRef(null);
   const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
@@ -137,7 +137,7 @@ const InlineComparison = ({ originalText, inputText, fontFamily }) => {
     const textElements = segments.map((segment, index) => (
       <Text
         key={index}
-        style={[styles.word, { fontFamily: fontFamilyToUse }, segment.isDifferent ? styles.differentChar : null]}
+        style={[styles.word, { fontFamily: fontFamilyToUse }, segment.isDifferent ? styles.differentChar : null, textStyle]}
       >
         {segment.text}
       </Text>
@@ -162,7 +162,7 @@ const InlineComparison = ({ originalText, inputText, fontFamily }) => {
         <View style={styles.textWithDotsWrapper}>
           <Text
             ref={textRef}
-            style={[styles.word, { fontFamily: fontFamilyToUse }]}
+            style={[styles.word, { fontFamily: fontFamilyToUse }, textStyle]}
             onLayout={(event) => {
               const { width, height } = event.nativeEvent.layout;
               setTextLayout({ width, height });

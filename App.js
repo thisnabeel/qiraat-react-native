@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useFonts } from "expo-font";
 import {
   StyleSheet,
@@ -20,9 +20,9 @@ import {
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { Slider } from "@miblanchard/react-native-slider";
 import ComparisonTable from "./ComparisonTable";
-import PageNavigation from "./PageNavigation";
 import InlineComparison from "./InlineComparison";
 import segmentsData from "./segments.json";
+import { Search, Sidebar, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
@@ -125,13 +125,17 @@ const Line = ({
   savedVariations,
   selectedNarrators,
   allVariations = {},
+  isFirstLineOfJuz = false,
 }) => {
   const wordRefs = useRef({});
+  const lineStyle = isFirstLineOfJuz ? [styles.line, styles.firstLineOfJuz] : styles.line;
+  const wordStyle = isFirstLineOfJuz ? [styles.word, styles.firstLineOfJuzText] : styles.word;
+  const inlineTextStyle = isFirstLineOfJuz ? styles.firstLineOfJuzText : undefined;
 
   return (
-    <View style={styles.line}>
+    <View style={lineStyle}>
       {words.map((word, index) => {
-        let contentToRender = <Text style={styles.word}>{word.content}</Text>;
+        let contentToRender = <Text style={wordStyle}>{word.content}</Text>;
 
         // Find a saved variation for this word from selected narrators
         // Only show variation if it's both in allVariations AND in savedVariations
@@ -158,6 +162,7 @@ const Line = ({
               originalText={word.content}
               inputText={variationContent}
               fontFamily={QURAN_FONT_FAMILY}
+              textStyle={inlineTextStyle}
             />
           );
         }
@@ -200,6 +205,7 @@ const PageView = ({
   savedVariations,
   selectedNarrators,
   allVariations,
+  highlightFirstLine = false,
 }) => {
   if (loading) {
     return (
@@ -225,7 +231,7 @@ const PageView = ({
   return (
     <View style={styles.container}>
       <View style={styles.pageContent}>
-        {page.lines.map((line) => (
+        {page.lines.map((line, lineIndex) => (
           <Line
             key={line.id}
             words={line.words}
@@ -234,6 +240,7 @@ const PageView = ({
             savedVariations={savedVariations}
             selectedNarrators={selectedNarrators}
             allVariations={allVariations}
+            isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
           />
         ))}
       </View>
@@ -3388,11 +3395,23 @@ export default function App() {
   const [currentSurahIndex, setCurrentSurahIndex] = useState(0);
   const juzScrollViewRef = useRef(null);
   const surahScrollViewRef = useRef(null);
+  const juzCarouselWidthRef = useRef(0);
+  const surahCarouselWidthRef = useRef(0);
+  const CAROUSEL_ITEM_WIDTH = 84; // width 76 + marginRight 8
   const [selectedNarrators, setSelectedNarrators] = useState([]);
   const [savedVariations, setSavedVariations] = useState([]);
   const [allVariations, setAllVariations] = useState({});
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isDrawerFullyOpen, setIsDrawerFullyOpen] = useState(false);
+  const VARIATIONS_SIDEBAR_WIDTH = 320;
+  const [isVariationsSidebarOpen, setIsVariationsSidebarOpen] = useState(false);
+  const [allMushafVariations, setAllMushafVariations] = useState([]);
+  const [lastSelectedVariationHighlight, setLastSelectedVariationHighlight] = useState(null);
+  const variationsSidebarAnim = useRef(new Animated.Value(VARIATIONS_SIDEBAR_WIDTH)).current;
+  const variationsSidebarBackdropAnim = useRef(new Animated.Value(0)).current;
+  const variationsSidebarScrollRef = useRef(null);
+  const variationsSidebarScrollOffsetRef = useRef(0);
+  const VARIATIONS_SIDEBAR_ROW_HEIGHT = 72;
   const [currentTab, setCurrentTab] = useState("Recite");
   const [expandedParents, setExpandedParents] = useState(new Set());
   const [parentNarrators, setParentNarrators] = useState([]);
@@ -3433,9 +3452,9 @@ export default function App() {
 
   // Cleanup effect: ensure drawer is in valid state when tab changes or component unmounts
   useEffect(() => {
-    if (currentTab !== "Recite" && isDrawerVisible) {
-      // If we're not on Recite tab, close drawer
-      closeDrawer();
+    if (currentTab !== "Recite") {
+      if (isDrawerVisible) closeDrawer();
+      if (isVariationsSidebarOpen) closeVariationsSidebar();
     }
   }, [currentTab]);
 
@@ -3704,6 +3723,109 @@ export default function App() {
       isAnimatingDrawerRef.current = false;
     });
   };
+
+  // Variations sidebar (right-sliding) - lists all narration changes for mushaf traversal
+  // Fetched once in background when narrators are selected; no refetch on sidebar open
+  const fetchAllVariations = useCallback(async () => {
+    const narratorIds = selectedNarrators
+      .filter((id) => typeof id === "number" || /^\d+$/.test(String(id)))
+      .map((id) => parseInt(id, 10));
+    if (narratorIds.length === 0) {
+      setAllMushafVariations([]);
+      return;
+    }
+    const params = new URLSearchParams({ mushaf_id: MUSHAF_ID, narrator_ids: narratorIds.join(",") });
+    const url = `${VARIATIONS_URL}?${params.toString()}`;
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        setAllMushafVariations(data);
+      } else {
+        setAllMushafVariations([]);
+      }
+    } catch (err) {
+      console.error("Error fetching all variations:", err);
+      setAllMushafVariations([]);
+    }
+  }, [selectedNarrators]);
+
+  // Fetch all variations discreetly in background when narrator selection changes
+  useEffect(() => {
+    if (selectedNarrators.length > 0) {
+      fetchAllVariations();
+    } else {
+      setAllMushafVariations([]);
+    }
+  }, [selectedNarrators, fetchAllVariations]);
+
+  const openVariationsSidebar = useCallback(() => {
+    setIsVariationsSidebarOpen(true);
+    Animated.parallel([
+      Animated.timing(variationsSidebarAnim, {
+        toValue: 0,
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(variationsSidebarBackdropAnim, {
+        toValue: 1,
+        duration: 250,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [variationsSidebarAnim, variationsSidebarBackdropAnim]);
+
+  // When variations sidebar opens, scroll to selected item (if still on that page) or restore scroll position
+  useEffect(() => {
+    if (!isVariationsSidebarOpen || allMushafVariations.length === 0) return;
+    const timer = setTimeout(() => {
+      const scrollRef = variationsSidebarScrollRef.current;
+      if (!scrollRef || !scrollRef.scrollTo) return;
+      const shouldScrollToSelected =
+        lastSelectedVariationHighlight &&
+        currentPage === lastSelectedVariationHighlight.pageNum;
+      if (shouldScrollToSelected) {
+        const idx = allMushafVariations.findIndex(
+          (v) => v.word?.id === lastSelectedVariationHighlight.wordId
+        );
+        if (idx >= 0) {
+          const y = Math.max(0, idx * VARIATIONS_SIDEBAR_ROW_HEIGHT - 60);
+          scrollRef.scrollTo({ y, animated: false });
+        }
+      } else {
+        scrollRef.scrollTo({
+          y: variationsSidebarScrollOffsetRef.current,
+          animated: false,
+        });
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [isVariationsSidebarOpen, allMushafVariations.length, lastSelectedVariationHighlight, currentPage]);
+
+  const closeVariationsSidebar = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(variationsSidebarAnim, {
+        toValue: VARIATIONS_SIDEBAR_WIDTH,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(variationsSidebarBackdropAnim, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start((finished) => {
+      if (finished) {
+        variationsSidebarAnim.setValue(VARIATIONS_SIDEBAR_WIDTH);
+        variationsSidebarBackdropAnim.setValue(0);
+        setIsVariationsSidebarOpen(false);
+      }
+    });
+  }, [variationsSidebarAnim, variationsSidebarBackdropAnim]);
 
   // Swipe gesture for page navigation (only on Recite tab)
   // This gesture follows the finger and animates page transitions
@@ -4055,6 +4177,87 @@ export default function App() {
     }
   }, [selectedNarrators, currentPage]);
 
+  // Variations on current page for first selected narrator (for bottom traversal bar)
+  const firstSelectedNarratorId = selectedNarrators.find((id) => id !== "hafs-an-asim") ?? null;
+  const firstNarratorTitle = useMemo(() => {
+    if (!firstSelectedNarratorId) return "";
+    for (const parent of parentNarrators) {
+      const child = parent.children.find((c) => c.id === firstSelectedNarratorId);
+      if (child) return child.title ?? "";
+    }
+    return "";
+  }, [firstSelectedNarratorId, parentNarrators]);
+  // All variations for first narrator (full mushaf) - used for traversal
+  const narratorVariations = useMemo(() => {
+    if (!firstSelectedNarratorId || allMushafVariations.length === 0) return [];
+    const narratorId =
+      typeof firstSelectedNarratorId === "number"
+        ? firstSelectedNarratorId
+        : parseInt(firstSelectedNarratorId, 10);
+    const validId = !isNaN(narratorId) ? narratorId : firstSelectedNarratorId;
+    return allMushafVariations.filter(
+      (v) =>
+        v.narrator_id === validId ||
+        v.narrator?.id === validId ||
+        String(v.narrator_id) === String(firstSelectedNarratorId) ||
+        String(v.narrator?.id) === String(firstSelectedNarratorId)
+    );
+  }, [allMushafVariations, firstSelectedNarratorId]);
+
+  // Current variation index derived from Narration Changes active state (lastSelectedVariationHighlight)
+  const currentVariationIndex = useMemo(() => {
+    if (narratorVariations.length === 0) return 0;
+    if (lastSelectedVariationHighlight) {
+      const idx = narratorVariations.findIndex(
+        (v) =>
+          v.word?.id === lastSelectedVariationHighlight.wordId &&
+          (v.word?.line?.page?.position ?? 0) === lastSelectedVariationHighlight.pageNum
+      );
+      if (idx >= 0) return idx;
+    }
+    // Fallback: try selectedWordId + currentPage
+    if (selectedWordId) {
+      const idx = narratorVariations.findIndex(
+        (v) =>
+          v.word?.id === selectedWordId &&
+          (v.word?.line?.page?.position ?? 0) === currentPage
+      );
+      if (idx >= 0) return idx;
+    }
+    // Fallback: first variation on current page
+    const idx = narratorVariations.findIndex(
+      (v) => (v.word?.line?.page?.position ?? 0) === currentPage
+    );
+    return idx >= 0 ? idx : 0;
+  }, [narratorVariations, lastSelectedVariationHighlight, selectedWordId, currentPage]);
+
+  const currentPageVariations = useMemo(
+    () =>
+      narratorVariations.filter(
+        (v) => (v.word?.line?.page?.position ?? 0) === currentPage
+      ),
+    [narratorVariations, currentPage]
+  );
+
+  // When page changes (e.g. via swipe) or variations load, sync active state to first variation on current page
+  useEffect(() => {
+    if (currentPageVariations.length === 0) return;
+    const first = currentPageVariations[0];
+    if (
+      !lastSelectedVariationHighlight ||
+      lastSelectedVariationHighlight.pageNum !== currentPage
+    ) {
+      setLastSelectedVariationHighlight({
+        wordId: first?.word?.id,
+        pageNum: currentPage,
+      });
+      if (first?.word?.id) {
+        setSelectedWordId(first.word.id);
+        setSelectedWord({ id: first.word.id, content: first.word.content });
+      }
+    }
+  }, [currentPage, currentPageVariations.length]);
+
   // Sync Juz and Surah indices with current page (array is sorted descending for RTL)
   useEffect(() => {
     // Find current Juz (array is sorted descending: highest page first)
@@ -4085,39 +4288,32 @@ export default function App() {
     setCurrentSurahIndex(surahIndex);
   }, [currentPage, juzSegments, surahSegments]);
 
-  // Scroll carousels to center current item when modal opens
+  // Scroll carousels to center the selected item
+  const scrollCarouselsToCenter = useCallback(() => {
+    if (!showPageSlider) return;
+    const itemWidth = CAROUSEL_ITEM_WIDTH;
+    // Juz carousel
+    const juzWidth = juzCarouselWidthRef.current || Dimensions.get('window').width * 0.7;
+    if (juzScrollViewRef.current && currentJuzIndex < juzSegments.length) {
+      const scrollX = Math.max(0, (currentJuzIndex * itemWidth) - (juzWidth / 2) + (itemWidth / 2));
+      juzScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
+    }
+    // Surah carousel
+    const surahWidth = surahCarouselWidthRef.current || Dimensions.get('window').width * 0.7;
+    if (surahScrollViewRef.current && currentSurahIndex < surahSegments.length) {
+      const scrollX = Math.max(0, (currentSurahIndex * itemWidth) - (surahWidth / 2) + (itemWidth / 2));
+      surahScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
+    }
+  }, [showPageSlider, currentJuzIndex, currentSurahIndex, juzSegments.length, surahSegments.length]);
+
+  // Scroll carousels when modal opens or selection changes
   useEffect(() => {
     if (showPageSlider) {
       setSliderValue(currentPage);
-      
-      const screenWidth = Dimensions.get('window').width;
-      const modalWidth = screenWidth * 0.85; // Modal is 85% of screen width
-      const itemWidth = 80; // Approximate item width (padding + content)
-      const carouselWidth = modalWidth - 48; // Account for modal padding
-      
-      // Scroll Juz carousel to center current item
-      setTimeout(() => {
-        if (juzScrollViewRef.current && currentJuzIndex < juzSegments.length) {
-          const scrollX = Math.max(0, (currentJuzIndex * itemWidth) - (carouselWidth / 2) + (itemWidth / 2));
-          juzScrollViewRef.current.scrollTo({
-            x: scrollX,
-            animated: true,
-          });
-        }
-      }, 100);
-
-      // Scroll Surah carousel to center current item
-      setTimeout(() => {
-        if (surahScrollViewRef.current && currentSurahIndex < surahSegments.length) {
-          const scrollX = Math.max(0, (currentSurahIndex * itemWidth) - (carouselWidth / 2) + (itemWidth / 2));
-          surahScrollViewRef.current.scrollTo({
-            x: scrollX,
-            animated: true,
-          });
-        }
-      }, 100);
+      const timer = setTimeout(scrollCarouselsToCenter, 150);
+      return () => clearTimeout(timer);
     }
-  }, [showPageSlider, currentPage, currentJuzIndex, currentSurahIndex, juzSegments.length, surahSegments.length]);
+  }, [showPageSlider, currentPage, currentJuzIndex, currentSurahIndex, scrollCarouselsToCenter]);
 
   // Expose a reusable refresher for variations (used after save/delete)
   const refreshVariations = async () => {
@@ -4334,6 +4530,13 @@ export default function App() {
     setPopupVisible(true);
     setSelectedNarrator(null);
     setInputValue(word.content);
+    // Sync Narration Changes active state when user taps a word that has a variation
+    const hasVariation = narratorVariations.some(
+      (v) => v.word?.id === word.id && (v.word?.line?.page?.position ?? 0) === currentPage
+    );
+    if (hasVariation) {
+      setLastSelectedVariationHighlight({ wordId: word.id, pageNum: currentPage });
+    }
   };
 
   const handleSelectNarrator = (narrator) => {
@@ -4695,11 +4898,26 @@ export default function App() {
                 </ScrollView>
                 
                 <View style={styles.mushafRightIcons}>
+                  <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
                   <TouchableOpacity 
                     style={styles.mushafIconButton}
                     onPress={() => setShowPageSlider(true)}
                   >
-                    <Text style={styles.mushafIcon}>🔍</Text>
+                    <Search stroke="#ffffff" width={20} height={20} />
+                  </TouchableOpacity>
+                  {selectedNarrators.some((id) => id !== "hafs-an-asim") && (
+                    <TouchableOpacity 
+                      style={styles.mushafIconButton}
+                      onPress={isVariationsSidebarOpen ? closeVariationsSidebar : openVariationsSidebar}
+                    >
+                      <Sidebar stroke="#ffffff" width={20} height={20} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity 
+                    style={styles.mushafIconButton}
+                    onPress={() => {}}
+                  >
+                    <Bookmark stroke="#ffffff" width={20} height={20} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -4786,21 +5004,136 @@ export default function App() {
                       savedVariations={savedVariations}
                       selectedNarrators={selectedNarrators}
                       allVariations={allVariations}
+                      highlightFirstLine={juzSegments.some((j) => j.fields.first_page === currentPage)}
                     />
                   </Animated.View>
                 </View>
               </GestureDetector>
 
-              <PageNavigation
-                currentPage={currentPage}
-                pageInput={pageInput}
-                onPageInputChange={handlePageInputChange}
-                onPageChange={handlePageChange}
-                onPreviousPage={handlePreviousPage}
-                onNextPage={handleNextPage}
-                onOpenMenu={isDrawerFullyOpen ? closeDrawer : openDrawer}
-                isMenuOpen={isDrawerFullyOpen}
-              />
+              {/* Bottom bar: variation traversal when narrator selected, else prompt to select */}
+              {firstSelectedNarratorId ? (
+                <View style={styles.variationTraversalBar}>
+                  {/* Left arrow - next variation */}
+                  <TouchableOpacity
+                    style={[
+                      styles.variationTraversalArrowButton,
+                      narratorVariations.length === 0 && styles.variationTraversalArrowButtonDisabled,
+                    ]}
+                    disabled={narratorVariations.length === 0}
+                    onPress={() => {
+                      if (narratorVariations.length === 0) return;
+                      const next =
+                        (currentVariationIndex + 1) % narratorVariations.length;
+                      const v = narratorVariations[next];
+                      const pageNum = v.word?.line?.page?.position ?? currentPage;
+                      setLastSelectedVariationHighlight(
+                        v?.word?.id ? { wordId: v.word.id, pageNum } : null
+                      );
+                      setCurrentPage(pageNum);
+                      setPageInput(String(pageNum));
+                      handlePageChange(String(pageNum));
+                      if (v?.word?.id) {
+                        setSelectedWordId(v.word.id);
+                        setSelectedWord({ id: v.word.id, content: v.word.content });
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.variationTraversalArrowButtonText,
+                        narratorVariations.length === 0 && styles.variationTraversalArrowDisabled,
+                      ]}
+                    >
+                      ‹
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Centered segmented control: Hafs | Shubah */}
+                  <View style={styles.variationTraversalSegmentedControl}>
+                    <View style={styles.variationTraversalSegment}>
+                      <Text style={styles.variationTraversalSegmentLabel}>Hafs</Text>
+                      <Text
+                        style={[styles.variationTraversalSegmentText, { fontFamily: QURAN_FONT_FAMILY }]}
+                        numberOfLines={1}
+                      >
+                        {narratorVariations[currentVariationIndex]?.word?.content ??
+                          (narratorVariations.length === 0 ? "—" : "")}
+                      </Text>
+                    </View>
+                    <Text style={styles.variationTraversalSegmentDivider}>›</Text>
+                    <View style={[styles.variationTraversalSegment, styles.variationTraversalSegmentActive]}>
+                      <Text style={styles.variationTraversalSegmentLabel}>
+                        {firstNarratorTitle || narratorVariations[0]?.narrator?.title || "Narrator"}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.variationTraversalSegmentText,
+                          styles.variationTraversalSegmentTextActive,
+                          { fontFamily: QURAN_FONT_FAMILY },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {narratorVariations[currentVariationIndex]?.content ??
+                          (narratorVariations.length === 0
+                            ? "No variations on this page"
+                            : "")}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Right arrow - previous variation */}
+                  <TouchableOpacity
+                    style={[
+                      styles.variationTraversalArrowButton,
+                      narratorVariations.length === 0 && styles.variationTraversalArrowButtonDisabled,
+                    ]}
+                    disabled={narratorVariations.length === 0}
+                    onPress={() => {
+                      if (narratorVariations.length === 0) return;
+                      const prev =
+                        (currentVariationIndex - 1 + narratorVariations.length) %
+                        narratorVariations.length;
+                      const v = narratorVariations[prev];
+                      const pageNum = v.word?.line?.page?.position ?? currentPage;
+                      setLastSelectedVariationHighlight(
+                        v?.word?.id ? { wordId: v.word.id, pageNum } : null
+                      );
+                      setCurrentPage(pageNum);
+                      setPageInput(String(pageNum));
+                      handlePageChange(String(pageNum));
+                      if (v?.word?.id) {
+                        setSelectedWordId(v.word.id);
+                        setSelectedWord({ id: v.word.id, content: v.word.content });
+                      }
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.variationTraversalArrowButtonText,
+                        narratorVariations.length === 0 && styles.variationTraversalArrowDisabled,
+                      ]}
+                    >
+                      ›
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.noRiwayahBanner}
+                  onPress={openDrawer}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.noRiwayahBannerIcon}>
+                    <Text style={styles.noRiwayahBannerIconText}>+</Text>
+                  </View>
+                  <View style={styles.noRiwayahBannerText}>
+                    <Text style={styles.noRiwayahBannerTitle}>No Riwaayah Selected</Text>
+                    <Text style={styles.noRiwayahBannerSubtitle}>
+                      Open menu to compare recitations
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
             </>
           )}
 
@@ -5087,6 +5420,116 @@ export default function App() {
         </SafeAreaView>
       )}
 
+      {/* Variations sidebar - right-sliding, lists all narration changes for mushaf traversal */}
+      {isVariationsSidebarOpen && (
+        <SafeAreaView style={styles.variationsSidebarOverlay} pointerEvents="box-none">
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeVariationsSidebar}>
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFill,
+                styles.variationsSidebarBackdrop,
+                { opacity: variationsSidebarBackdropAnim },
+              ]}
+            />
+          </Pressable>
+          <Animated.View
+            style={[
+              styles.variationsSidebarPanel,
+              { transform: [{ translateX: variationsSidebarAnim }] },
+            ]}
+          >
+            <View style={styles.variationsSidebarHeader}>
+              <Text style={styles.variationsSidebarTitle}>Narration Changes</Text>
+              <TouchableOpacity onPress={closeVariationsSidebar} style={styles.variationsSidebarClose}>
+                <Text style={styles.variationsSidebarCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            {allMushafVariations.length === 0 ? (
+              <View style={styles.variationsSidebarEmpty}>
+                <Text style={styles.variationsSidebarEmptyText}>
+                  {selectedNarrators.length === 0
+                    ? "Select narrators from the menu to see differences"
+                    : "No variations found for selected narrators"}
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                ref={variationsSidebarScrollRef}
+                style={styles.variationsSidebarList}
+                contentContainerStyle={styles.variationsSidebarListContent}
+                showsVerticalScrollIndicator={true}
+                onScroll={(e) => {
+                  variationsSidebarScrollOffsetRef.current =
+                    e.nativeEvent.contentOffset.y;
+                }}
+                scrollEventThrottle={100}
+              >
+                {allMushafVariations.map((variation) => {
+                  const pageNum = variation.word?.line?.page?.position ?? 0;
+                  const narratorTitle = variation.narrator?.title ?? "";
+                  const originalText = variation.word?.content ?? "";
+                  const variationText = variation.content ?? "";
+                  const wordId = variation.word?.id;
+                  const isActiveItem =
+                    lastSelectedVariationHighlight &&
+                    currentPage === lastSelectedVariationHighlight.pageNum &&
+                    wordId === lastSelectedVariationHighlight.wordId;
+                  return (
+                    <TouchableOpacity
+                      key={`${variation.word_id}-${variation.narrator_id}`}
+                      style={[styles.variationsSidebarItem, isActiveItem && styles.variationsSidebarItemActive]}
+                      onPress={() => {
+                        setLastSelectedVariationHighlight(
+                          wordId != null ? { wordId, pageNum } : null
+                        );
+                        setCurrentPage(pageNum);
+                        setPageInput(String(pageNum));
+                        handlePageChange(String(pageNum));
+                        setSelectedWordId(wordId ?? null);
+                        setSelectedWord(
+                          variation.word
+                            ? { id: variation.word.id, content: variation.word.content }
+                            : null
+                        );
+                        closeVariationsSidebar();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.variationsSidebarItemPage}>Page {pageNum}</Text>
+                      <View style={styles.variationsSidebarItemRow}>
+                        <View style={styles.variationsSidebarItemBlock}>
+                          <Text style={styles.variationsSidebarItemLabel}>Hafs</Text>
+                          <View style={styles.variationsSidebarChipUnselected}>
+                            <Text
+                              style={[styles.variationsSidebarChipText, { fontFamily: QURAN_FONT_FAMILY }]}
+                              numberOfLines={1}
+                            >
+                              {originalText}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.variationsSidebarItemArrow}>›</Text>
+                        <View style={styles.variationsSidebarItemBlock}>
+                          <Text style={styles.variationsSidebarItemLabel}>{narratorTitle}</Text>
+                          <View style={styles.variationsSidebarChipSelected}>
+                            <Text
+                              style={[styles.variationsSidebarChipText, { fontFamily: QURAN_FONT_FAMILY }]}
+                              numberOfLines={1}
+                            >
+                              {variationText}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </Animated.View>
+        </SafeAreaView>
+      )}
+
       <NarratorPopup
         visible={popupVisible}
         onClose={handleClosePopup}
@@ -5110,8 +5553,8 @@ export default function App() {
         animationType="fade"
         onRequestClose={() => setShowPageSlider(false)}
       >
-        <View style={styles.pageSliderModalOverlay}>
-          <View style={styles.pageSliderModalContent}>
+        <Pressable style={styles.pageSliderModalOverlay} onPress={() => setShowPageSlider(false)}>
+          <Pressable style={styles.pageSliderModalContent} onPress={() => {}}>
             <View style={styles.pageSliderHeader}>
               <Text style={styles.pageSliderTitle}>Go to Page</Text>
               <TouchableOpacity
@@ -5123,7 +5566,13 @@ export default function App() {
             </View>
             
             {/* Juz Carousel */}
-            <View style={styles.carouselContainer}>
+            <View
+              style={styles.carouselContainer}
+              onLayout={(e) => {
+                juzCarouselWidthRef.current = e.nativeEvent.layout.width;
+                if (showPageSlider) scrollCarouselsToCenter();
+              }}
+            >
               <Text style={styles.carouselLabel}>Juz</Text>
               <ScrollView
                 ref={juzScrollViewRef}
@@ -5145,7 +5594,6 @@ export default function App() {
                       setSliderValue(pageNum);
                       setPageInput(pageNum.toString());
                       handlePageChange(pageNum.toString());
-                      setShowPageSlider(false);
                     }}
                   >
                     <Text
@@ -5162,7 +5610,13 @@ export default function App() {
             </View>
 
             {/* Surah Carousel */}
-            <View style={styles.carouselContainer}>
+            <View
+              style={styles.carouselContainer}
+              onLayout={(e) => {
+                surahCarouselWidthRef.current = e.nativeEvent.layout.width;
+                if (showPageSlider) scrollCarouselsToCenter();
+              }}
+            >
               <Text style={styles.carouselLabel}>Surah</Text>
               <ScrollView
                 ref={surahScrollViewRef}
@@ -5184,7 +5638,6 @@ export default function App() {
                       setSliderValue(pageNum);
                       setPageInput(pageNum.toString());
                       handlePageChange(pageNum.toString());
-                      setShowPageSlider(false);
                     }}
                   >
                     <Text
@@ -5218,7 +5671,6 @@ export default function App() {
                     setSliderValue(num);
                     setPageInput(num.toString());
                     handlePageChange(num.toString());
-                    setShowPageSlider(false);
                   }
                 }}
                 keyboardType="numeric"
@@ -5246,7 +5698,6 @@ export default function App() {
                     setSliderValue(actualPage);
                     setPageInput(actualPage.toString());
                     handlePageChange(actualPage.toString());
-                    setShowPageSlider(false);
                   }}
                   minimumTrackTintColor="#e0e0e0"
                   maximumTrackTintColor="#027778"
@@ -5262,8 +5713,8 @@ export default function App() {
                 <Text style={styles.pageSliderLabel}>1</Text>
               </View>
             </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </GestureHandlerRootView>
   );
@@ -5377,6 +5828,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  mushafPageIndicator: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "rgba(255,255,255,0.75)",
+    letterSpacing: 0.3,
+    marginRight: 12,
+  },
   mushafIconButton: {
     paddingHorizontal: 8,
     paddingVertical: 6,
@@ -5388,8 +5846,122 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingBottom: Platform.OS === "ios" ? 100 : 80, // Space for navigation controls
+    paddingBottom: Platform.OS === "ios" ? 100 : 80, // Base padding; bar adds its own when visible
     overflow: "hidden", // Prevent content from showing outside during animation
+  },
+  variationTraversalBar: {
+    flexDirection: "row",
+    backgroundColor: "#2a2a2a",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#444",
+  },
+  variationTraversalArrowButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#56565E",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  variationTraversalArrowButtonDisabled: {
+    backgroundColor: "#555",
+    opacity: 0.6,
+  },
+  variationTraversalArrowButtonText: {
+    fontSize: 24,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  variationTraversalSegmentedControl: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 12,
+    backgroundColor: "#e8e8e8",
+    borderRadius: 24,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  variationTraversalSegment: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    minWidth: 0,
+  },
+  variationTraversalSegmentActive: {
+    backgroundColor: "#3a3a3a",
+    borderWidth: 1.5,
+    borderColor: "#f5a623",
+  },
+  variationTraversalSegmentLabel: {
+    fontSize: 10,
+    color: "#888",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  variationTraversalSegmentText: {
+    fontSize: 32,
+    color: "#1a1a1a",
+    textAlign: "center",
+  },
+  variationTraversalSegmentTextActive: {
+    color: "#fff",
+  },
+  variationTraversalSegmentDivider: {
+    fontSize: 16,
+    color: "#999",
+    paddingHorizontal: 4,
+  },
+  variationTraversalArrowDisabled: {
+    opacity: 0.5,
+  },
+  noRiwayahBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#3a3a3a",
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  noRiwayahBannerIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 14,
+  },
+  noRiwayahBannerIconText: {
+    fontSize: 22,
+    fontWeight: "300",
+    color: "#fff",
+  },
+  noRiwayahBannerText: {
+    alignItems: "flex-start",
+  },
+  noRiwayahBannerTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  noRiwayahBannerSubtitle: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.7)",
   },
   pageViewContainer: {
     flex: 1,
@@ -5430,6 +6002,15 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#000",
+  },
+  firstLineOfJuz: {
+    backgroundColor: "#000",
+    borderBottomColor: "#333",
+    marginHorizontal: -2,
+    paddingHorizontal: 2,
+  },
+  firstLineOfJuzText: {
+    color: "#fff",
   },
   wordPressable: {
     paddingHorizontal: 2,
@@ -6381,6 +6962,131 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#d32f2f",
   },
+  variationsSidebarOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1000,
+  },
+  variationsSidebarBackdrop: {
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  variationsSidebarPanel: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 320,
+    backgroundColor: "#2a2a2a",
+    shadowColor: "#000",
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  variationsSidebarHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingTop: Platform.OS === "ios" ? 56 : (StatusBar.currentHeight || 0) + 24,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#3a3a3a",
+    backgroundColor: "#2a2a2a",
+  },
+  variationsSidebarTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#ffffff",
+  },
+  variationsSidebarClose: {
+    padding: 8,
+    marginRight: -8,
+  },
+  variationsSidebarCloseText: {
+    fontSize: 20,
+    color: "#aaaaaa",
+    fontWeight: "600",
+  },
+  variationsSidebarEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
+  variationsSidebarEmptyText: {
+    fontSize: 14,
+    color: "#aaaaaa",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  variationsSidebarList: {
+    flex: 1,
+    backgroundColor: "#2a2a2a",
+  },
+  variationsSidebarListContent: {
+    paddingBottom: 40,
+    paddingHorizontal: 12,
+  },
+  variationsSidebarItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#3a3a3a",
+    backgroundColor: "#2a2a2a",
+  },
+  variationsSidebarItemActive: {
+    backgroundColor: "#353535",
+  },
+  variationsSidebarItemPage: {
+    fontSize: 11,
+    color: "#888",
+    marginBottom: 8,
+  },
+  variationsSidebarItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  variationsSidebarItemBlock: {
+    flex: 1,
+    alignItems: "center",
+    minWidth: 0,
+  },
+  variationsSidebarItemLabel: {
+    fontSize: 11,
+    color: "#999",
+    marginBottom: 4,
+  },
+  variationsSidebarChipUnselected: {
+    backgroundColor: "#555",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  variationsSidebarChipSelected: {
+    backgroundColor: "#1a1a1a",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#c9a227",
+  },
+  variationsSidebarChipText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#ffffff",
+    textAlign: "center",
+  },
+  variationsSidebarItemArrow: {
+    fontSize: 18,
+    color: "#888",
+    marginHorizontal: 8,
+    flexShrink: 0,
+  },
   pageSliderModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -6488,6 +7194,7 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   carouselItem: {
+    width: 76,
     paddingHorizontal: 16,
     paddingVertical: 10,
     marginRight: 8,
@@ -6495,7 +7202,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#f5f5f5",
     borderWidth: 1,
     borderColor: "#e0e0e0",
-    minWidth: 60,
     alignItems: "center",
     justifyContent: "center",
   },
