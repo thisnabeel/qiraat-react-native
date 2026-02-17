@@ -27,7 +27,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
 // const API_BASE = "http://localhost:3000";
-const MUSHAF_ID = 2;
+const MUSHAF_ID = 3;
 const API_BASE_URL = `${API_BASE}/api/mushafs/${MUSHAF_ID}/pages`;
 const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
@@ -36,7 +36,7 @@ const VARIATIONS_URL = `${API_BASE}/api/variations`;
 // const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "NaskhNastaleeqIndoPakQWBW";
 // On iOS, the font name must match the font file's internal PostScript name exactly
 // If "AswaatOne" doesn't work, try: "Aswaat", "AswaatFontLab", "Aswaat FontLab", or check Font Book for the exact name
-const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "AswaatOne";
+const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "DigitalKhatt" : "AswaatOne";
 // const QURAN_FONT_FAMILY = "MeQuran";
 const HELPER_FONT_FAMILY = "AswaatHelpers";
 
@@ -3329,6 +3329,7 @@ export default function App() {
     MeQuran: require("./assets/me_quran_volt_newmet.ttf"),
     AswaatOne: require("./assets/aswaat-one.otf"),
     AswaatHelpers: require("./aswaat-helpers-one-Regular.ttf"),
+    DigitalKhatt: require("./digitalkhatt.otf"),
   });
   
   // Debug font loading
