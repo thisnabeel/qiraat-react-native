@@ -18,10 +18,12 @@ import {
   Easing,
 } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import PagerView from "react-native-pager-view";
 import { Slider } from "@miblanchard/react-native-slider";
 import ComparisonTable from "./ComparisonTable";
 import InlineComparison from "./InlineComparison";
 import segmentsData from "./segments.json";
+import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import { Search, Sidebar, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -126,11 +128,29 @@ const Line = ({
   selectedNarrators,
   allVariations = {},
   isFirstLineOfJuz = false,
+  isDarkMode = false,
 }) => {
   const wordRefs = useRef({});
-  const lineStyle = isFirstLineOfJuz ? [styles.line, styles.firstLineOfJuz] : styles.line;
-  const wordStyle = isFirstLineOfJuz ? [styles.word, styles.firstLineOfJuzText] : styles.word;
-  const inlineTextStyle = isFirstLineOfJuz ? styles.firstLineOfJuzText : undefined;
+  const lineStyle = [styles.line];
+  const wordStyle = [styles.word];
+  let inlineTextStyle = undefined;
+
+  if (isDarkMode) {
+    lineStyle.push(styles.lineDark);
+    wordStyle.push(styles.wordDark);
+  }
+
+  if (isFirstLineOfJuz) {
+    if (isDarkMode) {
+      lineStyle.push(styles.firstLineOfJuzDark);
+      wordStyle.push(styles.firstLineOfJuzDarkText);
+      inlineTextStyle = styles.firstLineOfJuzDarkText;
+    } else {
+      lineStyle.push(styles.firstLineOfJuz);
+      wordStyle.push(styles.firstLineOfJuzText);
+      inlineTextStyle = styles.firstLineOfJuzText;
+    }
+  }
 
   return (
     <View style={lineStyle}>
@@ -206,31 +226,67 @@ const PageView = ({
   selectedNarrators,
   allVariations,
   highlightFirstLine = false,
+  isDarkMode = false,
 }) => {
   if (loading) {
+    const containerStyle = isDarkMode
+      ? [styles.container, styles.containerDark]
+      : styles.container;
+    const pageContentStyle = isDarkMode
+      ? [styles.pageContent, styles.pageContentDark]
+      : styles.pageContent;
+
     return (
-      <View style={styles.container}>
-        <View style={styles.pageContent}>
-          <ActivityIndicator size="large" color="#000" />
-          <Text style={styles.loadingText}>Loading page...</Text>
+      <View style={containerStyle}>
+        <View style={pageContentStyle}>
+          <ActivityIndicator size="large" color={isDarkMode ? "#fff" : "#000"} />
+          <Text
+            style={[
+              styles.loadingText,
+              isDarkMode && styles.loadingTextDark,
+            ]}
+          >
+            Loading page...
+          </Text>
         </View>
       </View>
     );
   }
 
   if (!page || !page.lines) {
+    const containerStyle = isDarkMode
+      ? [styles.container, styles.containerDark]
+      : styles.container;
+    const pageContentStyle = isDarkMode
+      ? [styles.pageContent, styles.pageContentDark]
+      : styles.pageContent;
+
     return (
-      <View style={styles.container}>
-        <View style={styles.pageContent}>
-          <Text style={styles.errorText}>No page data available</Text>
+      <View style={containerStyle}>
+        <View style={pageContentStyle}>
+          <Text
+            style={[
+              styles.errorText,
+              isDarkMode && styles.errorTextDark,
+            ]}
+          >
+            No page data available
+          </Text>
         </View>
       </View>
     );
   }
 
+  const containerStyle = isDarkMode
+    ? [styles.container, styles.containerDark]
+    : styles.container;
+  const pageContentStyle = isDarkMode
+    ? [styles.pageContent, styles.pageContentDark]
+    : styles.pageContent;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.pageContent}>
+    <View style={containerStyle}>
+      <View style={pageContentStyle}>
         {page.lines.map((line, lineIndex) => (
           <Line
             key={line.id}
@@ -241,6 +297,7 @@ const PageView = ({
             selectedNarrators={selectedNarrators}
             allVariations={allVariations}
             isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
+            isDarkMode={isDarkMode}
           />
         ))}
       </View>
@@ -3403,6 +3460,8 @@ export default function App() {
   const [allVariations, setAllVariations] = useState({});
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
   const [isDrawerFullyOpen, setIsDrawerFullyOpen] = useState(false);
+  const [isQiraatSettingsVisible, setIsQiraatSettingsVisible] = useState(false);
+  const [isMushafDarkMode, setIsMushafDarkMode] = useState(false);
   const VARIATIONS_SIDEBAR_WIDTH = 320;
   const [isVariationsSidebarOpen, setIsVariationsSidebarOpen] = useState(false);
   const [allMushafVariations, setAllMushafVariations] = useState([]);
@@ -3433,10 +3492,7 @@ export default function App() {
   const isDraggingDrawerRef = useRef(false);
   const drawerStartValueRef = useRef(-DRAWER_WIDTH);
   const isAnimatingDrawerRef = useRef(false);
-  const pageTranslateX = useRef(new Animated.Value(0)).current;
-  const isDraggingPageRef = useRef(false);
-  const pageStartValueRef = useRef(0);
-  const pageSwipeDirectionRef = useRef(null); // 'left' or 'right'
+  const pagerRef = useRef(null);
 
   useEffect(() => {
     currentTabRef.current = currentTab;
@@ -3827,160 +3883,23 @@ export default function App() {
     });
   }, [variationsSidebarAnim, variationsSidebarBackdropAnim]);
 
-  // Swipe gesture for page navigation (only on Recite tab)
-  // This gesture follows the finger and animates page transitions
-  // It has priority over word presses to ensure swipes always work
-  const pageSwipeGesture = useRef(
-    Gesture.Pan()
-      .activeOffsetX([-10, 10]) // Lower threshold for faster activation
-      .failOffsetY([-12, 12]) // Fail if too much vertical movement (allows scrolling)
-      .minDistance(10) // Lower minimum distance for faster activation
-      .simultaneousWithExternalGesture(false) // Don't allow other gestures to interfere
-      .onBegin((event) => {
-        // Don't activate if drawer is open or already navigating
-        if (isDrawerVisibleRef.current || isNavigatingRef.current) {
-          return;
-        }
-        
-        // Check if starting from left edge - if so, let drawer handle it
-        const startX = event.x;
-        if (startX <= 40) {
-          return; // Let drawer gesture handle this
-        }
-        
-        // Start dragging page immediately - this will cancel any word press
-        isDraggingPageRef.current = true;
-        pageStartValueRef.current = pageTranslateX._value;
-        pageSwipeDirectionRef.current = null;
-      })
-      .onUpdate((event) => {
-        if (!isDraggingPageRef.current) return;
-        
-        // Determine swipe direction
-        if (pageSwipeDirectionRef.current === null) {
-          if (Math.abs(event.translationX) > 10) {
-            pageSwipeDirectionRef.current = event.translationX > 0 ? 'right' : 'left';
-          }
-        }
-        
-        // Update page position in real-time (clamped to screen width)
-        const screenWidth = Dimensions.get('window').width;
-        const maxTranslate = screenWidth * 0.8; // Max 80% of screen width
-        const newValue = Math.max(
-          -maxTranslate,
-          Math.min(maxTranslate, pageStartValueRef.current + event.translationX)
-        );
-        
-        pageTranslateX.setValue(newValue);
-      })
-      .onEnd((event) => {
-        if (!isDraggingPageRef.current) return;
-        isDraggingPageRef.current = false;
-        
-        // Don't trigger if drawer is open or already navigating
-        if (isDrawerVisibleRef.current || isNavigatingRef.current) {
-          // Snap back to center
-          Animated.spring(pageTranslateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 20,
-            stiffness: 300,
-          }).start();
-          return;
-        }
-        
-        const screenWidth = Dimensions.get('window').width;
-        const currentTranslate = pageTranslateX._value;
-        const velocity = event.velocityX;
-        
-        // Determine which page is more visible based on current position
-        // If more than 50% of next/previous page is showing, snap to that page
-        // Also consider velocity - fast swipes should change pages even if less visible
-        const snapThreshold = screenWidth * 0.5; // 50% threshold
-        const velocityThreshold = 400; // Fast swipe threshold
-        
-        // Check if horizontal movement is dominant
-        const isHorizontalSwipe = Math.abs(event.translationX) > Math.abs(event.translationY) * 2;
-        
-        if (!isHorizontalSwipe) {
-          // Not a horizontal swipe, snap back
-          Animated.spring(pageTranslateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 20,
-            stiffness: 300,
-          }).start();
-          return;
-        }
-        
-        // Prevent rapid successive calls
-        if (isNavigatingRef.current) {
-          // Just snap back
-          Animated.spring(pageTranslateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 20,
-            stiffness: 300,
-          }).start();
-          return;
-        }
-        
-        // Determine which page to snap to based on visibility
-        // Positive translationX = swiping right (showing previous page)
-        // Negative translationX = swiping left (showing next page)
-        const shouldGoToNext = 
-          currentTranslate < -snapThreshold || // More than 50% of next page visible
-          (currentTranslate < 0 && velocity < -velocityThreshold); // Fast left swipe
-        
-        const shouldGoToPrevious = 
-          currentTranslate > snapThreshold || // More than 50% of previous page visible
-          (currentTranslate > 0 && velocity > velocityThreshold); // Fast right swipe
-        
-        if (shouldGoToNext || shouldGoToPrevious) {
-          isNavigatingRef.current = true;
-          
-          // Use ref to get current page value
-          const page = currentPageRef.current;
-          
-          // Animate to the target page
-          const targetTranslate = shouldGoToNext ? -screenWidth : screenWidth;
-          
-          Animated.timing(pageTranslateX, {
-            toValue: targetTranslate,
-            duration: 200,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }).start(() => {
-            // Change page
-            if (shouldGoToPrevious && page > 1 && handlePreviousPageRef.current) {
-              handlePreviousPageRef.current();
-            } else if (shouldGoToNext && handleNextPageRef.current) {
-              handleNextPageRef.current();
-            }
-            
-            // Reset position
-            pageTranslateX.setValue(0);
-            
-            // Reset navigation flag
-            setTimeout(() => {
-              isNavigatingRef.current = false;
-            }, 300);
-          });
-        } else {
-          // Snap back to current page (less than 50% of other page showing)
-          Animated.spring(pageTranslateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 20,
-            stiffness: 300,
-          }).start();
-        }
-      })
-      .onFinalize(() => {
-        isDraggingPageRef.current = false;
-        pageSwipeDirectionRef.current = null;
-      })
-  ).current;
+  const syncPagerToPage = (pageNum, animated = true) => {
+    if (!pagerRef.current) return;
+    const clampedPage = Math.min(Math.max(pageNum, 1), TOTAL_PAGES);
+    // RTL: index 0 is last page, index TOTAL_PAGES - 1 is first page
+    const index = TOTAL_PAGES - clampedPage;
+    try {
+      if (animated && typeof pagerRef.current.setPage === "function") {
+        pagerRef.current.setPage(index);
+      } else if (typeof pagerRef.current.setPageWithoutAnimation === "function") {
+        pagerRef.current.setPageWithoutAnimation(index);
+      } else if (typeof pagerRef.current.setPage === "function") {
+        pagerRef.current.setPage(index);
+      }
+    } catch (e) {
+      // Ignore pager sync errors
+    }
+  };
 
   // Function to fetch a single page and cache it
   const fetchAndCachePage = async (pageNum, showLoading = false) => {
@@ -4570,6 +4489,7 @@ export default function App() {
     if (pageNum > 0) {
       setCurrentPage(pageNum);
       setPageInput(newPage);
+      syncPagerToPage(pageNum);
       // Loading state is handled by useEffect based on cache
     }
   };
@@ -4581,6 +4501,7 @@ export default function App() {
       console.log("handlePreviousPage: going from", page, "to", newPage);
       setCurrentPage(newPage);
       setPageInput(newPage.toString());
+      syncPagerToPage(newPage);
       // Loading state is handled by useEffect based on cache
     }
   };
@@ -4591,6 +4512,7 @@ export default function App() {
     console.log("handleNextPage: going from", page, "to", newPage);
     setCurrentPage(newPage);
     setPageInput(newPage.toString());
+    syncPagerToPage(newPage);
     // Loading state is handled by useEffect based on cache
   };
 
@@ -4822,8 +4744,13 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar barStyle="dark-content" />
-      <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          isMushafDarkMode && styles.safeAreaDark,
+        ]}
+      >
         {currentTab !== "Recite" && (
           <View style={styles.navBar}>
             <TouchableOpacity
@@ -4838,7 +4765,12 @@ export default function App() {
           </View>
         )}
 
-        <View style={styles.mainContainer}>
+        <View
+          style={[
+            styles.mainContainer,
+            isMushafDarkMode && styles.mainContainerDark,
+          ]}
+        >
           {currentTab === "Recite" && (
             <>
               {/* Top bar with selected narrators */}
@@ -4922,93 +4854,50 @@ export default function App() {
                 </View>
               </View>
               
-              <GestureDetector gesture={pageSwipeGesture}>
-                <View style={styles.contentContainer}>
-                  {/* Previous page (slides in from right when swiping right) */}
-                  {previousPage && currentPage > 1 && (
-                    <Animated.View
-                      style={[
-                        styles.pageViewContainer,
-                        styles.pageBehind,
-                        {
-                          transform: [
-                            {
-                              translateX: pageTranslateX.interpolate({
-                                inputRange: [-Dimensions.get('window').width, 0, Dimensions.get('window').width],
-                                outputRange: [0, Dimensions.get('window').width, Dimensions.get('window').width * 2],
-                              }),
-                            },
-                          ],
-                        },
-                      ]}
-                      pointerEvents="none"
-                    >
-                      <PageView
-                        page={previousPage}
-                        onWordPress={() => {}}
-                        selectedWordId={null}
-                        loading={false}
-                        savedVariations={[]}
-                        selectedNarrators={selectedNarrators}
-                        allVariations={{}}
-                      />
-                    </Animated.View>
-                  )}
-                  
-                  {/* Next page (slides in from left when swiping left) */}
-                  {nextPage && (
-                    <Animated.View
-                      style={[
-                        styles.pageViewContainer,
-                        styles.pageBehind,
-                        {
-                          transform: [
-                            {
-                              translateX: pageTranslateX.interpolate({
-                                inputRange: [-Dimensions.get('window').width, 0, Dimensions.get('window').width],
-                                outputRange: [-Dimensions.get('window').width * 2, -Dimensions.get('window').width, 0],
-                              }),
-                            },
-                          ],
-                        },
-                      ]}
-                      pointerEvents="none"
-                    >
-                      <PageView
-                        page={nextPage}
-                        onWordPress={() => {}}
-                        selectedWordId={null}
-                        loading={false}
-                        savedVariations={[]}
-                        selectedNarrators={selectedNarrators}
-                        allVariations={{}}
-                      />
-                    </Animated.View>
-                  )}
-                  
-                  {/* Current page */}
-                  <Animated.View
-                    style={[
-                      styles.pageViewContainer,
-                      styles.pageCurrent,
-                      {
-                        transform: [{ translateX: pageTranslateX }],
-                      },
-                    ]}
-                  >
-                    <PageView
-                      page={page}
-                      onWordPress={handleWordPress}
-                      selectedWordId={selectedWordId}
-                      loading={loading}
-                      savedVariations={savedVariations}
-                      selectedNarrators={selectedNarrators}
-                      allVariations={allVariations}
-                      highlightFirstLine={juzSegments.some((j) => j.fields.first_page === currentPage)}
-                    />
-                  </Animated.View>
-                </View>
-              </GestureDetector>
+              <View style={styles.contentContainer}>
+                <PagerView
+                  ref={pagerRef}
+                  style={{ flex: 1 }}
+                  // RTL: initial index is inverted so higher page numbers appear on the left
+                  initialPage={Math.max(0, TOTAL_PAGES - currentPage)}
+                  onPageSelected={(e) => {
+                    const position = e.nativeEvent.position ?? 0;
+                    // RTL: pager index is inverted into page number
+                    const newPageNum = TOTAL_PAGES - position;
+                    if (newPageNum !== currentPageRef.current) {
+                      setCurrentPage(newPageNum);
+                      setPageInput(String(newPageNum));
+                    }
+                  }}
+                >
+                  {Array.from({ length: TOTAL_PAGES }).map((_, idx) => {
+                    // RTL: index 0 shows last page, index TOTAL_PAGES - 1 shows first page
+                    const pageNum = TOTAL_PAGES - idx;
+                    const cachedPage = pageCacheRef.current[pageNum];
+                    const isCurrent = pageNum === currentPage;
+                    const pageData = cachedPage;
+                    const isLoading = isCurrent && (!pageData || loading);
+
+                    return (
+                      <View key={String(pageNum)} style={styles.pageViewContainer}>
+                        <PageView
+                          page={pageData}
+                          onWordPress={isCurrent ? handleWordPress : () => {}}
+                          selectedWordId={isCurrent ? selectedWordId : null}
+                          loading={isLoading}
+                          savedVariations={isCurrent ? savedVariations : []}
+                          selectedNarrators={selectedNarrators}
+                          allVariations={isCurrent ? allVariations : {}}
+                          highlightFirstLine={juzSegments.some(
+                            (j) => j.fields.first_page === pageNum
+                          )}
+                          isDarkMode={isMushafDarkMode}
+                        />
+                      </View>
+                    );
+                  })}
+                </PagerView>
+              </View>
 
               {/* Bottom bar: variation traversal when narrator selected, else prompt to select */}
               {firstSelectedNarratorId ? (
@@ -5241,9 +5130,14 @@ export default function App() {
           >
             <View style={styles.drawerHeader}>
               <View style={styles.drawerHeaderTop}>
-                <View style={styles.drawerHeaderIcon}>
-                  <Text style={styles.drawerHeaderIconText}>📖</Text>
-                </View>
+                <TouchableOpacity
+                  style={styles.drawerHeaderIcon}
+                  onPress={() => setIsQiraatSettingsVisible(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open Qiraat settings"
+                >
+                  <Text style={styles.drawerHeaderIconText}>⚙️</Text>
+                </TouchableOpacity>
                 <View style={styles.drawerHeaderTextContainer}>
                   <Text style={styles.drawerTitle}>القراءات</Text>
                 </View>
@@ -5546,6 +5440,13 @@ export default function App() {
         onDeleteVariation={handleDeleteVariation}
       />
 
+      <QiraatSettingsModal
+        visible={isQiraatSettingsVisible}
+        onClose={() => setIsQiraatSettingsVisible(false)}
+        isDarkMode={isMushafDarkMode}
+        onToggleDarkMode={setIsMushafDarkMode}
+      />
+
       {/* Page Slider Modal */}
       <Modal
         visible={showPageSlider}
@@ -5759,6 +5660,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  mainContainerDark: {
+    backgroundColor: "#000",
+  },
+  safeAreaDark: {
+    backgroundColor: "#000",
+  },
   navBar: {
     minHeight: 50,
     flexDirection: "row",
@@ -5846,8 +5753,7 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingBottom: Platform.OS === "ios" ? 100 : 80, // Base padding; bar adds its own when visible
-    overflow: "hidden", // Prevent content from showing outside during animation
+    paddingBottom: Platform.OS === "ios" ? 0 : 80, // Base padding; bar adds its own when visible
   },
   variationTraversalBar: {
     flexDirection: "row",
@@ -5966,11 +5872,6 @@ const styles = StyleSheet.create({
   pageViewContainer: {
     flex: 1,
     width: "100%",
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
   },
   pageBehind: {
     opacity: 0.95,
@@ -5991,9 +5892,15 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 600,
     backgroundColor: "#fff",
-    paddingTop: 4,
-    paddingBottom: 4,
+    paddingTop: 8,
+    paddingBottom: 32,
     paddingHorizontal: 2,
+  },
+  containerDark: {
+    backgroundColor: "#000",
+  },
+  pageContentDark: {
+    backgroundColor: "#000",
   },
   line: {
     flexDirection: "row-reverse",
@@ -6003,14 +5910,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#000",
   },
+  lineDark: {
+    borderBottomColor: "#444",
+  },
   firstLineOfJuz: {
     backgroundColor: "#000",
     borderBottomColor: "#333",
     marginHorizontal: -2,
     paddingHorizontal: 2,
   },
+  firstLineOfJuzDark: {
+    backgroundColor: "#fff",
+    borderBottomColor: "#ccc",
+    marginHorizontal: -2,
+    paddingHorizontal: 2,
+  },
   firstLineOfJuzText: {
     color: "#fff",
+  },
+  firstLineOfJuzDarkText: {
+    color: "#000",
   },
   wordPressable: {
     paddingHorizontal: 2,
@@ -6039,6 +5958,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     writingDirection: "rtl",
     lineHeight: 46,
+  },
+  wordDark: {
+    color: "#ffffff",
   },
   modalContainer: {
     flex: 1,
@@ -6122,12 +6044,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   drawerHeaderIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: "#00d4ff",
-    alignItems: "center",
-    justifyContent: "center",
     marginRight: 12,
   },
   drawerHeaderIconText: {

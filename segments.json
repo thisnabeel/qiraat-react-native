@@ -1,0 +1,1730 @@
+[
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 201,
+    "fields": {
+      "first_page": 1,
+      "last_page": 27,
+      "title": "Juz 1",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 1
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 202,
+    "fields": {
+      "first_page": 28,
+      "last_page": 55,
+      "title": "Juz 2",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 2
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 203,
+    "fields": {
+      "first_page": 56,
+      "last_page": 83,
+      "title": "Juz 3",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 3
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 204,
+    "fields": {
+      "first_page": 84,
+      "last_page": 111,
+      "title": "Juz 4",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 4
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 205,
+    "fields": {
+      "first_page": 112,
+      "last_page": 139,
+      "title": "Juz 5",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 5
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 206,
+    "fields": {
+      "first_page": 140,
+      "last_page": 167,
+      "title": "Juz 6",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 6
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 207,
+    "fields": {
+      "first_page": 168,
+      "last_page": 195,
+      "title": "Juz 7",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 7
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 208,
+    "fields": {
+      "first_page": 196,
+      "last_page": 223,
+      "title": "Juz 8",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 8
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 209,
+    "fields": {
+      "first_page": 224,
+      "last_page": 251,
+      "title": "Juz 9",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 9
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 210,
+    "fields": {
+      "first_page": 252,
+      "last_page": 279,
+      "title": "Juz 10",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 10
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 211,
+    "fields": {
+      "first_page": 280,
+      "last_page": 307,
+      "title": "Juz 11",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 11
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 212,
+    "fields": {
+      "first_page": 308,
+      "last_page": 335,
+      "title": "Juz 12",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 12
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 213,
+    "fields": {
+      "first_page": 336,
+      "last_page": 363,
+      "title": "Juz 13",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 13
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 214,
+    "fields": {
+      "first_page": 364,
+      "last_page": 391,
+      "title": "Juz 14",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 14
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 215,
+    "fields": {
+      "first_page": 392,
+      "last_page": 419,
+      "title": "Juz 15",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 15
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 216,
+    "fields": {
+      "first_page": 420,
+      "last_page": 447,
+      "title": "Juz 16",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 16
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 217,
+    "fields": {
+      "first_page": 448,
+      "last_page": 475,
+      "title": "Juz 17",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 17
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 218,
+    "fields": {
+      "first_page": 476,
+      "last_page": 503,
+      "title": "Juz 18",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 18
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 219,
+    "fields": {
+      "first_page": 504,
+      "last_page": 531,
+      "title": "Juz 19",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 19
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 220,
+    "fields": {
+      "first_page": 532,
+      "last_page": 557,
+      "title": "Juz 20",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 20
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 221,
+    "fields": {
+      "first_page": 558,
+      "last_page": 585,
+      "title": "Juz 21",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 21
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 222,
+    "fields": {
+      "first_page": 586,
+      "last_page": 611,
+      "title": "Juz 22",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 22
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 223,
+    "fields": {
+      "first_page": 612,
+      "last_page": 639,
+      "title": "Juz 23",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 23
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 224,
+    "fields": {
+      "first_page": 640,
+      "last_page": 665,
+      "title": "Juz 24",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 24
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 225,
+    "fields": {
+      "first_page": 666,
+      "last_page": 695,
+      "title": "Juz 25",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 25
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 226,
+    "fields": {
+      "first_page": 696,
+      "last_page": 725,
+      "title": "Juz 26",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 26
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 227,
+    "fields": {
+      "first_page": 726,
+      "last_page": 755,
+      "title": "Juz 27",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 27
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 228,
+    "fields": {
+      "first_page": 756,
+      "last_page": 785,
+      "title": "Juz 28",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 28
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 229,
+    "fields": {
+      "first_page": 786,
+      "last_page": 817,
+      "title": "Juz 29",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 29
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 230,
+    "fields": {
+      "first_page": 818,
+      "last_page": 847,
+      "title": "Juz 30",
+      "mushaf": 1,
+      "category": "juz",
+      "category_position": 30
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 12,
+    "fields": {
+      "first_page": 328,
+      "last_page": 346,
+      "title": "يوسف",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 12
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 13,
+    "fields": {
+      "first_page": 346,
+      "last_page": 355,
+      "title": "الرعد",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 13
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 14,
+    "fields": {
+      "first_page": 355,
+      "last_page": 364,
+      "title": "إبراهيم",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 14
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 15,
+    "fields": {
+      "first_page": 364,
+      "last_page": 372,
+      "title": "الحجر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 15
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 16,
+    "fields": {
+      "first_page": 372,
+      "last_page": 392,
+      "title": "النحل",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 16
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 19,
+    "fields": {
+      "first_page": 425,
+      "last_page": 435,
+      "title": "مريم",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 19
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 29,
+    "fields": {
+      "first_page": 552,
+      "last_page": 562,
+      "title": "العنكبوت",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 29
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 30,
+    "fields": {
+      "first_page": 562,
+      "last_page": 571,
+      "title": "الروم",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 30
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 31,
+    "fields": {
+      "first_page": 571,
+      "last_page": 577,
+      "title": "لقمان",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 31
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 32,
+    "fields": {
+      "first_page": 577,
+      "last_page": 581,
+      "title": "السجدة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 32
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 33,
+    "fields": {
+      "first_page": 581,
+      "last_page": 594,
+      "title": "الأحزاب",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 33
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 34,
+    "fields": {
+      "first_page": 595,
+      "last_page": 603,
+      "title": "سبأ",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 34
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 35,
+    "fields": {
+      "first_page": 603,
+      "last_page": 611,
+      "title": "فاطر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 35
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 36,
+    "fields": {
+      "first_page": 611,
+      "last_page": 618,
+      "title": "يس",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 36
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 37,
+    "fields": {
+      "first_page": 619,
+      "last_page": 628,
+      "title": "الصافات",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 37
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 38,
+    "fields": {
+      "first_page": 628,
+      "last_page": 635,
+      "title": "ص",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 38
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 39,
+    "fields": {
+      "first_page": 635,
+      "last_page": 647,
+      "title": "الزمر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 39
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 40,
+    "fields": {
+      "first_page": 647,
+      "last_page": 659,
+      "title": "غافر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 40
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 41,
+    "fields": {
+      "first_page": 659,
+      "last_page": 667,
+      "title": "فصلت",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 41
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 42,
+    "fields": {
+      "first_page": 668,
+      "last_page": 677,
+      "title": "الشورى",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 42
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 43,
+    "fields": {
+      "first_page": 677,
+      "last_page": 686,
+      "title": "الزخرف",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 43
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 44,
+    "fields": {
+      "first_page": 686,
+      "last_page": 691,
+      "title": "الدخان",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 44
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 45,
+    "fields": {
+      "first_page": 691,
+      "last_page": 696,
+      "title": "الجاثية",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 45
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 46,
+    "fields": {
+      "first_page": 697,
+      "last_page": 703,
+      "title": "الأحقاف",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 46
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 47,
+    "fields": {
+      "first_page": 704,
+      "last_page": 710,
+      "title": "محمد",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 47
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 48,
+    "fields": {
+      "first_page": 710,
+      "last_page": 716,
+      "title": "الفتح",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 48
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 49,
+    "fields": {
+      "first_page": 716,
+      "last_page": 720,
+      "title": "الحجرات",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 49
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 50,
+    "fields": {
+      "first_page": 721,
+      "last_page": 723,
+      "title": "ق",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 50
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 51,
+    "fields": {
+      "first_page": 724,
+      "last_page": 727,
+      "title": "الذاريات",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 51
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 52,
+    "fields": {
+      "first_page": 728,
+      "last_page": 730,
+      "title": "الطور",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 52
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 53,
+    "fields": {
+      "first_page": 731,
+      "last_page": 734,
+      "title": "النجم",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 53
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 54,
+    "fields": {
+      "first_page": 735,
+      "last_page": 739,
+      "title": "القمر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 54
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 55,
+    "fields": {
+      "first_page": 740,
+      "last_page": 743,
+      "title": "الرحمن",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 55
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 56,
+    "fields": {
+      "first_page": 744,
+      "last_page": 748,
+      "title": "الواقعة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 56
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 57,
+    "fields": {
+      "first_page": 749,
+      "last_page": 755,
+      "title": "الحديد",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 57
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 58,
+    "fields": {
+      "first_page": 756,
+      "last_page": 759,
+      "title": "المجادلة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 58
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 59,
+    "fields": {
+      "first_page": 760,
+      "last_page": 764,
+      "title": "الحشر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 59
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 60,
+    "fields": {
+      "first_page": 765,
+      "last_page": 768,
+      "title": "الممتحنة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 60
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 61,
+    "fields": {
+      "first_page": 769,
+      "last_page": 771,
+      "title": "الصف",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 61
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 62,
+    "fields": {
+      "first_page": 772,
+      "last_page": 773,
+      "title": "الجمعة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 62
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 63,
+    "fields": {
+      "first_page": 774,
+      "last_page": 775,
+      "title": "المنافقون",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 63
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 64,
+    "fields": {
+      "first_page": 776,
+      "last_page": 778,
+      "title": "التغابن",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 64
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 65,
+    "fields": {
+      "first_page": 779,
+      "last_page": 781,
+      "title": "الطلاق",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 65
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 66,
+    "fields": {
+      "first_page": 782,
+      "last_page": 785,
+      "title": "التحريم",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 66
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 67,
+    "fields": {
+      "first_page": 786,
+      "last_page": 788,
+      "title": "الملك",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 67
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 68,
+    "fields": {
+      "first_page": 789,
+      "last_page": 792,
+      "title": "القلم",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 68
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 69,
+    "fields": {
+      "first_page": 793,
+      "last_page": 795,
+      "title": "الحاقة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 69
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 70,
+    "fields": {
+      "first_page": 796,
+      "last_page": 798,
+      "title": "المعارج",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 70
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 71,
+    "fields": {
+      "first_page": 799,
+      "last_page": 801,
+      "title": "نوح",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 71
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 72,
+    "fields": {
+      "first_page": 802,
+      "last_page": 804,
+      "title": "الجن",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 72
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 73,
+    "fields": {
+      "first_page": 805,
+      "last_page": 806,
+      "title": "المزمل",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 73
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 74,
+    "fields": {
+      "first_page": 807,
+      "last_page": 809,
+      "title": "المدثر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 74
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 75,
+    "fields": {
+      "first_page": 810,
+      "last_page": 811,
+      "title": "القيامة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 75
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 76,
+    "fields": {
+      "first_page": 812,
+      "last_page": 814,
+      "title": "الإنسان",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 76
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 77,
+    "fields": {
+      "first_page": 815,
+      "last_page": 817,
+      "title": "المرسلات",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 77
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 78,
+    "fields": {
+      "first_page": 818,
+      "last_page": 818,
+      "title": "النبأ",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 78
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 79,
+    "fields": {
+      "first_page": 819,
+      "last_page": 820,
+      "title": "النازعات",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 79
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 80,
+    "fields": {
+      "first_page": 821,
+      "last_page": 822,
+      "title": "عبس",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 80
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 81,
+    "fields": {
+      "first_page": 823,
+      "last_page": 823,
+      "title": "التكوير",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 81
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 82,
+    "fields": {
+      "first_page": 824,
+      "last_page": 824,
+      "title": "الانفطار",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 82
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 83,
+    "fields": {
+      "first_page": 825,
+      "last_page": 826,
+      "title": "المطففين",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 83
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 84,
+    "fields": {
+      "first_page": 827,
+      "last_page": 827,
+      "title": "الانشقاق",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 84
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 85,
+    "fields": {
+      "first_page": 828,
+      "last_page": 828,
+      "title": "البروج",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 85
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 86,
+    "fields": {
+      "first_page": 829,
+      "last_page": 829,
+      "title": "الطارق",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 86
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 87,
+    "fields": {
+      "first_page": 830,
+      "last_page": 830,
+      "title": "الأعلى",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 87
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 88,
+    "fields": {
+      "first_page": 831,
+      "last_page": 831,
+      "title": "الغاشية",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 88
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 89,
+    "fields": {
+      "first_page": 832,
+      "last_page": 833,
+      "title": "الفجر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 89
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 90,
+    "fields": {
+      "first_page": 834,
+      "last_page": 834,
+      "title": "البلد",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 90
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 91,
+    "fields": {
+      "first_page": 835,
+      "last_page": 835,
+      "title": "الشمس",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 91
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 92,
+    "fields": {
+      "first_page": 836,
+      "last_page": 836,
+      "title": "الليل",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 92
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 93,
+    "fields": {
+      "first_page": 837,
+      "last_page": 837,
+      "title": "الضحى",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 93
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 94,
+    "fields": {
+      "first_page": 837,
+      "last_page": 837,
+      "title": "الشرح",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 94
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 95,
+    "fields": {
+      "first_page": 838,
+      "last_page": 838,
+      "title": "التين",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 95
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 96,
+    "fields": {
+      "first_page": 838,
+      "last_page": 838,
+      "title": "العلق",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 96
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 97,
+    "fields": {
+      "first_page": 839,
+      "last_page": 839,
+      "title": "القدر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 97
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 98,
+    "fields": {
+      "first_page": 839,
+      "last_page": 839,
+      "title": "البينة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 98
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 99,
+    "fields": {
+      "first_page": 840,
+      "last_page": 840,
+      "title": "الزلزلة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 99
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 100,
+    "fields": {
+      "first_page": 841,
+      "last_page": 841,
+      "title": "العاديات",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 100
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 101,
+    "fields": {
+      "first_page": 842,
+      "last_page": 842,
+      "title": "القارعة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 101
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 102,
+    "fields": {
+      "first_page": 842,
+      "last_page": 842,
+      "title": "التكاثر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 102
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 103,
+    "fields": {
+      "first_page": 843,
+      "last_page": 843,
+      "title": "العصر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 103
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 104,
+    "fields": {
+      "first_page": 843,
+      "last_page": 843,
+      "title": "الهمزة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 104
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 105,
+    "fields": {
+      "first_page": 843,
+      "last_page": 843,
+      "title": "الفيل",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 105
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 106,
+    "fields": {
+      "first_page": 844,
+      "last_page": 844,
+      "title": "قريش",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 106
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 107,
+    "fields": {
+      "first_page": 844,
+      "last_page": 844,
+      "title": "الماعون",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 107
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 108,
+    "fields": {
+      "first_page": 845,
+      "last_page": 845,
+      "title": "الكوثر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 108
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 1,
+    "fields": {
+      "first_page": 2,
+      "last_page": 2,
+      "title": "الفاتحة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 1
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 2,
+    "fields": {
+      "first_page": 3,
+      "last_page": 68,
+      "title": "البقرة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 2
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 3,
+    "fields": {
+      "first_page": 68,
+      "last_page": 106,
+      "title": "آل عمران",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 3
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 4,
+    "fields": {
+      "first_page": 106,
+      "last_page": 147,
+      "title": "النساء",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 4
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 5,
+    "fields": {
+      "first_page": 147,
+      "last_page": 177,
+      "title": "المائدة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 5
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 6,
+    "fields": {
+      "first_page": 177,
+      "last_page": 208,
+      "title": "الأنعام",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 6
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 7,
+    "fields": {
+      "first_page": 209,
+      "last_page": 245,
+      "title": "الأعراف",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 7
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 17,
+    "fields": {
+      "first_page": 393,
+      "last_page": 408,
+      "title": "الإسراء",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 17
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 18,
+    "fields": {
+      "first_page": 408,
+      "last_page": 425,
+      "title": "الكهف",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 18
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 20,
+    "fields": {
+      "first_page": 435,
+      "last_page": 448,
+      "title": "طه",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 20
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 21,
+    "fields": {
+      "first_page": 449,
+      "last_page": 462,
+      "title": "الأنبياء",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 21
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 22,
+    "fields": {
+      "first_page": 462,
+      "last_page": 476,
+      "title": "الحج",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 22
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 23,
+    "fields": {
+      "first_page": 477,
+      "last_page": 487,
+      "title": "المؤمنون",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 23
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 24,
+    "fields": {
+      "first_page": 487,
+      "last_page": 501,
+      "title": "النور",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 24
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 25,
+    "fields": {
+      "first_page": 501,
+      "last_page": 511,
+      "title": "الفرقان",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 25
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 26,
+    "fields": {
+      "first_page": 511,
+      "last_page": 525,
+      "title": "الشعراء",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 26
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 27,
+    "fields": {
+      "first_page": 525,
+      "last_page": 537,
+      "title": "النمل",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 27
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 28,
+    "fields": {
+      "first_page": 537,
+      "last_page": 551,
+      "title": "القصص",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 28
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 8,
+    "fields": {
+      "first_page": 246,
+      "last_page": 260,
+      "title": "الأنفال",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 8
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 9,
+    "fields": {
+      "first_page": 260,
+      "last_page": 288,
+      "title": "التوبة",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 9
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 10,
+    "fields": {
+      "first_page": 288,
+      "last_page": 308,
+      "title": "يونس",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 10
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 11,
+    "fields": {
+      "first_page": 308,
+      "last_page": 328,
+      "title": "هود",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 11
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 109,
+    "fields": {
+      "first_page": 845,
+      "last_page": 845,
+      "title": "الكافرون",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 109
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 110,
+    "fields": {
+      "first_page": 845,
+      "last_page": 845,
+      "title": "النصر",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 110
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 111,
+    "fields": {
+      "first_page": 846,
+      "last_page": 846,
+      "title": "المسد",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 111
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 112,
+    "fields": {
+      "first_page": 846,
+      "last_page": 846,
+      "title": "الإخلاص",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 112
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 113,
+    "fields": {
+      "first_page": 846,
+      "last_page": 846,
+      "title": "الفلق",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 113
+    }
+  },
+  {
+    "model": "mushaf_segment.mushafsegment",
+    "pk": 114,
+    "fields": {
+      "first_page": 847,
+      "last_page": 847,
+      "title": "الناس",
+      "mushaf": 1,
+      "category": "surah",
+      "category_position": 114
+    }
+  }
+]
