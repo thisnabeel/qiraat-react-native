@@ -42,3 +42,9 @@ yarn-error.*
 
 # Vercel
 .vercel
+
+# Build artifacts
+*.ipa
+
+# Vim swap files
+*.swp

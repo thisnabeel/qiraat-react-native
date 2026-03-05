@@ -9,11 +9,18 @@ import {
   Switch,
 } from "react-native";
 
+const MUSHAF_OPTIONS = [
+  { id: 2, label: "13 Liner IndoPak" },
+  { id: 3, label: "15 Liner Uthmani" },
+];
+
 export default function QiraatSettingsModal({
   visible,
   onClose,
   isDarkMode,
   onToggleDarkMode,
+  mushafId = 3,
+  onMushafChange,
 }) {
   return (
     <Modal
@@ -32,6 +39,20 @@ export default function QiraatSettingsModal({
           </View>
 
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Mushaf</Text>
+            {MUSHAF_OPTIONS.map((opt) => (
+              <Pressable
+                key={opt.id}
+                style={[styles.mushafRow, mushafId === opt.id && styles.mushafRowSelected]}
+                onPress={() => onMushafChange?.(opt.id)}
+              >
+                <Text style={styles.mushafRowLabel}>{opt.label}</Text>
+                {mushafId === opt.id && <Text style={styles.mushafRowCheck}>✓</Text>}
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.section}>
             <Text style={styles.sectionTitle}>Appearance</Text>
 
             <View style={styles.row}>
@@ -47,10 +68,6 @@ export default function QiraatSettingsModal({
               />
             </View>
           </View>
-
-          <Text style={styles.footerHelp}>
-            More Qirāʾāt options coming soon.
-          </Text>
         </Pressable>
       </Pressable>
     </Modal>
@@ -125,15 +142,32 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#111111",
   },
+  mushafRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  mushafRowSelected: {
+    backgroundColor: "rgba(0, 0, 0, 0.06)",
+  },
+  mushafRowLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#111111",
+  },
+  mushafRowCheck: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#027778",
+  },
   rowSubtitle: {
     marginTop: 2,
     fontSize: 13,
     color: "#666666",
-  },
-  footerHelp: {
-    marginTop: 16,
-    fontSize: 12,
-    color: "#999999",
   },
 });
 

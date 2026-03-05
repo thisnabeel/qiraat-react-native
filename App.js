@@ -17,6 +17,7 @@ import {
   Animated,
   Easing,
 } from "react-native";
+import { SafeAreaProvider, SafeAreaView as SafeAreaViewEdged } from "react-native-safe-area-context";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import PagerView from "react-native-pager-view";
 import { Slider } from "@miblanchard/react-native-slider";
@@ -24,22 +25,32 @@ import ComparisonTable from "./ComparisonTable";
 import InlineComparison from "./InlineComparison";
 import segmentsData from "./segments.json";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
+import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
+import VariationBottomSheet from "./components/VariationBottomSheet";
+import { getWordSegmentForText } from "./components/shubahTimestamps";
 import { Search, Sidebar, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
 // const API_BASE = "http://localhost:3000";
-const MUSHAF_ID = 2;
-const API_BASE_URL = `${API_BASE}/api/mushafs/${MUSHAF_ID}/pages`;
 const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
 
-// Determine which font to use based on mushaf ID
-// const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "NaskhNastaleeqIndoPakQWBW";
-// On iOS, the font name must match the font file's internal PostScript name exactly
-// If "AswaatOne" doesn't work, try: "Aswaat", "AswaatFontLab", "Aswaat FontLab", or check Font Book for the exact name
-const QURAN_FONT_FAMILY = MUSHAF_ID === 3 ? "MeQuran" : "AswaatOne";
-// const QURAN_FONT_FAMILY = "MeQuran";
+// Font by mushaf: 2 = 13 Liner IndoPak (AswaatOne), 3 = 15 Liner Uthmani (Uthmani)
+const getQuranFontFamily = (mushafId) => (mushafId === 3 ? "DigitalKhattV2" : "AswaatOne");
+const QURAN_FONT_FAMILY = "DigitalKhattV2"; // default for styles; use getQuranFontFamily(mushafId) for page content
+
+// Manual font size and line height per mushaf (set to null to use style defaults)
+const MUSHAF_2_FONT_SIZE = null;   // 13 Liner IndoPak — set number to override (e.g. 22)
+const MUSHAF_2_LINE_HEIGHT = null; // 13 Liner IndoPak — set number to override (e.g. 44)
+const MUSHAF_3_FONT_SIZE = 20;   // 15 Liner Uthmani — set number to override (e.g. 24)
+const MUSHAF_3_LINE_HEIGHT = 40; // 15 Liner Uthmani — set number to override (e.g. 46)
+const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : MUSHAF_3_FONT_SIZE);
+const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
+
+// Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
+const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -18;
+
 const HELPER_FONT_FAMILY = "AswaatHelpers";
 
 // Helper function to render highlighted text (extracted from ComparisonTable logic)
@@ -129,11 +140,18 @@ const Line = ({
   allVariations = {},
   isFirstLineOfJuz = false,
   isDarkMode = false,
+  mushafId = 3,
 }) => {
   const wordRefs = useRef({});
   const lineStyle = [styles.line];
   const wordStyle = [styles.word];
   let inlineTextStyle = undefined;
+
+  // Border between lines: only for mushaf 2 (13 Liner IndoPak); none for mushaf 3 (15 Liner Uthmani)
+  if (mushafId === 2) {
+    lineStyle.push(styles.lineWithBorder);
+    if (isDarkMode) lineStyle.push(styles.lineWithBorderDark);
+  }
 
   if (isDarkMode) {
     lineStyle.push(styles.lineDark);
@@ -150,6 +168,16 @@ const Line = ({
       wordStyle.push(styles.firstLineOfJuzText);
       inlineTextStyle = styles.firstLineOfJuzText;
     }
+  }
+
+  wordStyle.push({ fontFamily: getQuranFontFamily(mushafId) });
+
+  const fontSize = getMushafFontSize(mushafId);
+  const lineHeight = getMushafLineHeight(mushafId);
+  if (fontSize != null) wordStyle.push({ fontSize });
+  if (lineHeight != null) {
+    wordStyle.push({ lineHeight });
+    lineStyle.push({ minHeight: lineHeight });
   }
 
   return (
@@ -181,7 +209,7 @@ const Line = ({
             <InlineComparison
               originalText={word.content}
               inputText={variationContent}
-              fontFamily={QURAN_FONT_FAMILY}
+              fontFamily={getQuranFontFamily(mushafId)}
               textStyle={inlineTextStyle}
             />
           );
@@ -197,7 +225,12 @@ const Line = ({
               if (ref && ref.measure) {
                 ref.measure((x, y, width, height, pageX, pageY) => {
                   word.layout = { x: pageX, y: pageY, width, height };
-                  onWordPress(word);
+                  // Attach simple line context so audio matching can use nearby words
+                  const wordWithContext = {
+                    ...word,
+                    lineWords: words,
+                  };
+                  onWordPress(wordWithContext);
                 });
               }
             }}
@@ -227,7 +260,9 @@ const PageView = ({
   allVariations,
   highlightFirstLine = false,
   isDarkMode = false,
+  mushafId = 3,
 }) => {
+
   if (loading) {
     const containerStyle = isDarkMode
       ? [styles.container, styles.containerDark]
@@ -298,6 +333,7 @@ const PageView = ({
             allVariations={allVariations}
             isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
             isDarkMode={isDarkMode}
+            mushafId={mushafId}
           />
         ))}
       </View>
@@ -411,7 +447,11 @@ const NarratorPopup = ({
   allVariations = {},
   onSaveVariation,
   onDeleteVariation,
+  mushafId = 3,
+  currentSurahNumber,
+  isShubahHighlight = false,
 }) => {
+  const quranFont = getQuranFontFamily(mushafId);
   const [keyboardMode, setKeyboardMode] = useState("harakat"); // "harakat" or "letters"
   const [insertMode, setInsertMode] = useState("replace"); // "insertLeft", "replace", or "insertRight"
   const inputRef = useRef(null);
@@ -422,6 +462,7 @@ const NarratorPopup = ({
   const historyRef = useRef([]);
   const historyIndexRef = useRef(-1);
   const [isShaddaSelected, setIsShaddaSelected] = useState(false);
+  const [isImalahSelected, setIsImalahSelected] = useState(false);
   const [longPressButton, setLongPressButton] = useState(null); // { char, tanweenChar, buttonIndex, position }
   const [longPressPosition, setLongPressPosition] = useState(null); // { x, y }
   const [dragStartY, setDragStartY] = useState(null);
@@ -531,6 +572,7 @@ const NarratorPopup = ({
         setCurrentLetterIndex(0);
       }
       setIsShaddaSelected(false); // Deselect shadda when input changes
+      setIsImalahSelected(false); // Deselect imalah when input changes
       return;
     }
     
@@ -540,12 +582,14 @@ const NarratorPopup = ({
         setCurrentLetterIndex(0);
       }
       setIsShaddaSelected(false); // Deselect shadda when no letters
+      setIsImalahSelected(false); // Deselect imalah when no letters
     } else {
       // Ensure index is within bounds
       const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
       if (validIndex !== currentLetterIndex) {
         setCurrentLetterIndex(validIndex);
         setIsShaddaSelected(false); // Deselect shadda when index changes
+        setIsImalahSelected(false); // Deselect imalah when index changes
       }
     }
   }, [inputValue]); // Only depend on inputValue, not currentLetterIndex to avoid loops
@@ -586,6 +630,7 @@ const NarratorPopup = ({
     { char: "\u064F", name: "Damma" },     // ُ
     { char: "\u0652", name: "Sukun" },     // ْ
     { char: "\u0651", name: "Shadda" },    // ّ
+    { char: "\u0658", name: "ImalahDot" }, // ٘ (helper imalah dot)
     { char: "\u064B", name: "Fathatan" },   // ً
     { char: "\u064D", name: "Kasratan" },  // ٍ
     { char: "\u064C", name: "Dammatan" },  // ٌ
@@ -1572,16 +1617,62 @@ const NarratorPopup = ({
     const fathaChar = "\u064E";
     const kasraChar = "\u0650";
     const dammaChar = "\u064F";
+    const imalahChar = "\u0658";
     
-    // Check if this is a shadda button press
+    // Check if this is a shadda or imalah button press
     const isShadda = harakatFromVariation === shaddaChar;
+    const isImalah = harakatFromVariation === imalahChar;
     
     // Check if this is a vowel (fatha, kasra, damma)
     const isVowel = harakatFromVariation === fathaChar || 
                      harakatFromVariation === kasraChar || 
                      harakatFromVariation === dammaChar;
     
-    // If shadda is selected and a vowel is pressed, combine them
+    // If shadda and imalah are both selected and a vowel is pressed, combine all three
+    if (isShaddaSelected && isImalahSelected && isVowel) {
+      const combinedHarakat = shaddaChar + harakatFromVariation + imalahChar;
+      
+      const letterPos = letterPositions[currentLetterIndex];
+      let letterStart = letterPos.start;
+      
+      // Find the end position (after the base letter and any existing diacritics)
+      let letterEnd = letterStart + 1;
+      while (letterEnd < inputValue.length) {
+        const char = inputValue[letterEnd];
+        if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+          letterEnd++;
+        } else {
+          break;
+        }
+      }
+      
+      // Replace only the harakat part, keep the base letter
+      const newValue =
+        inputValue.slice(0, letterStart) +
+        baseLetter +
+        combinedHarakat +
+        inputValue.slice(letterEnd);
+      
+      // Add to history before updating
+      addToHistory(newValue);
+      onInputChange(newValue);
+      
+      // Deselect both
+      setIsShaddaSelected(false);
+      setIsImalahSelected(false);
+      
+      // After updating, ensure currentLetterIndex is still valid
+      setTimeout(() => {
+        const newLetterPositions = getLetterPositions(newValue);
+        if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+          const newPos = newLetterPositions[currentLetterIndex].start;
+          setSelection({ start: newPos, end: newPos });
+        }
+      }, 0);
+      return;
+    }
+    
+    // If only shadda is selected and a vowel is pressed, combine them
     if (isShaddaSelected && isVowel) {
       const combinedHarakat = shaddaChar + harakatFromVariation;
       
@@ -1612,6 +1703,7 @@ const NarratorPopup = ({
       
       // Deselect shadda
       setIsShaddaSelected(false);
+      setIsImalahSelected(false);
       
       // After updating, ensure currentLetterIndex is still valid
       setTimeout(() => {
@@ -1626,13 +1718,89 @@ const NarratorPopup = ({
     
     // If shadda button is pressed, toggle selection
     if (isShadda) {
-      setIsShaddaSelected(!isShaddaSelected);
+      // If imalah is already selected and shadda is off, turn shadda on as a combo
+      if (isImalahSelected && !isShaddaSelected) {
+        setIsShaddaSelected(true);
+        return;
+      }
+      // If both are on, turning shadda off leaves imalah selected
+      if (isImalahSelected && isShaddaSelected) {
+        setIsShaddaSelected(false);
+        return;
+      }
+      const next = !isShaddaSelected;
+      setIsShaddaSelected(next);
       return; // Don't apply shadda yet, just toggle selection
+    }
+    
+    // If imalah button is pressed, toggle selection
+    if (isImalah) {
+      // If shadda is already selected and imalah is off, turn imalah on as a combo
+      if (isShaddaSelected && !isImalahSelected) {
+        setIsImalahSelected(true);
+        return;
+      }
+      // If both are on, turning imalah off leaves shadda selected
+      if (isShaddaSelected && isImalahSelected) {
+        setIsImalahSelected(false);
+        return;
+      }
+      const next = !isImalahSelected;
+      setIsImalahSelected(next);
+      return; // Don't apply imalah yet, just toggle selection
     }
     
     // If shadda is selected and another button is pressed (not a vowel), deselect shadda
     if (isShaddaSelected && !isVowel) {
       setIsShaddaSelected(false);
+    }
+    
+    // If imalah is selected and a vowel is pressed, combine them
+    if (isImalahSelected && isVowel) {
+      const combinedHarakat = harakatFromVariation + imalahChar;
+
+      const letterPos = letterPositions[currentLetterIndex];
+      let letterStart = letterPos.start;
+
+      // Find the end position (after the base letter and any existing diacritics)
+      let letterEnd = letterStart + 1;
+      while (letterEnd < inputValue.length) {
+        const char = inputValue[letterEnd];
+        if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+          letterEnd++;
+        } else {
+          break;
+        }
+      }
+
+      // Replace only the harakat part, keep the base letter
+      const newValue =
+        inputValue.slice(0, letterStart) +
+        baseLetter +
+        combinedHarakat +
+        inputValue.slice(letterEnd);
+
+      // Add to history before updating
+      addToHistory(newValue);
+      onInputChange(newValue);
+
+      // Deselect imalah
+      setIsImalahSelected(false);
+
+      // After updating, ensure currentLetterIndex is still valid
+      setTimeout(() => {
+        const newLetterPositions = getLetterPositions(newValue);
+        if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+          const newPos = newLetterPositions[currentLetterIndex].start;
+          setSelection({ start: newPos, end: newPos });
+        }
+      }, 0);
+      return;
+    }
+
+    // If imalah is selected and another button is pressed (not a vowel), deselect imalah
+    if (isImalahSelected && !isVowel) {
+      setIsImalahSelected(false);
     }
     
     const letterPos = letterPositions[currentLetterIndex];
@@ -1836,6 +2004,7 @@ const NarratorPopup = ({
     if (letterPositions.length === 0) {
       setCurrentLetterIndex(0);
       setIsShaddaSelected(false); // Deselect shadda when moving
+      setIsImalahSelected(false); // Deselect imalah when moving
       return;
     }
 
@@ -1847,9 +2016,10 @@ const NarratorPopup = ({
       newIndex--; // Move backward in RTL (visually left)
     }
     
-    // If moving to a different letter, deselect shadda
+    // If moving to a different letter, deselect shadda / imalah
     if (newIndex !== currentLetterIndex) {
       setIsShaddaSelected(false);
+      setIsImalahSelected(false);
     }
     
     setCurrentLetterIndex(newIndex);
@@ -1919,11 +2089,13 @@ const NarratorPopup = ({
                       hasUnsavedChanges && styles.saveButtonNotSaved,
                     ]}
                   >
-                    <Text style={[
-                      styles.saveButtonText,
-                      isSavedState && styles.saveButtonTextSaved,
-                      hasUnsavedChanges && styles.saveButtonTextNotSaved,
-                    ]}>
+                    <Text
+                      style={[
+                        styles.saveButtonText,
+                        isSavedState && styles.saveButtonTextSaved,
+                        hasUnsavedChanges && styles.saveButtonTextNotSaved,
+                      ]}
+                    >
                       {hasUnsavedChanges ? "⚠️ Not Saved" : "Saved"}
                     </Text>
                   </TouchableOpacity>
@@ -1948,7 +2120,7 @@ const NarratorPopup = ({
                           style={[
                             styles.displayText,
                             Platform.OS === 'ios' && { 
-                              fontFamily: QURAN_FONT_FAMILY,
+                              fontFamily: quranFont,
                               fontWeight: 'normal',
                               fontStyle: 'normal',
                             }
@@ -1995,7 +2167,7 @@ const NarratorPopup = ({
                                     style={[
                                       styles.displayTextHighlighted,
                                       Platform.OS === 'ios' && { 
-                                        fontFamily: QURAN_FONT_FAMILY,
+                                        fontFamily: quranFont,
                                         fontWeight: 'normal',
                                         fontStyle: 'normal',
                                       }
@@ -2189,6 +2361,7 @@ const NarratorPopup = ({
                       const buttonCount = buttons.length;
                       const isSmallButtonSet = keyboardMode === "harakat" && buttonCount === 5;
                       const shaddaChar = "\u0651";
+                      const imalahChar = "\u0658";
                       return buttons.length > 0 ? (
                         <>
                           {buttons.map((char, index) => {
@@ -2196,6 +2369,11 @@ const NarratorPopup = ({
                           const baseLetter = getBaseLetterAtCurrentLetter();
                           const isShaddaButton = baseLetter && char === baseLetter + shaddaChar;
                           const isShaddaSelectedForThisButton = isShaddaButton && isShaddaSelected;
+                          // Check if this is the imalah button and if it's selected
+                          const isImalahButton = baseLetter && char === baseLetter + imalahChar;
+                          const isImalahSelectedForThisButton = isImalahButton && isImalahSelected;
+                          const isShaddaImalahComboSelectedForThisButton =
+                            isShaddaButton && isShaddaSelected && isImalahSelected;
                           
                           // Get the original letter at current position (with its current harakat)
                           const letterPositions = getLetterPositions(inputValue);
@@ -2484,7 +2662,9 @@ const NarratorPopup = ({
                                 style={[
                                   styles.keyboardKey,
                                   isSmallButtonSet && styles.keyboardKeyLarge,
-                                  isShaddaSelectedForThisButton && styles.keyboardKeyShaddaSelected,
+                                  isShaddaImalahComboSelectedForThisButton
+                                    ? styles.keyboardKeyShaddaImalahSelected
+                                    : (isShaddaSelectedForThisButton || isImalahSelectedForThisButton) && styles.keyboardKeyShaddaSelected,
                                   isLongPressed && styles.keyboardKeyLongPressed,
                                 ]}
                                 onPress={() => {
@@ -2538,7 +2718,9 @@ const NarratorPopup = ({
                                 <Text style={[
                                   styles.keyboardKeyText,
                                   isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                  isShaddaSelectedForThisButton && styles.keyboardKeyTextShaddaSelected,
+                                  isShaddaImalahComboSelectedForThisButton
+                                    ? styles.keyboardKeyTextShaddaImalahSelected
+                                    : (isShaddaSelectedForThisButton || isImalahSelectedForThisButton) && styles.keyboardKeyTextShaddaSelected,
                                 ]}>{char}</Text>
                               </Pressable>
                               
@@ -2920,7 +3102,7 @@ const NarratorPopup = ({
                                               <Text style={[
                                                 styles.helperDotText,
                                                 isSmallButtonSet && styles.helperDotTextLarge,
-                                                { fontFamily: QURAN_FONT_FAMILY }
+                                                { fontFamily: quranFont }
                                               ]}>{"\u0658"}</Text>
                                             </View>
                                           </Pressable>
@@ -2951,7 +3133,7 @@ const NarratorPopup = ({
                                               <Text style={[
                                                 styles.helperDotText,
                                                 isSmallButtonSet && styles.helperDotTextLarge,
-                                                { fontFamily: QURAN_FONT_FAMILY }
+                                                { fontFamily: quranFont }
                                               ]}>{"\u0659"}</Text>
                                             </View>
                                           </Pressable>
@@ -2982,7 +3164,7 @@ const NarratorPopup = ({
                                               <Text style={[
                                                 styles.helperDotText,
                                                 isSmallButtonSet && styles.helperDotTextLarge,
-                                                { fontFamily: QURAN_FONT_FAMILY }
+                                                { fontFamily: quranFont }
                                               ]}>{"\u0656"}</Text>
                                             </View>
                                           </Pressable>
@@ -3224,7 +3406,7 @@ const NarratorPopup = ({
                                       <Text style={[
                                         styles.helperDotText,
                                         isSmallButtonSet && styles.helperDotTextLarge,
-                                        { fontFamily: QURAN_FONT_FAMILY }
+                                        { fontFamily: quranFont }
                                       ]}>{"\u0658"}</Text>
                                     </View>
                                   </Pressable>
@@ -3254,7 +3436,7 @@ const NarratorPopup = ({
                                       <Text style={[
                                         styles.helperDotText,
                                         isSmallButtonSet && styles.helperDotTextLarge,
-                                        { fontFamily: QURAN_FONT_FAMILY }
+                                        { fontFamily: quranFont }
                                       ]}>{"\u0659"}</Text>
                                     </View>
                                   </Pressable>
@@ -3284,7 +3466,7 @@ const NarratorPopup = ({
                                       <Text style={[
                                         styles.helperDotText,
                                         isSmallButtonSet && styles.helperDotTextLarge,
-                                        { fontFamily: QURAN_FONT_FAMILY }
+                                        { fontFamily: quranFont }
                                       ]}>{"\u0656"}</Text>
                                     </View>
                                   </Pressable>
@@ -3340,7 +3522,7 @@ const NarratorPopup = ({
                 <ComparisonTable
                   originalText={selectedWord?.content || ""}
                   inputText={inputValue}
-                  fontFamily={QURAN_FONT_FAMILY}
+                  fontFamily={quranFont}
                 />
               </>
             ) : (
@@ -3353,7 +3535,17 @@ const NarratorPopup = ({
                   >
                     <Text style={styles.closeIcon}>✕</Text>
                   </TouchableOpacity>
-                  <Text style={styles.popupTitle}>Select Narrator</Text>
+                  <View style={styles.popupHeaderTitleRow}>
+                    <Text style={styles.popupTitle}>Select Narrator</Text>
+                    {isShubahHighlight &&
+                      currentSurahNumber &&
+                      selectedWord && (
+                        <ShubahWordAudioButton
+                          word={selectedWord}
+                          surahNumber={currentSurahNumber}
+                        />
+                      )}
+                  </View>
                 </View>
                 <ScrollView style={styles.narratorList}>
                   {narrators.map((narrator) => (
@@ -3386,6 +3578,9 @@ export default function App() {
     MeQuran: require("./assets/me_quran_volt_newmet.ttf"),
     AswaatOne: require("./assets/aswaat-one.otf"),
     AswaatHelpers: require("./aswaat-helpers-one-Regular.ttf"),
+    DigitalKhatt: require("./digitalkhatt.otf"),
+    DigitalKhattV1: require("./DigitalKhattQuranicV1.otf"),
+    DigitalKhattV2: require("./DigitalKhattV2.otf"),
   });
   
   // Debug font loading
@@ -3403,7 +3598,7 @@ export default function App() {
     if (fontsLoaded) {
       console.log("✅ Fonts loaded successfully");
       console.log("📝 Using font family:", QURAN_FONT_FAMILY);
-      console.log("📖 Mushaf ID:", MUSHAF_ID);
+      console.log("📖 Mushaf: choose in Settings (2 = 13 Liner IndoPak, 3 = 15 Liner Uthmani)");
       console.log("📱 Platform:", Platform.OS);
       
       // Test if font is available on iOS
@@ -3462,8 +3657,27 @@ export default function App() {
   const [isDrawerFullyOpen, setIsDrawerFullyOpen] = useState(false);
   const [isQiraatSettingsVisible, setIsQiraatSettingsVisible] = useState(false);
   const [isMushafDarkMode, setIsMushafDarkMode] = useState(false);
+  // Initialize mushafId from storage on web (sync) so first paint matches; native loads in useEffect
+  const [mushafId, setMushafId] = useState(() => {
+    if (typeof Platform !== "undefined" && Platform.OS === "web" && typeof localStorage !== "undefined") {
+      try {
+        const saved = localStorage.getItem("mushafId");
+        if (saved) {
+          const id = parseInt(saved, 10);
+          if (id === 2 || id === 3) return id;
+        }
+      } catch (e) {}
+    }
+    // Default to Mushaf 2 (13 Liner IndoPak) so the initial
+    // render matches the app settings unless a saved preference
+    // overrides it from storage.
+    return 2;
+  });
   const VARIATIONS_SIDEBAR_WIDTH = 320;
   const [isVariationsSidebarOpen, setIsVariationsSidebarOpen] = useState(false);
+  const [isVariationBottomSheetVisible, setIsVariationBottomSheetVisible] = useState(false);
+  const [isVariationBottomSheetExpanded, setIsVariationBottomSheetExpanded] = useState(false);
+  const variationBarAnim = useRef(new Animated.Value(0)).current; // 0 = visible, 1 = hidden
   const [allMushafVariations, setAllMushafVariations] = useState([]);
   const [lastSelectedVariationHighlight, setLastSelectedVariationHighlight] = useState(null);
   const variationsSidebarAnim = useRef(new Animated.Value(VARIATIONS_SIDEBAR_WIDTH)).current;
@@ -3505,6 +3719,52 @@ export default function App() {
   useEffect(() => {
     currentPageRef.current = currentPage;
   }, [currentPage]);
+
+  // Load saved mushaf preference (2 = 13 Liner IndoPak, 3 = 15 Liner Uthmani)
+  useEffect(() => {
+    const load = async () => {
+      try {
+        if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+          const saved = localStorage.getItem("mushafId");
+          if (saved) {
+            const id = parseInt(saved, 10);
+            if (id === 2 || id === 3) setMushafId(id);
+          }
+        } else {
+          const saved = await AsyncStorage.getItem("mushafId");
+          if (saved) {
+            const id = parseInt(saved, 10);
+            if (id === 2 || id === 3) setMushafId(id);
+          }
+        }
+      } catch (err) {
+        console.error("Error loading mushafId:", err);
+      }
+    };
+    load();
+  }, []);
+
+  // When mushaf changes: persist, clear page cache, and clear current page so we don't show wrong content with new font
+  useEffect(() => {
+    const save = async () => {
+      try {
+        if (Platform.OS === "web" && typeof localStorage !== "undefined") {
+          localStorage.setItem("mushafId", String(mushafId));
+        } else {
+          await AsyncStorage.setItem("mushafId", String(mushafId));
+        }
+      } catch (err) {
+        console.error("Error saving mushafId:", err);
+      }
+    };
+    save();
+    pageCacheRef.current = {};
+    setPageCache({});
+    variationCacheRef.current = {};
+    setVariationCache({});
+    setPage(null); // clear current page so UI shows loading until correct mushaf page is fetched
+    setLoading(true);
+  }, [mushafId]);
 
   // Cleanup effect: ensure drawer is in valid state when tab changes or component unmounts
   useEffect(() => {
@@ -3790,7 +4050,7 @@ export default function App() {
       setAllMushafVariations([]);
       return;
     }
-    const params = new URLSearchParams({ mushaf_id: MUSHAF_ID, narrator_ids: narratorIds.join(",") });
+    const params = new URLSearchParams({ mushaf_id: mushafId, narrator_ids: narratorIds.join(",") });
     const url = `${VARIATIONS_URL}?${params.toString()}`;
     try {
       const response = await fetch(url);
@@ -3804,7 +4064,7 @@ export default function App() {
       console.error("Error fetching all variations:", err);
       setAllMushafVariations([]);
     }
-  }, [selectedNarrators]);
+  }, [selectedNarrators, mushafId]);
 
   // Fetch all variations discreetly in background when narrator selection changes
   useEffect(() => {
@@ -3916,7 +4176,7 @@ export default function App() {
     fetchingPagesRef.current.add(pageNum);
     
     try {
-      const response = await fetch(`${API_BASE_URL}/${pageNum}`);
+      const response = await fetch(`${API_BASE}/api/mushafs/${mushafId}/pages/${pageNum}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -4085,7 +4345,7 @@ export default function App() {
 
     // Pre-fetch surrounding pages
     preFetchPages(currentPage);
-  }, [currentPage]);
+  }, [currentPage, mushafId]);
 
   // Background refresh variations when narrators change (if on a cached page)
   useEffect(() => {
@@ -4106,6 +4366,64 @@ export default function App() {
     }
     return "";
   }, [firstSelectedNarratorId, parentNarrators]);
+  const isShubahHighlight = useMemo(() => {
+    if (!firstNarratorTitle) return false;
+    return /shu'?bah/i.test(firstNarratorTitle);
+  }, [firstNarratorTitle]);
+  const currentSurahNumber =
+    surahSegments[currentSurahIndex]?.fields?.category_position ?? null;
+  const shubahBottomPlayRef = useRef(null);
+  const shubahHasTimestamp = useMemo(() => {
+    if (!isShubahHighlight || !currentSurahNumber || !selectedWord) return false;
+    const lineWords = Array.isArray(selectedWord.lineWords)
+      ? selectedWord.lineWords
+      : [];
+    const wordText = selectedWord.content;
+    if (!wordText) return false;
+    const idx =
+      lineWords.findIndex((w) => w.id === selectedWord.id) >= 0
+        ? lineWords.findIndex((w) => w.id === selectedWord.id)
+        : selectedWord.position ?? null;
+    const contextSequence =
+      idx !== null && idx >= 0
+        ? [
+            lineWords[idx - 1]?.content,
+            wordText,
+            lineWords[idx + 1]?.content,
+          ].filter(Boolean)
+        : [wordText].filter(Boolean);
+    try {
+      const segment = getWordSegmentForText(currentSurahNumber, wordText, {
+        contextSequence,
+      });
+      return (
+        !!segment &&
+        typeof segment.start === "number" &&
+        typeof segment.end === "number"
+      );
+    } catch (e) {
+      return false;
+    }
+  }, [isShubahHighlight, currentSurahNumber, selectedWord]);
+
+  // Animate bottom variation bar in/out when sheet expands or collapses
+  useEffect(() => {
+    Animated.timing(variationBarAnim, {
+      toValue: isVariationBottomSheetExpanded ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [isVariationBottomSheetExpanded, variationBarAnim]);
+
+  // Ensure variations bottom sheet defaults open whenever a non-Hafs narrator is selected
+  useEffect(() => {
+    if (firstSelectedNarratorId && allMushafVariations.length > 0) {
+      setIsVariationBottomSheetVisible(true);
+    } else {
+      setIsVariationBottomSheetVisible(false);
+    }
+  }, [firstSelectedNarratorId, allMushafVariations.length]);
   // All variations for first narrator (full mushaf) - used for traversal
   const narratorVariations = useMemo(() => {
     if (!firstSelectedNarratorId || allMushafVariations.length === 0) return [];
@@ -4441,6 +4759,18 @@ export default function App() {
   }, [selectedNarrators]);
 
   const handleWordPress = (word) => {
+    try {
+      // Temporary debug logging for Shu'bah word audio work
+      console.log("🔍 Held word info:", {
+        id: word?.id,
+        content: word?.content,
+        rawWord: word,
+        currentPage,
+      });
+    } catch (e) {
+      // Ignore logging errors
+    }
+
     setSelectedWord(word);
     setSelectedWordId(word.id);
     if (word.layout) {
@@ -4742,15 +5072,20 @@ export default function App() {
     );
   }
 
+  // Bottom inset for home indicator so bar can extend to screen bottom without overlap
+  const bottomBarInset = Platform.OS === "ios" ? 34 : 0;
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
-      <SafeAreaView
-        style={[
-          styles.safeArea,
-          isMushafDarkMode && styles.safeAreaDark,
-        ]}
-      >
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
+        <SafeAreaViewEdged
+          edges={["top"]}
+          style={[
+            styles.safeArea,
+            isMushafDarkMode && styles.safeAreaDark,
+          ]}
+        >
         {currentTab !== "Recite" && (
           <View style={styles.navBar}>
             <TouchableOpacity
@@ -4892,6 +5227,7 @@ export default function App() {
                             (j) => j.fields.first_page === pageNum
                           )}
                           isDarkMode={isMushafDarkMode}
+                          mushafId={mushafId}
                         />
                       </View>
                     );
@@ -4899,9 +5235,59 @@ export default function App() {
                 </PagerView>
               </View>
 
+              {/* Variations bottom sheet - sits under the traversal bar */}
+              <VariationBottomSheet
+                isVisible={currentTab === "Recite" && isVariationBottomSheetVisible}
+                variations={allMushafVariations}
+                currentPage={currentPage}
+                lastSelectedVariationHighlight={lastSelectedVariationHighlight}
+                mushafId={mushafId}
+                getQuranFontFamily={getQuranFontFamily}
+                onExpandedChange={setIsVariationBottomSheetExpanded}
+                onSelectVariation={(variation, { pageNum, wordId }) => {
+                  setLastSelectedVariationHighlight(
+                    wordId != null ? { wordId, pageNum } : null
+                  );
+                  setCurrentPage(pageNum);
+                  setPageInput(String(pageNum));
+                  handlePageChange(String(pageNum));
+                  setSelectedWordId(wordId ?? null);
+                  setSelectedWord(
+                    variation.word
+                      ? { id: variation.word.id, content: variation.word.content }
+                      : null
+                  );
+                }}
+              />
+
               {/* Bottom bar: variation traversal when narrator selected, else prompt to select */}
               {firstSelectedNarratorId ? (
-                <View style={styles.variationTraversalBar}>
+                <Animated.View
+                  style={[
+                    styles.variationTraversalBar,
+                    {
+                      paddingBottom: RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset,
+                      opacity: variationBarAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0],
+                      }),
+                      transform: [
+                        {
+                          translateY: variationBarAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 60],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                  onStartShouldSetResponder={() => true}
+                  onResponderRelease={() => {
+                    if (allMushafVariations.length > 0) {
+                      setIsVariationBottomSheetVisible(true);
+                    }
+                  }}
+                >
                   {/* Left arrow - next variation */}
                   <TouchableOpacity
                     style={[
@@ -4942,7 +5328,7 @@ export default function App() {
                     <View style={styles.variationTraversalSegment}>
                       <Text style={styles.variationTraversalSegmentLabel}>Hafs</Text>
                       <Text
-                        style={[styles.variationTraversalSegmentText, { fontFamily: QURAN_FONT_FAMILY }]}
+                        style={[styles.variationTraversalSegmentText, { fontFamily: getQuranFontFamily(mushafId) }]}
                         numberOfLines={1}
                       >
                         {narratorVariations[currentVariationIndex]?.word?.content ??
@@ -4950,24 +5336,62 @@ export default function App() {
                       </Text>
                     </View>
                     <Text style={styles.variationTraversalSegmentDivider}>›</Text>
-                    <View style={[styles.variationTraversalSegment, styles.variationTraversalSegmentActive]}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => {
+                        if (
+                          isShubahHighlight &&
+                          currentSurahNumber &&
+                          selectedWord &&
+                          shubahBottomPlayRef.current?.play
+                        ) {
+                          shubahBottomPlayRef.current.play();
+                        }
+                      }}
+                      style={[
+                        styles.variationTraversalSegment,
+                        styles.variationTraversalSegmentActive,
+                        styles.variationTraversalSegmentPlayable,
+                      ]}
+                    >
                       <Text style={styles.variationTraversalSegmentLabel}>
                         {firstNarratorTitle || narratorVariations[0]?.narrator?.title || "Narrator"}
                       </Text>
-                      <Text
-                        style={[
-                          styles.variationTraversalSegmentText,
-                          styles.variationTraversalSegmentTextActive,
-                          { fontFamily: QURAN_FONT_FAMILY },
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {narratorVariations[currentVariationIndex]?.content ??
-                          (narratorVariations.length === 0
-                            ? "No variations on this page"
-                            : "")}
-                      </Text>
-                    </View>
+                      <View style={styles.variationTraversalNarratorRow}>
+                        <Text
+                          style={[
+                            styles.variationTraversalSegmentText,
+                            styles.variationTraversalSegmentTextActive,
+                            { fontFamily: getQuranFontFamily(mushafId) },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {narratorVariations[currentVariationIndex]?.content ??
+                            (narratorVariations.length === 0
+                              ? "No variations on this page"
+                              : "")}
+                        </Text>
+                        {isShubahHighlight &&
+                          currentSurahNumber &&
+                          selectedWord && (
+                            <View style={styles.variationTraversalPlayWrapper}>
+                              <ShubahWordAudioButton
+                                ref={shubahBottomPlayRef}
+                                word={selectedWord}
+                                surahNumber={currentSurahNumber}
+                                showIcon={false}
+                              />
+                            </View>
+                          )}
+                      </View>
+                      {shubahHasTimestamp && (
+                        <View style={styles.variationTraversalPlayIndicator}>
+                          <Text style={styles.variationTraversalPlayIndicatorIcon}>
+                            ▶
+                          </Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
                   </View>
 
                   {/* Right arrow - previous variation */}
@@ -5005,10 +5429,10 @@ export default function App() {
                       ›
                     </Text>
                   </TouchableOpacity>
-                </View>
+                </Animated.View>
               ) : (
                 <TouchableOpacity
-                  style={styles.noRiwayahBanner}
+                  style={[styles.noRiwayahBanner, { marginBottom: bottomBarInset }]}
                   onPress={openDrawer}
                   activeOpacity={0.8}
                 >
@@ -5121,7 +5545,7 @@ export default function App() {
             </View>
           )}
         </View>
-      </SafeAreaView>
+        </SafeAreaViewEdged>
 
       {isDrawerVisible && (
         <SafeAreaView style={styles.drawerOverlay}>
@@ -5395,7 +5819,7 @@ export default function App() {
                           <Text style={styles.variationsSidebarItemLabel}>Hafs</Text>
                           <View style={styles.variationsSidebarChipUnselected}>
                             <Text
-                              style={[styles.variationsSidebarChipText, { fontFamily: QURAN_FONT_FAMILY }]}
+                              style={[styles.variationsSidebarChipText, { fontFamily: getQuranFontFamily(mushafId) }]}
                               numberOfLines={1}
                             >
                               {originalText}
@@ -5407,7 +5831,7 @@ export default function App() {
                           <Text style={styles.variationsSidebarItemLabel}>{narratorTitle}</Text>
                           <View style={styles.variationsSidebarChipSelected}>
                             <Text
-                              style={[styles.variationsSidebarChipText, { fontFamily: QURAN_FONT_FAMILY }]}
+                              style={[styles.variationsSidebarChipText, { fontFamily: getQuranFontFamily(mushafId) }]}
                               numberOfLines={1}
                             >
                               {variationText}
@@ -5438,6 +5862,11 @@ export default function App() {
         allVariations={allVariations}
         onSaveVariation={handleSaveVariation}
         onDeleteVariation={handleDeleteVariation}
+        mushafId={mushafId}
+        currentSurahNumber={
+          surahSegments[currentSurahIndex]?.fields?.category_position ?? null
+        }
+        isShubahHighlight={isShubahHighlight}
       />
 
       <QiraatSettingsModal
@@ -5445,6 +5874,8 @@ export default function App() {
         onClose={() => setIsQiraatSettingsVisible(false)}
         isDarkMode={isMushafDarkMode}
         onToggleDarkMode={setIsMushafDarkMode}
+        mushafId={mushafId}
+        onMushafChange={setMushafId}
       />
 
       {/* Page Slider Modal */}
@@ -5618,6 +6049,7 @@ export default function App() {
         </Pressable>
       </Modal>
     </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
@@ -5753,17 +6185,26 @@ const styles = StyleSheet.create({
   contentContainer: {
     flex: 1,
     backgroundColor: "#fff",
-    paddingBottom: Platform.OS === "ios" ? 0 : 80, // Base padding; bar adds its own when visible
   },
   variationTraversalBar: {
     flexDirection: "row",
     backgroundColor: "#2a2a2a",
-    paddingVertical: 12,
+    paddingVertical: 12, // bottom is overridden by RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset (see top of file)
     paddingHorizontal: 16,
+    paddingTop: 0,
     alignItems: "center",
     justifyContent: "space-between",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#444",
+    // borderTopWidth: StyleSheet.hairlineWidth,
+    // borderTopColor: "#444",
+    position: "relative",
+    zIndex: 10,
+  },
+  variationTraversalHandleContainer: {
+    display: "none",
+  },
+  variationTraversalHandle: {
+    width: 0,
+    height: 0,
   },
   variationTraversalArrowButton: {
     width: 44,
@@ -5835,7 +6276,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#3a3a3a",
+    backgroundColor: "#252529",
     marginHorizontal: 16,
     marginVertical: 12,
     paddingVertical: 14,
@@ -5897,18 +6338,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   containerDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#252529",
   },
   pageContentDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#252529",
   },
   line: {
     flexDirection: "row-reverse",
     justifyContent: "space-between",
     alignItems: "center",
     minHeight: 40,
+  },
+  lineWithBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#000",
+  },
+  lineWithBorderDark: {
+    borderBottomColor: "#444",
   },
   lineDark: {
     borderBottomColor: "#444",
@@ -6440,6 +6886,39 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 16,
   },
+  variationTraversalNarratorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  variationTraversalPlayWrapper: {
+    marginLeft: 4,
+  },
+  variationTraversalSegmentPlayable: {
+    position: "relative",
+  },
+  variationTraversalPlayIndicator: {
+    position: "absolute",
+    right: 6,
+    bottom: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#027778",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  variationTraversalPlayIndicatorIcon: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  popupHeaderTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+  },
   backButton: {
     marginRight: 12,
     padding: 4,
@@ -6679,6 +7158,13 @@ const styles = StyleSheet.create({
     borderColor: "#fbbf24",
   },
   keyboardKeyTextShaddaSelected: {
+    color: "#ffffff",
+  },
+  keyboardKeyShaddaImalahSelected: {
+    backgroundColor: "#3b82f6",
+    borderColor: "#3b82f6",
+  },
+  keyboardKeyTextShaddaImalahSelected: {
     color: "#ffffff",
   },
   keyboardKeyLongPressed: {
