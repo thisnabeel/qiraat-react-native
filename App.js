@@ -49,7 +49,7 @@ const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : M
 const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
 
 // Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
-const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -18;
+const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -30;
 
 const HELPER_FONT_FAMILY = "AswaatHelpers";
 

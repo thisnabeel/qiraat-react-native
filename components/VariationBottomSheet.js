@@ -11,7 +11,7 @@ import VariationList from "./VariationList";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-const MIN_HEIGHT = 143;
+const MIN_HEIGHT = 149;
 const MAX_HEIGHT = SCREEN_HEIGHT - 70;
 
 // We use translateY with native driver for smooth 60fps. Sheet has fixed height MAX_HEIGHT;
@@ -70,9 +70,8 @@ export default function VariationBottomSheet({
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dy) > 3,
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => false,
       onPanResponderGrant: () => {
         heightAtStartRef.current = currentHeightRef.current;
       },
@@ -148,11 +147,13 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   handleArea: {
-    paddingVertical: 8,
+    paddingTop: 6,
+    paddingBottom: 24,
     alignItems: "center",
+    justifyContent: "center",
   },
   handle: {
-    width: 60,
+    width: 90,
     height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.3)",
