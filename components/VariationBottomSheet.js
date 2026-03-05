@@ -83,8 +83,18 @@ export default function VariationBottomSheet({
       },
       onPanResponderRelease: (_, gestureState) => {
         const newHeight = heightAtStartRef.current - gestureState.dy;
-        const midpoint = (MIN_HEIGHT + MAX_HEIGHT) / 2;
-        const target = newHeight > midpoint ? MAX_HEIGHT : MIN_HEIGHT;
+        const range = MAX_HEIGHT - MIN_HEIGHT;
+        const snapDownThreshold = MIN_HEIGHT + range * 0.1;   // bottom 10% → minimize
+        const snapUpThreshold = MAX_HEIGHT - range * 0.1;      // top 10% → stay expanded
+        const draggingUp = gestureState.dy < 0;
+        let target;
+        if (draggingUp) {
+          // Bottom-to-top: only snap down if still in bottom 10%; else snap all the way up
+          target = newHeight <= snapDownThreshold ? MIN_HEIGHT : MAX_HEIGHT;
+        } else {
+          // Top-to-bottom (unchanged): only snap up if in top 10%; else snap down
+          target = newHeight >= snapUpThreshold ? MAX_HEIGHT : MIN_HEIGHT;
+        }
         snapTo(target);
       },
     })

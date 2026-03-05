@@ -788,8 +788,10 @@ const NarratorPopup = ({
     }, 0);
   };
 
+  const imalahChar = "\u0658"; // ARABIC SMALL HIGH NOON (imalah dot)
+
   // Handle madd alif press - add alif after letter with fathah
-  const handleMaddAlifPress = () => {
+  const handleMaddAlifPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -823,17 +825,22 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Insert alif after the letter (after diacritics)
-    const newValue = 
-      inputValue.slice(0, letterEnd) + 
-      alifChar + 
-      inputValue.slice(letterEnd);
+    // Replace diacritics then insert alif after the letter (after diacritics)
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd) +
+      alifChar;
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Update cursor position
-    const newPos = letterEnd + 1;
+    const newPos = letterStart + baseLetter.length + newDiacritics.length + 1;
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ selection: { start: newPos, end: newPos } });
@@ -843,7 +850,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd waw press - add waw after letter with fathah
-  const handleMaddWawPress = () => {
+  const handleMaddWawPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -877,17 +884,21 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Insert waw after the letter (after diacritics)
-    const newValue = 
-      inputValue.slice(0, letterEnd) + 
-      wawChar + 
-      inputValue.slice(letterEnd);
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd) +
+      wawChar;
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Update cursor position
-    const newPos = letterEnd + 1;
+    const newPos = letterStart + baseLetter.length + newDiacritics.length + 1;
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ selection: { start: newPos, end: newPos } });
@@ -897,7 +908,7 @@ const NarratorPopup = ({
   };
 
   // Handle inverted dammah press - replace dammah with U+0657 (inverted dammah)
-  const handleInvertedDammahPress = () => {
+  const handleInvertedDammahPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -935,16 +946,18 @@ const NarratorPopup = ({
       // Add inverted dammah if not already present and no dammah to replace
       newDiacritics = newDiacritics + invertedDammahChar;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -955,7 +968,7 @@ const NarratorPopup = ({
   };
 
   // Handle extender Hamza + Dammah press (U+0640 + U+0654 + U+064F)
-  const handleExtenderHamzaDammahPress = () => {
+  const handleExtenderHamzaDammahPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -992,16 +1005,18 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(dammaChar)) {
       newDiacritics = newDiacritics + dammaChar;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1012,7 +1027,7 @@ const NarratorPopup = ({
   };
 
   // Handle extender Hamza + Kasrah press (U+0640 + U+0654 + U+0650)
-  const handleExtenderHamzaKasrahPress = () => {
+  const handleExtenderHamzaKasrahPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1049,16 +1064,18 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(kasraChar)) {
       newDiacritics = newDiacritics + kasraChar;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1069,7 +1086,7 @@ const NarratorPopup = ({
   };
 
   // Handle extender Hamza + Fathah press (U+0640 + U+0654 + U+064E)
-  const handleExtenderHamzaFathahPress = () => {
+  const handleExtenderHamzaFathahPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1106,16 +1123,18 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = newDiacritics + fathaChar;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1126,7 +1145,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd rounded zero press (U+06E4)
-  const handleMaddRoundedZeroPress = () => {
+  const handleMaddRoundedZeroPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1159,16 +1178,18 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(maddRoundedZeroChar)) {
       newDiacritics = newDiacritics + maddRoundedZeroChar;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1179,7 +1200,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd combined press - add U+0653 only
-  const handleMaddCombinedPress = () => {
+  const handleMaddCombinedPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1212,16 +1233,18 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(maddahChar)) {
       newDiacritics = newDiacritics + maddahChar;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1232,7 +1255,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd ya press - add ya after letter with fathah
-  const handleMaddYaPress = () => {
+  const handleMaddYaPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1266,17 +1289,21 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
+    }
     
-    // Insert ya after the letter (after diacritics)
-    const newValue = 
-      inputValue.slice(0, letterEnd) + 
-      yaChar + 
-      inputValue.slice(letterEnd);
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd) +
+      yaChar;
     
+    addToHistory(newValue);
     onInputChange(newValue);
     
-    // Update cursor position
-    const newPos = letterEnd + 1;
+    const newPos = letterStart + baseLetter.length + newDiacritics.length + 1;
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ selection: { start: newPos, end: newPos } });
@@ -1286,7 +1313,7 @@ const NarratorPopup = ({
   };
 
   // Handle dagger alif press (without fathah) - replace all diacritics with only dagger alif
-  const handleDaggerAlifOnlyPress = () => {
+  const handleDaggerAlifOnlyPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1311,8 +1338,8 @@ const NarratorPopup = ({
     
     const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
     
-    // Replace all diacritics with only the dagger alif
-    const newDiacritics = daggerAlifChar;
+    // Replace all diacritics with only the dagger alif (optionally + imalah)
+    const newDiacritics = daggerAlifChar + (withImalah ? imalahChar : "");
     
     // Replace the letter with base letter + only dagger alif
     const newValue =
@@ -1435,7 +1462,7 @@ const NarratorPopup = ({
   };
 
   // Handle helper diamond dot press - adds only diamond dot from helper font (no other diacritics)
-  const handleHelperDiamondDotPress = () => {
+  const handleHelperDiamondDotPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1460,7 +1487,7 @@ const NarratorPopup = ({
     
     // Using U+0659 for helper diamond dot - only add the helper character, no kasrah
     const helperDiamondDotChar = "\u0659"; // ARABIC PLACE OF SAJDAH
-    const newDiacritics = helperDiamondDotChar;
+    const newDiacritics = helperDiamondDotChar + (withImalah ? imalahChar : "");
     
     // Replace the letter with base letter + only helper diamond dot
     const newValue =
@@ -1484,7 +1511,7 @@ const NarratorPopup = ({
   };
 
   // Handle subscript alef press - adds only subscript alef from helper font (no other diacritics)
-  const handleSubscriptAlefPress = () => {
+  const handleSubscriptAlefPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1509,7 +1536,7 @@ const NarratorPopup = ({
     
     // Using U+0656 for subscript alef - only add the helper character, no kasrah
     const subscriptAlefChar = "\u0656"; // ARABIC SUBSCRIPT ALEF
-    const newDiacritics = subscriptAlefChar;
+    const newDiacritics = subscriptAlefChar + (withImalah ? imalahChar : "");
     
     // Replace the letter with base letter + only subscript alef
     const newValue =
@@ -1533,7 +1560,7 @@ const NarratorPopup = ({
   };
 
   // Handle dagger alif press - insert dagger alif as diacritic after fathah
-  const handleStandingAlifPress = () => {
+  const handleStandingAlifPress = (withImalah = false) => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1578,6 +1605,9 @@ const NarratorPopup = ({
       } else {
         newDiacritics = newDiacritics + daggerAlifChar;
       }
+    }
+    if (withImalah) {
+      newDiacritics = newDiacritics + imalahChar;
     }
     
     // Replace the letter with base letter + new diacritics
@@ -2580,57 +2610,64 @@ const NarratorPopup = ({
                               onResponderRelease={(e) => {
                                 if (isLongPressed) {
                                   if (keyboardMode === "harakat") {
-                                    // Check if released over tanween button, shadda+tanween button, standing alif, or plain letter
+                                    // Pair imalah with dropdown choice except double imalah (imalah dot option)
+                                    const withImalah = isImalahSelected && !(isHoveringImalahDot && isKasrahButton);
+                                    let didHandle = false;
                                     if (isHoveringTanween && tanweenChar) {
-                                      handleHarakatPress(baseLetter + tanweenChar);
+                                      handleHarakatPress(baseLetter + tanweenChar + (withImalah ? imalahChar : ""));
+                                      didHandle = true;
                                     } else if (isHoveringShaddaTanween && tanweenChar) {
                                       const shaddaChar = "\u0651";
-                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
+                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar + (withImalah ? imalahChar : ""));
+                                      didHandle = true;
                                     } else if (isHoveringStandingAlif && isFathahButton) {
-                                      // Released over dagger alif with fathah button (for fathah button)
-                                      handleStandingAlifPress();
+                                      handleStandingAlifPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringDaggerAlifOnly && isFathahButton) {
-                                      // Released over dagger alif only button (for fathah button)
-                                      handleDaggerAlifOnlyPress();
+                                      handleDaggerAlifOnlyPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringMaddAlif && isFathahButton) {
-                                      // Released over madd alif button
-                                      handleMaddAlifPress();
+                                      handleMaddAlifPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringMaddWaw && isFathahButton) {
-                                      // Released over madd waw button
-                                      handleMaddWawPress();
+                                      handleMaddWawPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringMaddYa && isFathahButton) {
-                                      // Released over madd ya button
-                                      handleMaddYaPress();
+                                      handleMaddYaPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringMaddCombined && isFathahButton) {
-                                      // Released over madd combined button
-                                      handleMaddCombinedPress();
+                                      handleMaddCombinedPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringExtenderHamzaFathah && isFathahButton && baseLetter === "\u0640") {
-                                      // Released over extender hamza + fathah button
-                                      handleExtenderHamzaFathahPress();
+                                      handleExtenderHamzaFathahPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringMaddRoundedZero && isFathahButton) {
-                                      // Released over madd rounded zero button
-                                      handleMaddRoundedZeroPress();
+                                      handleMaddRoundedZeroPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringInvertedDammah && isDammahButton) {
-                                      // Released over inverted dammah button
-                                      handleInvertedDammahPress();
+                                      handleInvertedDammahPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringExtenderHamzaDammah && isDammahButton && baseLetter === "\u0640") {
-                                      // Released over extender hamza + dammah button
-                                      handleExtenderHamzaDammahPress();
+                                      handleExtenderHamzaDammahPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringImalahDot && isKasrahButton) {
-                                      // Released over imalah dot button (for kasrah button)
                                       handleImalahDotPress();
+                                      didHandle = true;
                                     } else if (isHoveringHelperDiamondDot && isKasrahButton) {
-                                      // Released over helper diamond dot button (for kasrah button)
-                                      handleHelperDiamondDotPress();
+                                      handleHelperDiamondDotPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringSubscriptAlef && isKasrahButton) {
-                                      // Released over subscript alef button (for kasrah button)
-                                      handleSubscriptAlefPress();
+                                      handleSubscriptAlefPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringExtenderHamzaKasrah && isKasrahButton && baseLetter === "\u0640") {
-                                      // Released over extender hamza + kasrah button
-                                      handleExtenderHamzaKasrahPress();
+                                      handleExtenderHamzaKasrahPress(withImalah);
+                                      didHandle = true;
                                     } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
-                                      // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
+                                      didHandle = true;
+                                    }
+                                    if (didHandle && (withImalah || (isHoveringImalahDot && isKasrahButton))) {
+                                      setIsImalahSelected(false);
                                     }
                                   }
                                   setLongPressButton(null);
@@ -2816,7 +2853,8 @@ const NarratorPopup = ({
                                           isHoveringStandingAlif && styles.keyboardKeyTanweenHovered,
                                         ]}
                                         onPress={() => {
-                                          handleStandingAlifPress();
+                                          handleStandingAlifPress(isImalahSelected);
+                                          if (isImalahSelected) setIsImalahSelected(false);
                                           setLongPressButton(null);
                                           setDragStartY(null);
                                           setIsHoveringTanween(false);
@@ -2853,7 +2891,8 @@ const NarratorPopup = ({
                                             { marginRight: 4 },
                                         ]}
                                         onPress={() => {
-                                          handleDaggerAlifOnlyPress();
+                                          handleDaggerAlifOnlyPress(isImalahSelected);
+                                          if (isImalahSelected) setIsImalahSelected(false);
                                           setLongPressButton(null);
                                           setDragStartY(null);
                                           setIsHoveringTanween(false);
@@ -2887,7 +2926,8 @@ const NarratorPopup = ({
                                             { marginRight: 4 },
                                           ]}
                                           onPress={() => {
-                                            handleMaddAlifPress();
+                                            handleMaddAlifPress(isImalahSelected);
+                                            if (isImalahSelected) setIsImalahSelected(false);
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -2921,7 +2961,8 @@ const NarratorPopup = ({
                                             { marginRight: 4 },
                                           ]}
                                           onPress={() => {
-                                            handleMaddCombinedPress();
+                                            handleMaddCombinedPress(isImalahSelected);
+                                            if (isImalahSelected) setIsImalahSelected(false);
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -2954,7 +2995,8 @@ const NarratorPopup = ({
                                             isHoveringMaddRoundedZero && styles.keyboardKeyTanweenHovered,
                                           ]}
                                           onPress={() => {
-                                            handleMaddRoundedZeroPress();
+                                            handleMaddRoundedZeroPress(isImalahSelected);
+                                            if (isImalahSelected) setIsImalahSelected(false);
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -2990,7 +3032,8 @@ const NarratorPopup = ({
                                             { marginTop: 4 },
                                           ]}
                                           onPress={() => {
-                                            handleExtenderHamzaFathahPress();
+                                            handleExtenderHamzaFathahPress(isImalahSelected);
+                                            if (isImalahSelected) setIsImalahSelected(false);
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -3089,6 +3132,7 @@ const NarratorPopup = ({
                                             ]}
                                             onPress={() => {
                                               handleImalahDotPress();
+                                              setIsImalahSelected(false);
                                               setLongPressButton(null);
                                               setDragStartY(null);
                                               setIsHoveringImalahDot(false);
@@ -3119,7 +3163,8 @@ const NarratorPopup = ({
                                               isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
                                             ]}
                                             onPress={() => {
-                                              handleHelperDiamondDotPress();
+                                              handleHelperDiamondDotPress(isImalahSelected);
+                                              if (isImalahSelected) setIsImalahSelected(false);
                                               setLongPressButton(null);
                                               setDragStartY(null);
                                               setIsHoveringHelperDiamondDot(false);
@@ -3150,7 +3195,8 @@ const NarratorPopup = ({
                                               isHoveringSubscriptAlef && styles.keyboardKeyTanweenHovered,
                                             ]}
                                             onPress={() => {
-                                              handleSubscriptAlefPress();
+                                              handleSubscriptAlefPress(isImalahSelected);
+                                              if (isImalahSelected) setIsImalahSelected(false);
                                               setLongPressButton(null);
                                               setDragStartY(null);
                                               setIsHoveringSubscriptAlef(false);
@@ -3180,8 +3226,9 @@ const NarratorPopup = ({
                                                 styles.dropdownGridButton,
                                                 isHoveringExtenderHamzaKasrah && styles.keyboardKeyTanweenHovered,
                                               ]}
-                                              onPress={() => {
-                                                handleExtenderHamzaKasrahPress();
+                                                onPress={() => {
+                                                handleExtenderHamzaKasrahPress(isImalahSelected);
+                                                if (isImalahSelected) setIsImalahSelected(false);
                                                 setLongPressButton(null);
                                                 setDragStartY(null);
                                                 setIsHoveringTanween(false);
@@ -3285,7 +3332,8 @@ const NarratorPopup = ({
                                                 isHoveringInvertedDammah && styles.keyboardKeyTanweenHovered,
                                               ]}
                                               onPress={() => {
-                                                handleInvertedDammahPress();
+                                                handleInvertedDammahPress(isImalahSelected);
+                                                if (isImalahSelected) setIsImalahSelected(false);
                                                 setLongPressButton(null);
                                                 setDragStartY(null);
                                                 setIsHoveringTanween(false);
@@ -3317,7 +3365,8 @@ const NarratorPopup = ({
                                                 isHoveringExtenderHamzaDammah && styles.keyboardKeyTanweenHovered,
                                               ]}
                                               onPress={() => {
-                                                handleExtenderHamzaDammahPress();
+                                                handleExtenderHamzaDammahPress(isImalahSelected);
+                                                if (isImalahSelected) setIsImalahSelected(false);
                                                 setLongPressButton(null);
                                                 setDragStartY(null);
                                                 setIsHoveringTanween(false);
@@ -3393,6 +3442,7 @@ const NarratorPopup = ({
                                     ]}
                                     onPress={() => {
                                       handleImalahDotPress();
+                                      setIsImalahSelected(false);
                                       setLongPressButton(null);
                                       setDragStartY(null);
                                       setIsHoveringImalahDot(false);
@@ -3422,7 +3472,8 @@ const NarratorPopup = ({
                                       isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
                                     ]}
                                     onPress={() => {
-                                      handleHelperDiamondDotPress();
+                                      handleHelperDiamondDotPress(isImalahSelected);
+                                      if (isImalahSelected) setIsImalahSelected(false);
                                       setLongPressButton(null);
                                       setDragStartY(null);
                                       setIsHoveringHelperDiamondDot(false);
@@ -3452,7 +3503,8 @@ const NarratorPopup = ({
                                       isHoveringSubscriptAlef && styles.keyboardKeyTanweenHovered,
                                     ]}
                                     onPress={() => {
-                                      handleSubscriptAlefPress();
+                                      handleSubscriptAlefPress(isImalahSelected);
+                                      if (isImalahSelected) setIsImalahSelected(false);
                                       setLongPressButton(null);
                                       setDragStartY(null);
                                       setIsHoveringSubscriptAlef(false);
@@ -3483,7 +3535,8 @@ const NarratorPopup = ({
                                         isHoveringExtenderHamzaKasrah && styles.keyboardKeyTanweenHovered,
                                       ]}
                                       onPress={() => {
-                                        handleExtenderHamzaKasrahPress();
+                                        handleExtenderHamzaKasrahPress(isImalahSelected);
+                                        if (isImalahSelected) setIsImalahSelected(false);
                                         setLongPressButton(null);
                                         setDragStartY(null);
                                         setIsHoveringImalahDot(false);
@@ -4406,15 +4459,15 @@ export default function App() {
     }
   }, [isShubahHighlight, currentSurahNumber, selectedWord]);
 
-  // Bar visibility from sheet position: hide when sheet >40% up, show when sheet <70% down (interpolated from sheet translateY)
+  // Bar visibility from sheet position: hide when sheet >10% up, show when sheet <90% down (interpolated from sheet translateY)
   // inputRange must be ascending: translateY goes from 0 (expanded) to TRANSLATE_MINIMIZED (minimized)
   const barVisibleStyle = sheetTranslateY
     ? {
         opacity: sheetTranslateY.interpolate({
           inputRange: [
             0,
-            0.3 * TRANSLATE_MINIMIZED,
-            0.6 * TRANSLATE_MINIMIZED,
+            0.85 * TRANSLATE_MINIMIZED,
+            0.95 * TRANSLATE_MINIMIZED,
             TRANSLATE_MINIMIZED,
           ],
           outputRange: [0, 0, 1, 1],
@@ -4424,8 +4477,8 @@ export default function App() {
             translateY: sheetTranslateY.interpolate({
               inputRange: [
                 0,
-                0.3 * TRANSLATE_MINIMIZED,
-                0.6 * TRANSLATE_MINIMIZED,
+                0.85 * TRANSLATE_MINIMIZED,
+                0.95 * TRANSLATE_MINIMIZED,
                 TRANSLATE_MINIMIZED,
               ],
               outputRange: [60, 60, 0, 0],
