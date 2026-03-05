@@ -1,11 +1,24 @@
 import React, { useRef, useEffect } from "react";
-import { Animated, PanResponder, View, StyleSheet, Dimensions } from "react-native";
+import {
+  Animated,
+  PanResponder,
+  View,
+  StyleSheet,
+  Dimensions,
+  Easing,
+} from "react-native";
 import VariationList from "./VariationList";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 const MIN_HEIGHT = 143;
 const MAX_HEIGHT = SCREEN_HEIGHT - 70;
+
+// We use translateY with native driver for smooth 60fps. Sheet has fixed height MAX_HEIGHT;
+// translateY = 0 => fully expanded, translateY = MAX_HEIGHT - MIN_HEIGHT => minimized.
+const TRANSLATE_MINIMIZED = MAX_HEIGHT - MIN_HEIGHT;
+
+export { TRANSLATE_MINIMIZED };
 
 export default function VariationBottomSheet({
   isVisible,
@@ -16,44 +29,60 @@ export default function VariationBottomSheet({
   getQuranFontFamily,
   onSelectVariation,
   onExpandedChange,
+  registerTranslateY,
   backgroundColor = "#252529",
 }) {
-  const heightAnim = useRef(new Animated.Value(MIN_HEIGHT)).current;
+  const translateYAnim = useRef(new Animated.Value(TRANSLATE_MINIMIZED)).current;
+
+  useEffect(() => {
+    if (registerTranslateY) {
+      registerTranslateY(translateYAnim);
+      return () => registerTranslateY(null);
+    }
+  }, [registerTranslateY, translateYAnim]);
   const currentHeightRef = useRef(MIN_HEIGHT);
+  const heightAtStartRef = useRef(MIN_HEIGHT);
 
   const snapTo = (targetHeight) => {
-    currentHeightRef.current = targetHeight;
+    const toValue = targetHeight === MAX_HEIGHT ? 0 : TRANSLATE_MINIMIZED;
+    const expanded = targetHeight === MAX_HEIGHT;
     if (onExpandedChange) {
-      onExpandedChange(targetHeight === MAX_HEIGHT);
+      onExpandedChange(expanded);
     }
-    Animated.spring(heightAnim, {
-      toValue: targetHeight,
-      useNativeDriver: false,
-      tension: 180,
-      friction: 22,
-    }).start();
+    Animated.timing(translateYAnim, {
+      toValue,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        currentHeightRef.current = targetHeight;
+      }
+    });
   };
 
   useEffect(() => {
     if (isVisible) {
-      snapTo(MIN_HEIGHT);
-    } else {
-      // Reset height when hidden so it re-opens from compact state
-      heightAnim.setValue(MIN_HEIGHT);
+      translateYAnim.setValue(TRANSLATE_MINIMIZED);
+      currentHeightRef.current = MIN_HEIGHT;
     }
   }, [isVisible]);
 
   const panResponder = useRef(
     PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dy) > 4,
+        Math.abs(gestureState.dy) > 3,
+      onPanResponderGrant: () => {
+        heightAtStartRef.current = currentHeightRef.current;
+      },
       onPanResponderMove: (_, gestureState) => {
-        const newHeight = currentHeightRef.current - gestureState.dy;
+        const newHeight = heightAtStartRef.current - gestureState.dy;
         const clampedHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, newHeight));
-        heightAnim.setValue(clampedHeight);
+        translateYAnim.setValue(MAX_HEIGHT - clampedHeight);
       },
       onPanResponderRelease: (_, gestureState) => {
-        const newHeight = currentHeightRef.current - gestureState.dy;
+        const newHeight = heightAtStartRef.current - gestureState.dy;
         const midpoint = (MIN_HEIGHT + MAX_HEIGHT) / 2;
         const target = newHeight > midpoint ? MAX_HEIGHT : MIN_HEIGHT;
         snapTo(target);
@@ -68,8 +97,9 @@ export default function VariationBottomSheet({
       style={[
         styles.container,
         {
-          height: heightAnim,
+          height: MAX_HEIGHT,
           backgroundColor,
+          transform: [{ translateY: translateYAnim }],
         },
       ]}
     >

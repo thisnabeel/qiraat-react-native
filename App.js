@@ -26,9 +26,9 @@ import InlineComparison from "./InlineComparison";
 import segmentsData from "./segments.json";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
-import VariationBottomSheet from "./components/VariationBottomSheet";
+import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/VariationBottomSheet";
 import { getWordSegmentForText } from "./components/shubahTimestamps";
-import { Search, Sidebar, Bookmark } from "react-native-feather";
+import { Search, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
@@ -3677,7 +3677,7 @@ export default function App() {
   const [isVariationsSidebarOpen, setIsVariationsSidebarOpen] = useState(false);
   const [isVariationBottomSheetVisible, setIsVariationBottomSheetVisible] = useState(false);
   const [isVariationBottomSheetExpanded, setIsVariationBottomSheetExpanded] = useState(false);
-  const variationBarAnim = useRef(new Animated.Value(0)).current; // 0 = visible, 1 = hidden
+  const [sheetTranslateY, setSheetTranslateY] = useState(null); // Animated.Value from VariationBottomSheet for bar visibility
   const [allMushafVariations, setAllMushafVariations] = useState([]);
   const [lastSelectedVariationHighlight, setLastSelectedVariationHighlight] = useState(null);
   const variationsSidebarAnim = useRef(new Animated.Value(VARIATIONS_SIDEBAR_WIDTH)).current;
@@ -4406,15 +4406,34 @@ export default function App() {
     }
   }, [isShubahHighlight, currentSurahNumber, selectedWord]);
 
-  // Animate bottom variation bar in/out when sheet expands or collapses
-  useEffect(() => {
-    Animated.timing(variationBarAnim, {
-      toValue: isVariationBottomSheetExpanded ? 1 : 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [isVariationBottomSheetExpanded, variationBarAnim]);
+  // Bar visibility from sheet position: hide when sheet >40% up, show when sheet <70% down (interpolated from sheet translateY)
+  // inputRange must be ascending: translateY goes from 0 (expanded) to TRANSLATE_MINIMIZED (minimized)
+  const barVisibleStyle = sheetTranslateY
+    ? {
+        opacity: sheetTranslateY.interpolate({
+          inputRange: [
+            0,
+            0.3 * TRANSLATE_MINIMIZED,
+            0.6 * TRANSLATE_MINIMIZED,
+            TRANSLATE_MINIMIZED,
+          ],
+          outputRange: [0, 0, 1, 1],
+        }),
+        transform: [
+          {
+            translateY: sheetTranslateY.interpolate({
+              inputRange: [
+                0,
+                0.3 * TRANSLATE_MINIMIZED,
+                0.6 * TRANSLATE_MINIMIZED,
+                TRANSLATE_MINIMIZED,
+              ],
+              outputRange: [60, 60, 0, 0],
+            }),
+          },
+        ],
+      }
+    : { opacity: 1, transform: [{ translateY: 0 }] };
 
   // Ensure variations bottom sheet defaults open whenever a non-Hafs narrator is selected
   useEffect(() => {
@@ -5076,8 +5095,8 @@ export default function App() {
   const bottomBarInset = Platform.OS === "ios" ? 34 : 0;
 
   return (
-    <SafeAreaProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+    <SafeAreaProvider style={[styles.safeAreaProvider, styles.safeAreaProviderDark]}>
+      <GestureHandlerRootView style={[styles.rootView, styles.rootViewBg]}>
         <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
         <SafeAreaViewEdged
           edges={["top"]}
@@ -5172,14 +5191,6 @@ export default function App() {
                   >
                     <Search stroke="#ffffff" width={20} height={20} />
                   </TouchableOpacity>
-                  {selectedNarrators.some((id) => id !== "hafs-an-asim") && (
-                    <TouchableOpacity 
-                      style={styles.mushafIconButton}
-                      onPress={isVariationsSidebarOpen ? closeVariationsSidebar : openVariationsSidebar}
-                    >
-                      <Sidebar stroke="#ffffff" width={20} height={20} />
-                    </TouchableOpacity>
-                  )}
                   <TouchableOpacity 
                     style={styles.mushafIconButton}
                     onPress={() => {}}
@@ -5244,6 +5255,7 @@ export default function App() {
                 mushafId={mushafId}
                 getQuranFontFamily={getQuranFontFamily}
                 onExpandedChange={setIsVariationBottomSheetExpanded}
+                registerTranslateY={setSheetTranslateY}
                 onSelectVariation={(variation, { pageNum, wordId }) => {
                   setLastSelectedVariationHighlight(
                     wordId != null ? { wordId, pageNum } : null
@@ -5267,19 +5279,8 @@ export default function App() {
                     styles.variationTraversalBar,
                     {
                       paddingBottom: RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset,
-                      opacity: variationBarAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 0],
-                      }),
-                      transform: [
-                        {
-                          translateY: variationBarAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, 60],
-                          }),
-                        },
-                      ],
                     },
+                    barVisibleStyle,
                   ]}
                   onStartShouldSetResponder={() => true}
                   onResponderRelease={() => {
@@ -6054,6 +6055,18 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  safeAreaProvider: {
+    flex: 1,
+  },
+  safeAreaProviderDark: {
+    backgroundColor: "#252529",
+  },
+  rootView: {
+    flex: 1,
+  },
+  rootViewBg: {
+    backgroundColor: "#252529",
+  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -6093,10 +6106,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   mainContainerDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#252529",
   },
   safeAreaDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#252529",
   },
   navBar: {
     minHeight: 50,
