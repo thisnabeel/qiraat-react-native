@@ -28,6 +28,7 @@ export default function VariationBottomSheet({
   mushafId,
   getQuranFontFamily,
   onSelectVariation,
+  onDeleteVariation,
   onExpandedChange,
   registerTranslateY,
   backgroundColor = "#252529",
@@ -125,6 +126,7 @@ export default function VariationBottomSheet({
           onSelectVariation?.(variation, meta);
           snapTo(MIN_HEIGHT);
         }}
+        onDeleteVariation={onDeleteVariation}
       />
     </Animated.View>
   );
@@ -136,7 +138,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 1,
+    zIndex: 0,
+    elevation: 5,
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     overflow: "hidden",

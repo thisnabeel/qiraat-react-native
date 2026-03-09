@@ -23,6 +23,7 @@ import PagerView from "react-native-pager-view";
 import { Slider } from "@miblanchard/react-native-slider";
 import ComparisonTable from "./ComparisonTable";
 import InlineComparison from "./InlineComparison";
+import { DiamondShapeSvg, DIAMOND_SIZING } from "./components/DiamondOverlayText";
 import segmentsData from "./segments.json";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
@@ -31,25 +32,25 @@ import { getWordSegmentForText } from "./components/shubahTimestamps";
 import { Search, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
-// const API_BASE = "http://localhost:3000";
+// const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
+const API_BASE = "http://localhost:3000";
 const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
 
-// Font by mushaf: 2 = 13 Liner IndoPak (AswaatOne), 3 = 15 Liner Uthmani (Uthmani)
-const getQuranFontFamily = (mushafId) => (mushafId === 3 ? "DigitalKhattV2" : "AswaatOne");
-const QURAN_FONT_FAMILY = "DigitalKhattV2"; // default for styles; use getQuranFontFamily(mushafId) for page content
+// Font by mushaf: 2 = 13 Liner IndoPak (AswaatOne), 3 = 15 Liner Uthmani (DigitalKhattV3)
+const getQuranFontFamily = (mushafId) => (mushafId === 3 ? "DigitalKhatt" : "AswaatOne");
+const QURAN_FONT_FAMILY = "DigitalKhatt"; // default for styles; use getQuranFontFamily(mushafId) for page content
 
 // Manual font size and line height per mushaf (set to null to use style defaults)
 const MUSHAF_2_FONT_SIZE = null;   // 13 Liner IndoPak — set number to override (e.g. 22)
 const MUSHAF_2_LINE_HEIGHT = null; // 13 Liner IndoPak — set number to override (e.g. 44)
-const MUSHAF_3_FONT_SIZE = 20;   // 15 Liner Uthmani — set number to override (e.g. 24)
-const MUSHAF_3_LINE_HEIGHT = 40; // 15 Liner Uthmani — set number to override (e.g. 46)
+const MUSHAF_3_FONT_SIZE = 20;   // 15 Liner Uthmani — tuned for Bayaan-like spacing
+const MUSHAF_3_LINE_HEIGHT = 36; // 15 Liner Uthmani — slightly tighter than before to mimic Qul/Bayaan layout
 const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : MUSHAF_3_FONT_SIZE);
 const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
 
 // Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
-const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -30;
+const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -28;
 
 const HELPER_FONT_FAMILY = "AswaatHelpers";
 
@@ -193,8 +194,8 @@ const Line = ({
             const [wordIdFromKey, narratorIdFromKey] = variationKey.split("-");
             const isWordMatch = wordIdFromKey === word.id.toString();
             const isSaved = savedVariations.includes(variationKey);
-            const isNarratorSelected = selectedNarrators.includes(
-              parseInt(narratorIdFromKey)
+            const isNarratorSelected = selectedNarrators.some(
+              (id) => id.toString() === narratorIdFromKey
             );
 
             // Must be saved AND narrator selected to show variation
@@ -203,14 +204,24 @@ const Line = ({
           }
         );
 
-        if (matchingVariation && matchingVariation[1]) {
-          const variationContent = matchingVariation[1];
+        const variation = matchingVariation ? matchingVariation[1] : null;
+        const variationContent =
+          variation && typeof variation === "object" ? variation.content : (variation || word.content);
+        const variationImalah =
+          variation && typeof variation === "object" && variation.imalah ? variation.imalah : null;
+        const variationDiamond =
+          variation && typeof variation === "object" && variation.diamond ? variation.diamond : null;
+        const hasOverlay = !!(variationImalah?.indices?.length || variationDiamond?.indices?.length);
+
+        if (matchingVariation && variation) {
           contentToRender = (
             <InlineComparison
               originalText={word.content}
               inputText={variationContent}
               fontFamily={getQuranFontFamily(mushafId)}
               textStyle={inlineTextStyle}
+              imalahData={variationImalah}
+              diamondData={variationDiamond}
             />
           );
         }
@@ -240,6 +251,7 @@ const Line = ({
               styles.wordPressable,
               pressed && styles.wordPressed,
               selectedWordId === word.id && styles.wordSelected,
+              hasOverlay && (isDarkMode ? styles.wordBlockWithOverlayDark : styles.wordBlockWithOverlay),
             ]}
           >
             {contentToRender}
@@ -445,6 +457,8 @@ const NarratorPopup = ({
   selectedWord,
   savedVariations,
   allVariations = {},
+  variationImalah = null,
+  variationDiamond = null,
   onSaveVariation,
   onDeleteVariation,
   mushafId = 3,
@@ -457,12 +471,31 @@ const NarratorPopup = ({
   const inputRef = useRef(null);
   const [selection, setSelection] = useState({ start: 0, end: 0 });
   const [currentLetterIndex, setCurrentLetterIndex] = useState(0); // Index of currently highlighted letter
+  const [imalahOverlayIndices, setImalahOverlayIndices] = useState(() => new Set()); // Letter indices with imalah circle overlay
+  const [imalahPlacementByLetter, setImalahPlacementByLetter] = useState({}); // { [letterIndex]: { xPercent, yPercent } }
+  const [imalahPlacementModalVisible, setImalahPlacementModalVisible] = useState(false);
+  const [imalahPlacementLetterIndex, setImalahPlacementLetterIndex] = useState(null);
+  const [imalahCanvasPosition, setImalahCanvasPosition] = useState({ xPercent: 50, yPercent: 85 });
+  const imalahCanvasLayoutRef = useRef(null); // { pageX, pageY, width, height } from measureInWindow
+  const imalahCanvasViewRef = useRef(null);
+  const imalahCanvasSizeRef = useRef({ width: 280, height: 72 });
+  const [diamondOverlayIndices, setDiamondOverlayIndices] = useState(() => new Set());
+  const [diamondPlacementByLetter, setDiamondPlacementByLetter] = useState({});
+  const [diamondPlacementModalVisible, setDiamondPlacementModalVisible] = useState(false);
+  const [diamondPlacementLetterIndex, setDiamondPlacementLetterIndex] = useState(null);
+  const [diamondCanvasPosition, setDiamondCanvasPosition] = useState({ xPercent: 50, yPercent: 85 });
+  const diamondCanvasLayoutRef = useRef(null);
+  const diamondCanvasViewRef = useRef(null);
+  const diamondCanvasSizeRef = useRef({ width: 280, height: 72 });
+  const diamondPanStartRef = useRef({ x: 0, y: 0 });
+  const mainDisplayInnerSizeRef = useRef({ width: 280, height: 72 });
+  const [mainDisplayInnerSize, setMainDisplayInnerSize] = useState({ width: 280, height: 72 }); // for modal canvas to match
+  const imalahPanStartRef = useRef({ x: 0, y: 0 });
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const historyRef = useRef([]);
   const historyIndexRef = useRef(-1);
   const [isShaddaSelected, setIsShaddaSelected] = useState(false);
-  const [isImalahSelected, setIsImalahSelected] = useState(false);
   const [longPressButton, setLongPressButton] = useState(null); // { char, tanweenChar, buttonIndex, position }
   const [longPressPosition, setLongPressPosition] = useState(null); // { x, y }
   const [dragStartY, setDragStartY] = useState(null);
@@ -554,7 +587,10 @@ const NarratorPopup = ({
       historyIndexRef.current = 0;
       setHistory(initialHistory);
       setHistoryIndex(0);
-      
+      setImalahOverlayIndices(variationImalah?.indices ? new Set(variationImalah.indices) : new Set());
+      setImalahPlacementByLetter(variationImalah?.placementByLetter || {});
+      setDiamondOverlayIndices(variationDiamond?.indices ? new Set(variationDiamond.indices) : new Set());
+      setDiamondPlacementByLetter(variationDiamond?.placementByLetter || {});
       // Reset letter index to first letter or 0
       const letterPositions = getLetterPositions(inputValue);
       if (letterPositions.length > 0) {
@@ -563,7 +599,7 @@ const NarratorPopup = ({
         setCurrentLetterIndex(0);
       }
     }
-  }, [visible, selectedNarrator]);
+  }, [visible, selectedNarrator, variationImalah, variationDiamond]);
 
   // Update letter index when input value changes - ensure it stays valid
   useEffect(() => {
@@ -572,7 +608,6 @@ const NarratorPopup = ({
         setCurrentLetterIndex(0);
       }
       setIsShaddaSelected(false); // Deselect shadda when input changes
-      setIsImalahSelected(false); // Deselect imalah when input changes
       return;
     }
     
@@ -582,17 +617,63 @@ const NarratorPopup = ({
         setCurrentLetterIndex(0);
       }
       setIsShaddaSelected(false); // Deselect shadda when no letters
-      setIsImalahSelected(false); // Deselect imalah when no letters
     } else {
       // Ensure index is within bounds
       const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
       if (validIndex !== currentLetterIndex) {
         setCurrentLetterIndex(validIndex);
         setIsShaddaSelected(false); // Deselect shadda when index changes
-        setIsImalahSelected(false); // Deselect imalah when index changes
       }
     }
   }, [inputValue]); // Only depend on inputValue, not currentLetterIndex to avoid loops
+
+  const imalahCanvasPanGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .runOnJS(true)
+        .onBegin((e) => {
+          imalahPanStartRef.current = { x: e.x, y: e.y };
+          const { width: w, height: h } = imalahCanvasSizeRef.current;
+          if (w <= 0 || h <= 0) return;
+          const x = Math.max(0, Math.min(w, e.x));
+          const y = Math.max(0, Math.min(h, e.y));
+          setImalahCanvasPosition({ xPercent: (x / w) * 100, yPercent: (y / h) * 100 });
+        })
+        .onUpdate((e) => {
+          const { width: w, height: h } = imalahCanvasSizeRef.current;
+          if (w <= 0 || h <= 0) return;
+          const start = imalahPanStartRef.current;
+          const x = Math.max(0, Math.min(w, start.x + e.translationX));
+          const y = Math.max(0, Math.min(h, start.y + e.translationY));
+          setImalahCanvasPosition({ xPercent: (x / w) * 100, yPercent: (y / h) * 100 });
+        }),
+    []
+  );
+
+  const diamondCanvasPanGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(0)
+        .runOnJS(true)
+        .onBegin((e) => {
+          diamondPanStartRef.current = { x: e.x, y: e.y };
+          const { width: w, height: h } = diamondCanvasSizeRef.current;
+          if (w <= 0 || h <= 0) return;
+          const x = Math.max(0, Math.min(w, e.x));
+          const y = Math.max(0, Math.min(h, e.y));
+          setDiamondCanvasPosition({ xPercent: (x / w) * 100, yPercent: (y / h) * 100 });
+        })
+        .onUpdate((e) => {
+          const { width: w, height: h } = diamondCanvasSizeRef.current;
+          if (w <= 0 || h <= 0) return;
+          const start = diamondPanStartRef.current;
+          const x = Math.max(0, Math.min(w, start.x + e.translationX));
+          const y = Math.max(0, Math.min(h, start.y + e.translationY));
+          setDiamondCanvasPosition({ xPercent: (x / w) * 100, yPercent: (y / h) * 100 });
+        }),
+    []
+  );
 
   if (!visible || !position) return null;
 
@@ -613,12 +694,9 @@ const NarratorPopup = ({
       : null;
   const isSaved = variationKey ? savedVariations.includes(variationKey) : false;
   const savedValue = variationKey && allVariations[variationKey] ? allVariations[variationKey] : null;
-  // Get the original word content to compare against when no variation is saved
+  const savedContent = savedValue != null && typeof savedValue === "object" ? savedValue.content : savedValue;
   const originalWordContent = selectedWord ? selectedWord.content : "";
-  // Has unsaved changes if: 
-  // - (saved but input differs from saved value) OR 
-  // - (not saved but input differs from original word content)
-  const hasUnsavedChanges = (savedValue !== null && inputValue !== savedValue) || 
+  const hasUnsavedChanges = (savedValue !== null && inputValue !== savedContent) ||
                             (savedValue === null && inputValue !== originalWordContent);
   // Green when: (saved and no changes) OR (not saved but matches original - no changes from default)
   const isSavedState = (isSaved && !hasUnsavedChanges) || (!isSaved && inputValue === originalWordContent);
@@ -630,7 +708,6 @@ const NarratorPopup = ({
     { char: "\u064F", name: "Damma" },     // ُ
     { char: "\u0652", name: "Sukun" },     // ْ
     { char: "\u0651", name: "Shadda" },    // ّ
-    { char: "\u0658", name: "ImalahDot" }, // ٘ (helper imalah dot)
     { char: "\u064B", name: "Fathatan" },   // ً
     { char: "\u064D", name: "Kasratan" },  // ٍ
     { char: "\u064C", name: "Dammatan" },  // ٌ
@@ -788,10 +865,8 @@ const NarratorPopup = ({
     }, 0);
   };
 
-  const imalahChar = "\u0658"; // ARABIC SMALL HIGH NOON (imalah dot)
-
   // Handle madd alif press - add alif after letter with fathah
-  const handleMaddAlifPress = (withImalah = false) => {
+  const handleMaddAlifPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -825,22 +900,17 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
-    // Replace diacritics then insert alif after the letter (after diacritics)
-    const newValue =
-      inputValue.slice(0, letterStart) +
-      baseLetter +
-      newDiacritics +
-      inputValue.slice(letterEnd) +
-      alifChar;
+    // Insert alif after the letter (after diacritics)
+    const newValue = 
+      inputValue.slice(0, letterEnd) + 
+      alifChar + 
+      inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
-    const newPos = letterStart + baseLetter.length + newDiacritics.length + 1;
+    // Update cursor position
+    const newPos = letterEnd + 1;
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ selection: { start: newPos, end: newPos } });
@@ -850,7 +920,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd waw press - add waw after letter with fathah
-  const handleMaddWawPress = (withImalah = false) => {
+  const handleMaddWawPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -884,21 +954,17 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
-    const newValue =
-      inputValue.slice(0, letterStart) +
-      baseLetter +
-      newDiacritics +
-      inputValue.slice(letterEnd) +
-      wawChar;
+    // Insert waw after the letter (after diacritics)
+    const newValue = 
+      inputValue.slice(0, letterEnd) + 
+      wawChar + 
+      inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
-    const newPos = letterStart + baseLetter.length + newDiacritics.length + 1;
+    // Update cursor position
+    const newPos = letterEnd + 1;
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ selection: { start: newPos, end: newPos } });
@@ -908,7 +974,7 @@ const NarratorPopup = ({
   };
 
   // Handle inverted dammah press - replace dammah with U+0657 (inverted dammah)
-  const handleInvertedDammahPress = (withImalah = false) => {
+  const handleInvertedDammahPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -946,18 +1012,16 @@ const NarratorPopup = ({
       // Add inverted dammah if not already present and no dammah to replace
       newDiacritics = newDiacritics + invertedDammahChar;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
+    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
+    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -968,7 +1032,7 @@ const NarratorPopup = ({
   };
 
   // Handle extender Hamza + Dammah press (U+0640 + U+0654 + U+064F)
-  const handleExtenderHamzaDammahPress = (withImalah = false) => {
+  const handleExtenderHamzaDammahPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1005,18 +1069,16 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(dammaChar)) {
       newDiacritics = newDiacritics + dammaChar;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
+    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
+    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1027,7 +1089,7 @@ const NarratorPopup = ({
   };
 
   // Handle extender Hamza + Kasrah press (U+0640 + U+0654 + U+0650)
-  const handleExtenderHamzaKasrahPress = (withImalah = false) => {
+  const handleExtenderHamzaKasrahPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1064,18 +1126,16 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(kasraChar)) {
       newDiacritics = newDiacritics + kasraChar;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
+    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
+    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1086,7 +1146,7 @@ const NarratorPopup = ({
   };
 
   // Handle extender Hamza + Fathah press (U+0640 + U+0654 + U+064E)
-  const handleExtenderHamzaFathahPress = (withImalah = false) => {
+  const handleExtenderHamzaFathahPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1123,18 +1183,16 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = newDiacritics + fathaChar;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
+    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
+    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1145,7 +1203,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd rounded zero press (U+06E4)
-  const handleMaddRoundedZeroPress = (withImalah = false) => {
+  const handleMaddRoundedZeroPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1178,18 +1236,16 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(maddRoundedZeroChar)) {
       newDiacritics = newDiacritics + maddRoundedZeroChar;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
+    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
+    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1200,7 +1256,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd combined press - add U+0653 only
-  const handleMaddCombinedPress = (withImalah = false) => {
+  const handleMaddCombinedPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1233,18 +1289,16 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(maddahChar)) {
       newDiacritics = newDiacritics + maddahChar;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
+    // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
       newDiacritics + 
       inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
+    // Keep cursor on the same letter
     setTimeout(() => {
       const newLetterPositions = getLetterPositions(newValue);
       if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
@@ -1255,7 +1309,7 @@ const NarratorPopup = ({
   };
 
   // Handle madd ya press - add ya after letter with fathah
-  const handleMaddYaPress = (withImalah = false) => {
+  const handleMaddYaPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1289,21 +1343,17 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
-    const newValue =
-      inputValue.slice(0, letterStart) +
-      baseLetter +
-      newDiacritics +
-      inputValue.slice(letterEnd) +
-      yaChar;
+    // Insert ya after the letter (after diacritics)
+    const newValue = 
+      inputValue.slice(0, letterEnd) + 
+      yaChar + 
+      inputValue.slice(letterEnd);
     
-    addToHistory(newValue);
     onInputChange(newValue);
     
-    const newPos = letterStart + baseLetter.length + newDiacritics.length + 1;
+    // Update cursor position
+    const newPos = letterEnd + 1;
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.setNativeProps({ selection: { start: newPos, end: newPos } });
@@ -1313,7 +1363,7 @@ const NarratorPopup = ({
   };
 
   // Handle dagger alif press (without fathah) - replace all diacritics with only dagger alif
-  const handleDaggerAlifOnlyPress = (withImalah = false) => {
+  const handleDaggerAlifOnlyPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1338,8 +1388,8 @@ const NarratorPopup = ({
     
     const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
     
-    // Replace all diacritics with only the dagger alif (optionally + imalah)
-    const newDiacritics = daggerAlifChar + (withImalah ? imalahChar : "");
+    // Replace all diacritics with only the dagger alif
+    const newDiacritics = daggerAlifChar;
     
     // Replace the letter with base letter + only dagger alif
     const newValue =
@@ -1412,6 +1462,53 @@ const NarratorPopup = ({
     }, 0);
   };
 
+  // Open imalah placement canvas for the currently chosen character (add to overlay set and show modal)
+  const openImalahPlacement = () => {
+    const letterPositions = getLetterPositions(inputValue);
+    if (letterPositions.length === 0 || currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    setImalahOverlayIndices((prev) => new Set(prev).add(currentLetterIndex));
+    setImalahPlacementLetterIndex(currentLetterIndex);
+    const saved = imalahPlacementByLetter[currentLetterIndex];
+    const n = letterPositions.length;
+    const defaultX = (1 - (currentLetterIndex + 0.5) / n) * 100;
+    setImalahCanvasPosition(saved || { xPercent: defaultX, yPercent: 85 });
+    setImalahPlacementModalVisible(true);
+  };
+
+  const closeImalahPlacement = (save) => {
+    if (save && imalahPlacementLetterIndex !== null) {
+      setImalahPlacementByLetter((prev) => ({
+        ...prev,
+        [imalahPlacementLetterIndex]: imalahCanvasPosition,
+      }));
+    }
+    setImalahPlacementModalVisible(false);
+    setImalahPlacementLetterIndex(null);
+  };
+
+  const openDiamondPlacement = () => {
+    const letterPositions = getLetterPositions(inputValue);
+    if (letterPositions.length === 0 || currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+    setDiamondOverlayIndices((prev) => new Set(prev).add(currentLetterIndex));
+    setDiamondPlacementLetterIndex(currentLetterIndex);
+    const saved = diamondPlacementByLetter[currentLetterIndex];
+    const n = letterPositions.length;
+    const defaultX = (1 - (currentLetterIndex + 0.5) / n) * 100;
+    setDiamondCanvasPosition(saved || { xPercent: defaultX, yPercent: 85 });
+    setDiamondPlacementModalVisible(true);
+  };
+
+  const closeDiamondPlacement = (save) => {
+    if (save && diamondPlacementLetterIndex !== null) {
+      setDiamondPlacementByLetter((prev) => ({
+        ...prev,
+        [diamondPlacementLetterIndex]: diamondCanvasPosition,
+      }));
+    }
+    setDiamondPlacementModalVisible(false);
+    setDiamondPlacementLetterIndex(null);
+  };
+
   // Handle imalah dot press - adds only imalah dot from helper font (no other diacritics)
   const handleImalahDotPress = () => {
     if (inputValue.length === 0) return;
@@ -1462,7 +1559,7 @@ const NarratorPopup = ({
   };
 
   // Handle helper diamond dot press - adds only diamond dot from helper font (no other diacritics)
-  const handleHelperDiamondDotPress = (withImalah = false) => {
+  const handleHelperDiamondDotPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1487,7 +1584,7 @@ const NarratorPopup = ({
     
     // Using U+0659 for helper diamond dot - only add the helper character, no kasrah
     const helperDiamondDotChar = "\u0659"; // ARABIC PLACE OF SAJDAH
-    const newDiacritics = helperDiamondDotChar + (withImalah ? imalahChar : "");
+    const newDiacritics = helperDiamondDotChar;
     
     // Replace the letter with base letter + only helper diamond dot
     const newValue =
@@ -1511,7 +1608,7 @@ const NarratorPopup = ({
   };
 
   // Handle subscript alef press - adds only subscript alef from helper font (no other diacritics)
-  const handleSubscriptAlefPress = (withImalah = false) => {
+  const handleSubscriptAlefPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1536,7 +1633,7 @@ const NarratorPopup = ({
     
     // Using U+0656 for subscript alef - only add the helper character, no kasrah
     const subscriptAlefChar = "\u0656"; // ARABIC SUBSCRIPT ALEF
-    const newDiacritics = subscriptAlefChar + (withImalah ? imalahChar : "");
+    const newDiacritics = subscriptAlefChar;
     
     // Replace the letter with base letter + only subscript alef
     const newValue =
@@ -1560,7 +1657,7 @@ const NarratorPopup = ({
   };
 
   // Handle dagger alif press - insert dagger alif as diacritic after fathah
-  const handleStandingAlifPress = (withImalah = false) => {
+  const handleStandingAlifPress = () => {
     if (inputValue.length === 0) return;
     
     const letterPositions = getLetterPositions(inputValue);
@@ -1606,9 +1703,6 @@ const NarratorPopup = ({
         newDiacritics = newDiacritics + daggerAlifChar;
       }
     }
-    if (withImalah) {
-      newDiacritics = newDiacritics + imalahChar;
-    }
     
     // Replace the letter with base letter + new diacritics
     const newValue =
@@ -1647,62 +1741,16 @@ const NarratorPopup = ({
     const fathaChar = "\u064E";
     const kasraChar = "\u0650";
     const dammaChar = "\u064F";
-    const imalahChar = "\u0658";
     
-    // Check if this is a shadda or imalah button press
+    // Check if this is a shadda button press
     const isShadda = harakatFromVariation === shaddaChar;
-    const isImalah = harakatFromVariation === imalahChar;
     
     // Check if this is a vowel (fatha, kasra, damma)
     const isVowel = harakatFromVariation === fathaChar || 
                      harakatFromVariation === kasraChar || 
                      harakatFromVariation === dammaChar;
     
-    // If shadda and imalah are both selected and a vowel is pressed, combine all three
-    if (isShaddaSelected && isImalahSelected && isVowel) {
-      const combinedHarakat = shaddaChar + harakatFromVariation + imalahChar;
-      
-      const letterPos = letterPositions[currentLetterIndex];
-      let letterStart = letterPos.start;
-      
-      // Find the end position (after the base letter and any existing diacritics)
-      let letterEnd = letterStart + 1;
-      while (letterEnd < inputValue.length) {
-        const char = inputValue[letterEnd];
-        if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
-          letterEnd++;
-        } else {
-          break;
-        }
-      }
-      
-      // Replace only the harakat part, keep the base letter
-      const newValue =
-        inputValue.slice(0, letterStart) +
-        baseLetter +
-        combinedHarakat +
-        inputValue.slice(letterEnd);
-      
-      // Add to history before updating
-      addToHistory(newValue);
-      onInputChange(newValue);
-      
-      // Deselect both
-      setIsShaddaSelected(false);
-      setIsImalahSelected(false);
-      
-      // After updating, ensure currentLetterIndex is still valid
-      setTimeout(() => {
-        const newLetterPositions = getLetterPositions(newValue);
-        if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
-          const newPos = newLetterPositions[currentLetterIndex].start;
-          setSelection({ start: newPos, end: newPos });
-        }
-      }, 0);
-      return;
-    }
-    
-    // If only shadda is selected and a vowel is pressed, combine them
+    // If shadda is selected and a vowel is pressed, combine them
     if (isShaddaSelected && isVowel) {
       const combinedHarakat = shaddaChar + harakatFromVariation;
       
@@ -1733,7 +1781,6 @@ const NarratorPopup = ({
       
       // Deselect shadda
       setIsShaddaSelected(false);
-      setIsImalahSelected(false);
       
       // After updating, ensure currentLetterIndex is still valid
       setTimeout(() => {
@@ -1748,89 +1795,13 @@ const NarratorPopup = ({
     
     // If shadda button is pressed, toggle selection
     if (isShadda) {
-      // If imalah is already selected and shadda is off, turn shadda on as a combo
-      if (isImalahSelected && !isShaddaSelected) {
-        setIsShaddaSelected(true);
-        return;
-      }
-      // If both are on, turning shadda off leaves imalah selected
-      if (isImalahSelected && isShaddaSelected) {
-        setIsShaddaSelected(false);
-        return;
-      }
-      const next = !isShaddaSelected;
-      setIsShaddaSelected(next);
+      setIsShaddaSelected(!isShaddaSelected);
       return; // Don't apply shadda yet, just toggle selection
-    }
-    
-    // If imalah button is pressed, toggle selection
-    if (isImalah) {
-      // If shadda is already selected and imalah is off, turn imalah on as a combo
-      if (isShaddaSelected && !isImalahSelected) {
-        setIsImalahSelected(true);
-        return;
-      }
-      // If both are on, turning imalah off leaves shadda selected
-      if (isShaddaSelected && isImalahSelected) {
-        setIsImalahSelected(false);
-        return;
-      }
-      const next = !isImalahSelected;
-      setIsImalahSelected(next);
-      return; // Don't apply imalah yet, just toggle selection
     }
     
     // If shadda is selected and another button is pressed (not a vowel), deselect shadda
     if (isShaddaSelected && !isVowel) {
       setIsShaddaSelected(false);
-    }
-    
-    // If imalah is selected and a vowel is pressed, combine them
-    if (isImalahSelected && isVowel) {
-      const combinedHarakat = harakatFromVariation + imalahChar;
-
-      const letterPos = letterPositions[currentLetterIndex];
-      let letterStart = letterPos.start;
-
-      // Find the end position (after the base letter and any existing diacritics)
-      let letterEnd = letterStart + 1;
-      while (letterEnd < inputValue.length) {
-        const char = inputValue[letterEnd];
-        if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
-          letterEnd++;
-        } else {
-          break;
-        }
-      }
-
-      // Replace only the harakat part, keep the base letter
-      const newValue =
-        inputValue.slice(0, letterStart) +
-        baseLetter +
-        combinedHarakat +
-        inputValue.slice(letterEnd);
-
-      // Add to history before updating
-      addToHistory(newValue);
-      onInputChange(newValue);
-
-      // Deselect imalah
-      setIsImalahSelected(false);
-
-      // After updating, ensure currentLetterIndex is still valid
-      setTimeout(() => {
-        const newLetterPositions = getLetterPositions(newValue);
-        if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
-          const newPos = newLetterPositions[currentLetterIndex].start;
-          setSelection({ start: newPos, end: newPos });
-        }
-      }, 0);
-      return;
-    }
-
-    // If imalah is selected and another button is pressed (not a vowel), deselect imalah
-    if (isImalahSelected && !isVowel) {
-      setIsImalahSelected(false);
     }
     
     const letterPos = letterPositions[currentLetterIndex];
@@ -2034,7 +2005,6 @@ const NarratorPopup = ({
     if (letterPositions.length === 0) {
       setCurrentLetterIndex(0);
       setIsShaddaSelected(false); // Deselect shadda when moving
-      setIsImalahSelected(false); // Deselect imalah when moving
       return;
     }
 
@@ -2046,10 +2016,9 @@ const NarratorPopup = ({
       newIndex--; // Move backward in RTL (visually left)
     }
     
-    // If moving to a different letter, deselect shadda / imalah
+    // If moving to a different letter, deselect shadda
     if (newIndex !== currentLetterIndex) {
       setIsShaddaSelected(false);
-      setIsImalahSelected(false);
     }
     
     setCurrentLetterIndex(newIndex);
@@ -2112,7 +2081,19 @@ const NarratorPopup = ({
                     {selectedNarrator.title}
                   </Text>
                   <TouchableOpacity
-                    onPress={() => onSaveVariation(variationKey)}
+                    onPress={() =>
+                      onSaveVariation(variationKey, {
+                        content: inputValue,
+                        imalah: {
+                          indices: Array.from(imalahOverlayIndices),
+                          placementByLetter: { ...imalahPlacementByLetter },
+                        },
+                        diamond: {
+                          indices: Array.from(diamondOverlayIndices),
+                          placementByLetter: { ...diamondPlacementByLetter },
+                        },
+                      })
+                    }
                     style={[
                       styles.saveButton,
                       isSavedState && styles.saveButtonSaved,
@@ -2145,7 +2126,18 @@ const NarratorPopup = ({
                     {/* Large display block with letter-by-letter highlighting */}
                     <View style={styles.largeDisplayBlock}>
                       {inputValue && inputValue.length > 0 ? (
-                        <View style={{ position: 'relative', width: '100%' }}>
+                        <View
+                          style={{ position: 'relative', width: '100%' }}
+                          onLayout={(e) => {
+                            const { width, height } = e.nativeEvent.layout;
+                            if (width > 0 && height > 0) {
+                              mainDisplayInnerSizeRef.current = { width, height };
+                              setMainDisplayInnerSize((prev) =>
+                                prev.width === width && prev.height === height ? prev : { width, height }
+                              );
+                            }
+                          }}
+                        >
                         <Text 
                           style={[
                             styles.displayText,
@@ -2246,6 +2238,57 @@ const NarratorPopup = ({
                               </View>
                             ));
                           })()}
+                          {/* Imalah overlay: round filled circle — position from canvas or fallback; size scales with parent */}
+                          {(() => {
+                            const letterPositions = getLetterPositions(inputValue);
+                            const n = letterPositions.length;
+                            if (n === 0) return null;
+                            const minDim = Math.min(mainDisplayInnerSize.width, mainDisplayInnerSize.height);
+                            const imalahDotSize = minDim > 0 ? Math.round(Math.max(4, Math.min(12, minDim * 0.06))) : 8;
+                            const imalahHalf = imalahDotSize / 2;
+                            return Array.from(imalahOverlayIndices).filter((idx) => idx >= 0 && idx < n).map((letterIdx) => {
+                              const placement = imalahPlacementByLetter[letterIdx];
+                              const style = placement
+                                ? { left: `${placement.xPercent}%`, top: `${placement.yPercent}%`, marginLeft: -imalahHalf, marginTop: -imalahHalf, right: undefined, bottom: undefined, width: imalahDotSize, height: imalahDotSize }
+                                : { right: `${((letterIdx + 0.5) / n) * 100}%`, marginRight: -imalahHalf, width: imalahDotSize, height: imalahDotSize };
+                              return (
+                                <View
+                                  key={`imalah-${letterIdx}`}
+                                  style={[styles.imalahCircleContainer, style]}
+                                  pointerEvents="none"
+                                >
+                                  <View style={[styles.imalahCircle, { width: imalahDotSize, height: imalahDotSize, borderRadius: imalahHalf }]} />
+                                </View>
+                              );
+                            });
+                          })()}
+                          {/* Diamond overlay: skinny diamond, transparent with stroke — position from canvas or fallback; size scales with parent */}
+                          {(() => {
+                            const letterPositions = getLetterPositions(inputValue);
+                            const n = letterPositions.length;
+                            if (n === 0) return null;
+                            const minDim = Math.min(mainDisplayInnerSize.width, mainDisplayInnerSize.height);
+                            const { scale, min, max, fallbackHeight } = DIAMOND_SIZING.topDisplay;
+                            const diamondH = minDim > 0 ? Math.round(Math.max(min, Math.min(max, minDim * scale))) : fallbackHeight;
+                            const diamondW = (diamondH * 35) / 49;
+                            const halfW = diamondW / 2;
+                            const halfH = diamondH / 2;
+                            return Array.from(diamondOverlayIndices).filter((idx) => idx >= 0 && idx < n).map((letterIdx) => {
+                              const placement = diamondPlacementByLetter[letterIdx];
+                              const style = placement
+                                ? { left: `${placement.xPercent}%`, top: `${placement.yPercent}%`, marginLeft: -halfW, marginTop: -halfH, right: undefined, bottom: undefined, width: diamondW, height: diamondH }
+                                : { right: `${((letterIdx + 0.5) / n) * 100}%`, marginRight: -halfW, width: diamondW, height: diamondH };
+                              return (
+                                <View
+                                  key={`diamond-overlay-${letterIdx}`}
+                                  style={[styles.diamondOverlayContainer, style]}
+                                  pointerEvents="none"
+                                >
+                                  <DiamondShapeSvg height={diamondH} />
+                                </View>
+                              );
+                            });
+                          })()}
                         </View>
                       ) : (
                         <Text style={styles.displayPlaceholder}>Enter text...</Text>
@@ -2340,6 +2383,37 @@ const NarratorPopup = ({
                         </Text>
                       )}
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.keyboardImalahKey,
+                        (() => {
+                          const letterPositions = getLetterPositions(inputValue);
+                          const hasLetter = letterPositions.length > 0 && currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length;
+                          const isActive = hasLetter && imalahOverlayIndices.has(currentLetterIndex);
+                          return isActive && styles.keyboardImalahKeyActive;
+                        })(),
+                      ]}
+                      onPress={openImalahPlacement}
+                      disabled={!inputValue || getLetterPositions(inputValue).length === 0}
+                    >
+                      <Text style={styles.keyboardImalahKeyText}>Imalah</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.keyboardDiamondKey,
+                        (() => {
+                          const letterPositions = getLetterPositions(inputValue);
+                          const hasLetter = letterPositions.length > 0 && currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length;
+                          const isActive = hasLetter && diamondOverlayIndices.has(currentLetterIndex);
+                          return isActive && styles.keyboardDiamondKeyActive;
+                        })(),
+                      ]}
+                      onPress={openDiamondPlacement}
+                      disabled={!inputValue || getLetterPositions(inputValue).length === 0}
+                    >
+                      <Text style={styles.keyboardDiamondKeyText}>Diamond</Text>
+                    </TouchableOpacity>
                   </View>
 
                   {/* Insert mode buttons (only in letters mode) */}
@@ -2391,7 +2465,6 @@ const NarratorPopup = ({
                       const buttonCount = buttons.length;
                       const isSmallButtonSet = keyboardMode === "harakat" && buttonCount === 5;
                       const shaddaChar = "\u0651";
-                      const imalahChar = "\u0658";
                       return buttons.length > 0 ? (
                         <>
                           {buttons.map((char, index) => {
@@ -2399,11 +2472,6 @@ const NarratorPopup = ({
                           const baseLetter = getBaseLetterAtCurrentLetter();
                           const isShaddaButton = baseLetter && char === baseLetter + shaddaChar;
                           const isShaddaSelectedForThisButton = isShaddaButton && isShaddaSelected;
-                          // Check if this is the imalah button and if it's selected
-                          const isImalahButton = baseLetter && char === baseLetter + imalahChar;
-                          const isImalahSelectedForThisButton = isImalahButton && isImalahSelected;
-                          const isShaddaImalahComboSelectedForThisButton =
-                            isShaddaButton && isShaddaSelected && isImalahSelected;
                           
                           // Get the original letter at current position (with its current harakat)
                           const letterPositions = getLetterPositions(inputValue);
@@ -2610,64 +2678,57 @@ const NarratorPopup = ({
                               onResponderRelease={(e) => {
                                 if (isLongPressed) {
                                   if (keyboardMode === "harakat") {
-                                    // Pair imalah with dropdown choice except double imalah (imalah dot option)
-                                    const withImalah = isImalahSelected && !(isHoveringImalahDot && isKasrahButton);
-                                    let didHandle = false;
+                                    // Check if released over tanween button, shadda+tanween button, standing alif, or plain letter
                                     if (isHoveringTanween && tanweenChar) {
-                                      handleHarakatPress(baseLetter + tanweenChar + (withImalah ? imalahChar : ""));
-                                      didHandle = true;
+                                      handleHarakatPress(baseLetter + tanweenChar);
                                     } else if (isHoveringShaddaTanween && tanweenChar) {
                                       const shaddaChar = "\u0651";
-                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar + (withImalah ? imalahChar : ""));
-                                      didHandle = true;
+                                      handleHarakatPress(baseLetter + shaddaChar + tanweenChar);
                                     } else if (isHoveringStandingAlif && isFathahButton) {
-                                      handleStandingAlifPress(withImalah);
-                                      didHandle = true;
+                                      // Released over dagger alif with fathah button (for fathah button)
+                                      handleStandingAlifPress();
                                     } else if (isHoveringDaggerAlifOnly && isFathahButton) {
-                                      handleDaggerAlifOnlyPress(withImalah);
-                                      didHandle = true;
+                                      // Released over dagger alif only button (for fathah button)
+                                      handleDaggerAlifOnlyPress();
                                     } else if (isHoveringMaddAlif && isFathahButton) {
-                                      handleMaddAlifPress(withImalah);
-                                      didHandle = true;
+                                      // Released over madd alif button
+                                      handleMaddAlifPress();
                                     } else if (isHoveringMaddWaw && isFathahButton) {
-                                      handleMaddWawPress(withImalah);
-                                      didHandle = true;
+                                      // Released over madd waw button
+                                      handleMaddWawPress();
                                     } else if (isHoveringMaddYa && isFathahButton) {
-                                      handleMaddYaPress(withImalah);
-                                      didHandle = true;
+                                      // Released over madd ya button
+                                      handleMaddYaPress();
                                     } else if (isHoveringMaddCombined && isFathahButton) {
-                                      handleMaddCombinedPress(withImalah);
-                                      didHandle = true;
+                                      // Released over madd combined button
+                                      handleMaddCombinedPress();
                                     } else if (isHoveringExtenderHamzaFathah && isFathahButton && baseLetter === "\u0640") {
-                                      handleExtenderHamzaFathahPress(withImalah);
-                                      didHandle = true;
+                                      // Released over extender hamza + fathah button
+                                      handleExtenderHamzaFathahPress();
                                     } else if (isHoveringMaddRoundedZero && isFathahButton) {
-                                      handleMaddRoundedZeroPress(withImalah);
-                                      didHandle = true;
+                                      // Released over madd rounded zero button
+                                      handleMaddRoundedZeroPress();
                                     } else if (isHoveringInvertedDammah && isDammahButton) {
-                                      handleInvertedDammahPress(withImalah);
-                                      didHandle = true;
+                                      // Released over inverted dammah button
+                                      handleInvertedDammahPress();
                                     } else if (isHoveringExtenderHamzaDammah && isDammahButton && baseLetter === "\u0640") {
-                                      handleExtenderHamzaDammahPress(withImalah);
-                                      didHandle = true;
+                                      // Released over extender hamza + dammah button
+                                      handleExtenderHamzaDammahPress();
                                     } else if (isHoveringImalahDot && isKasrahButton) {
+                                      // Released over imalah dot button (for kasrah button)
                                       handleImalahDotPress();
-                                      didHandle = true;
                                     } else if (isHoveringHelperDiamondDot && isKasrahButton) {
-                                      handleHelperDiamondDotPress(withImalah);
-                                      didHandle = true;
+                                      // Released over helper diamond dot button (for kasrah button)
+                                      handleHelperDiamondDotPress();
                                     } else if (isHoveringSubscriptAlef && isKasrahButton) {
-                                      handleSubscriptAlefPress(withImalah);
-                                      didHandle = true;
+                                      // Released over subscript alef button (for kasrah button)
+                                      handleSubscriptAlefPress();
                                     } else if (isHoveringExtenderHamzaKasrah && isKasrahButton && baseLetter === "\u0640") {
-                                      handleExtenderHamzaKasrahPress(withImalah);
-                                      didHandle = true;
+                                      // Released over extender hamza + kasrah button
+                                      handleExtenderHamzaKasrahPress();
                                     } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
+                                      // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
-                                      didHandle = true;
-                                    }
-                                    if (didHandle && (withImalah || (isHoveringImalahDot && isKasrahButton))) {
-                                      setIsImalahSelected(false);
                                     }
                                   }
                                   setLongPressButton(null);
@@ -2699,9 +2760,7 @@ const NarratorPopup = ({
                                 style={[
                                   styles.keyboardKey,
                                   isSmallButtonSet && styles.keyboardKeyLarge,
-                                  isShaddaImalahComboSelectedForThisButton
-                                    ? styles.keyboardKeyShaddaImalahSelected
-                                    : (isShaddaSelectedForThisButton || isImalahSelectedForThisButton) && styles.keyboardKeyShaddaSelected,
+                                  isShaddaSelectedForThisButton && styles.keyboardKeyShaddaSelected,
                                   isLongPressed && styles.keyboardKeyLongPressed,
                                 ]}
                                 onPress={() => {
@@ -2755,9 +2814,7 @@ const NarratorPopup = ({
                                 <Text style={[
                                   styles.keyboardKeyText,
                                   isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                  isShaddaImalahComboSelectedForThisButton
-                                    ? styles.keyboardKeyTextShaddaImalahSelected
-                                    : (isShaddaSelectedForThisButton || isImalahSelectedForThisButton) && styles.keyboardKeyTextShaddaSelected,
+                                  isShaddaSelectedForThisButton && styles.keyboardKeyTextShaddaSelected,
                                 ]}>{char}</Text>
                               </Pressable>
                               
@@ -2853,8 +2910,7 @@ const NarratorPopup = ({
                                           isHoveringStandingAlif && styles.keyboardKeyTanweenHovered,
                                         ]}
                                         onPress={() => {
-                                          handleStandingAlifPress(isImalahSelected);
-                                          if (isImalahSelected) setIsImalahSelected(false);
+                                          handleStandingAlifPress();
                                           setLongPressButton(null);
                                           setDragStartY(null);
                                           setIsHoveringTanween(false);
@@ -2891,8 +2947,7 @@ const NarratorPopup = ({
                                             { marginRight: 4 },
                                         ]}
                                         onPress={() => {
-                                          handleDaggerAlifOnlyPress(isImalahSelected);
-                                          if (isImalahSelected) setIsImalahSelected(false);
+                                          handleDaggerAlifOnlyPress();
                                           setLongPressButton(null);
                                           setDragStartY(null);
                                           setIsHoveringTanween(false);
@@ -2926,8 +2981,7 @@ const NarratorPopup = ({
                                             { marginRight: 4 },
                                           ]}
                                           onPress={() => {
-                                            handleMaddAlifPress(isImalahSelected);
-                                            if (isImalahSelected) setIsImalahSelected(false);
+                                            handleMaddAlifPress();
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -2961,8 +3015,7 @@ const NarratorPopup = ({
                                             { marginRight: 4 },
                                           ]}
                                           onPress={() => {
-                                            handleMaddCombinedPress(isImalahSelected);
-                                            if (isImalahSelected) setIsImalahSelected(false);
+                                            handleMaddCombinedPress();
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -2995,8 +3048,7 @@ const NarratorPopup = ({
                                             isHoveringMaddRoundedZero && styles.keyboardKeyTanweenHovered,
                                           ]}
                                           onPress={() => {
-                                            handleMaddRoundedZeroPress(isImalahSelected);
-                                            if (isImalahSelected) setIsImalahSelected(false);
+                                            handleMaddRoundedZeroPress();
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -3032,8 +3084,7 @@ const NarratorPopup = ({
                                             { marginTop: 4 },
                                           ]}
                                           onPress={() => {
-                                            handleExtenderHamzaFathahPress(isImalahSelected);
-                                            if (isImalahSelected) setIsImalahSelected(false);
+                                            handleExtenderHamzaFathahPress();
                                             setLongPressButton(null);
                                             setDragStartY(null);
                                             setIsHoveringTanween(false);
@@ -3132,7 +3183,6 @@ const NarratorPopup = ({
                                             ]}
                                             onPress={() => {
                                               handleImalahDotPress();
-                                              setIsImalahSelected(false);
                                               setLongPressButton(null);
                                               setDragStartY(null);
                                               setIsHoveringImalahDot(false);
@@ -3163,8 +3213,7 @@ const NarratorPopup = ({
                                               isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
                                             ]}
                                             onPress={() => {
-                                              handleHelperDiamondDotPress(isImalahSelected);
-                                              if (isImalahSelected) setIsImalahSelected(false);
+                                              handleHelperDiamondDotPress();
                                               setLongPressButton(null);
                                               setDragStartY(null);
                                               setIsHoveringHelperDiamondDot(false);
@@ -3195,8 +3244,7 @@ const NarratorPopup = ({
                                               isHoveringSubscriptAlef && styles.keyboardKeyTanweenHovered,
                                             ]}
                                             onPress={() => {
-                                              handleSubscriptAlefPress(isImalahSelected);
-                                              if (isImalahSelected) setIsImalahSelected(false);
+                                              handleSubscriptAlefPress();
                                               setLongPressButton(null);
                                               setDragStartY(null);
                                               setIsHoveringSubscriptAlef(false);
@@ -3226,9 +3274,8 @@ const NarratorPopup = ({
                                                 styles.dropdownGridButton,
                                                 isHoveringExtenderHamzaKasrah && styles.keyboardKeyTanweenHovered,
                                               ]}
-                                                onPress={() => {
-                                                handleExtenderHamzaKasrahPress(isImalahSelected);
-                                                if (isImalahSelected) setIsImalahSelected(false);
+                                              onPress={() => {
+                                                handleExtenderHamzaKasrahPress();
                                                 setLongPressButton(null);
                                                 setDragStartY(null);
                                                 setIsHoveringTanween(false);
@@ -3332,8 +3379,7 @@ const NarratorPopup = ({
                                                 isHoveringInvertedDammah && styles.keyboardKeyTanweenHovered,
                                               ]}
                                               onPress={() => {
-                                                handleInvertedDammahPress(isImalahSelected);
-                                                if (isImalahSelected) setIsImalahSelected(false);
+                                                handleInvertedDammahPress();
                                                 setLongPressButton(null);
                                                 setDragStartY(null);
                                                 setIsHoveringTanween(false);
@@ -3365,8 +3411,7 @@ const NarratorPopup = ({
                                                 isHoveringExtenderHamzaDammah && styles.keyboardKeyTanweenHovered,
                                               ]}
                                               onPress={() => {
-                                                handleExtenderHamzaDammahPress(isImalahSelected);
-                                                if (isImalahSelected) setIsImalahSelected(false);
+                                                handleExtenderHamzaDammahPress();
                                                 setLongPressButton(null);
                                                 setDragStartY(null);
                                                 setIsHoveringTanween(false);
@@ -3442,7 +3487,6 @@ const NarratorPopup = ({
                                     ]}
                                     onPress={() => {
                                       handleImalahDotPress();
-                                      setIsImalahSelected(false);
                                       setLongPressButton(null);
                                       setDragStartY(null);
                                       setIsHoveringImalahDot(false);
@@ -3472,8 +3516,7 @@ const NarratorPopup = ({
                                       isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
                                     ]}
                                     onPress={() => {
-                                      handleHelperDiamondDotPress(isImalahSelected);
-                                      if (isImalahSelected) setIsImalahSelected(false);
+                                      handleHelperDiamondDotPress();
                                       setLongPressButton(null);
                                       setDragStartY(null);
                                       setIsHoveringHelperDiamondDot(false);
@@ -3503,8 +3546,7 @@ const NarratorPopup = ({
                                       isHoveringSubscriptAlef && styles.keyboardKeyTanweenHovered,
                                     ]}
                                     onPress={() => {
-                                      handleSubscriptAlefPress(isImalahSelected);
-                                      if (isImalahSelected) setIsImalahSelected(false);
+                                      handleSubscriptAlefPress();
                                       setLongPressButton(null);
                                       setDragStartY(null);
                                       setIsHoveringSubscriptAlef(false);
@@ -3535,8 +3577,7 @@ const NarratorPopup = ({
                                         isHoveringExtenderHamzaKasrah && styles.keyboardKeyTanweenHovered,
                                       ]}
                                       onPress={() => {
-                                        handleExtenderHamzaKasrahPress(isImalahSelected);
-                                        if (isImalahSelected) setIsImalahSelected(false);
+                                        handleExtenderHamzaKasrahPress();
                                         setLongPressButton(null);
                                         setDragStartY(null);
                                         setIsHoveringImalahDot(false);
@@ -3576,6 +3617,15 @@ const NarratorPopup = ({
                   originalText={selectedWord?.content || ""}
                   inputText={inputValue}
                   fontFamily={quranFont}
+                  imalahData={{
+                    indices: Array.from(imalahOverlayIndices),
+                    placementByLetter: imalahPlacementByLetter,
+                  }}
+                  diamondData={{
+                    indices: Array.from(diamondOverlayIndices),
+                    placementByLetter: diamondPlacementByLetter,
+                  }}
+                  mainDisplaySize={mainDisplayInnerSize}
                 />
               </>
             ) : (
@@ -3616,6 +3666,177 @@ const NarratorPopup = ({
           </ScrollView>
         </Pressable>
       </View>
+
+      {/* Imalah placement canvas: drag circle to exact position */}
+      <Modal
+        visible={imalahPlacementModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => closeImalahPlacement(true)}
+      >
+        <Pressable style={styles.imalahPlacementOverlay} onPress={() => closeImalahPlacement(true)}>
+          <Pressable style={styles.imalahPlacementPopover} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.imalahPlacementTitle}>Position imalah</Text>
+            <Text style={styles.imalahPlacementHint}>Drag the circle where you want it</Text>
+            <GestureDetector gesture={imalahCanvasPanGesture}>
+              <View
+                ref={imalahCanvasViewRef}
+                onLayout={(e) => {
+                  const { width, height } = e.nativeEvent.layout;
+                  imalahCanvasSizeRef.current = { width, height };
+                  imalahCanvasViewRef.current?.measureInWindow((x, y, w, h) => {
+                    imalahCanvasLayoutRef.current = { pageX: x, pageY: y, width: w, height: h };
+                  });
+                }}
+                style={[
+                  styles.imalahCanvas,
+                  {
+                    width: mainDisplayInnerSize.width,
+                    height: mainDisplayInnerSize.height,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.imalahCanvasText,
+                    Platform.OS === "ios" && { fontFamily: quranFont, fontWeight: "normal", fontStyle: "normal" },
+                  ]}
+                  numberOfLines={1}
+                  pointerEvents="none"
+                >
+                  {inputValue ? inputValue.replace(/\u25C6/g, "") : ""}
+                </Text>
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.imalahCanvasCircle,
+                    {
+                      left: `${imalahCanvasPosition.xPercent}%`,
+                      top: `${imalahCanvasPosition.yPercent}%`,
+                      marginLeft: -6,
+                      marginTop: -6,
+                    },
+                  ]}
+                />
+              </View>
+            </GestureDetector>
+            <View style={styles.imalahPlacementActions}>
+              <TouchableOpacity
+                style={styles.imalahPlacementRemoveBtn}
+                onPress={() => {
+                  if (imalahPlacementLetterIndex !== null) {
+                    setImalahOverlayIndices((prev) => {
+                      const next = new Set(prev);
+                      next.delete(imalahPlacementLetterIndex);
+                      return next;
+                    });
+                    setImalahPlacementByLetter((prev) => {
+                      const o = { ...prev };
+                      delete o[imalahPlacementLetterIndex];
+                      return o;
+                    });
+                  }
+                  setImalahPlacementModalVisible(false);
+                  setImalahPlacementLetterIndex(null);
+                }}
+              >
+                <Text style={styles.imalahPlacementRemoveBtnText}>Remove</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.imalahPlacementDoneBtn} onPress={() => closeImalahPlacement(true)}>
+                <Text style={styles.imalahPlacementDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Diamond placement canvas: drag diamond to exact position */}
+      <Modal
+        visible={diamondPlacementModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => closeDiamondPlacement(true)}
+      >
+        <Pressable style={styles.imalahPlacementOverlay} onPress={() => closeDiamondPlacement(true)}>
+          <Pressable style={styles.imalahPlacementPopover} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.imalahPlacementTitle}>Position diamond</Text>
+            <Text style={styles.imalahPlacementHint}>Drag the diamond where you want it</Text>
+            <GestureDetector gesture={diamondCanvasPanGesture}>
+              <View
+                ref={diamondCanvasViewRef}
+                onLayout={(e) => {
+                  const { width, height } = e.nativeEvent.layout;
+                  diamondCanvasSizeRef.current = { width, height };
+                  diamondCanvasViewRef.current?.measureInWindow((x, y, w, h) => {
+                    diamondCanvasLayoutRef.current = { pageX: x, pageY: y, width: w, height: h };
+                  });
+                }}
+                style={[
+                  styles.imalahCanvas,
+                  {
+                    width: mainDisplayInnerSize.width,
+                    height: mainDisplayInnerSize.height,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.imalahCanvasText,
+                    Platform.OS === "ios" && { fontFamily: quranFont, fontWeight: "normal", fontStyle: "normal" },
+                  ]}
+                  numberOfLines={1}
+                  pointerEvents="none"
+                >
+                  {inputValue ? inputValue.replace(/\u25C6/g, "") : ""}
+                </Text>
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.diamondOverlayContainer,
+                    {
+                      position: "absolute",
+                      left: `${diamondCanvasPosition.xPercent}%`,
+                      top: `${diamondCanvasPosition.yPercent}%`,
+                      width: (DIAMOND_SIZING.placementModal.height * 35) / 49,
+                      height: DIAMOND_SIZING.placementModal.height,
+                      marginLeft: -((DIAMOND_SIZING.placementModal.height * 35) / 49) / 2,
+                      marginTop: -DIAMOND_SIZING.placementModal.height / 2,
+                    },
+                  ]}
+                >
+                  <DiamondShapeSvg height={DIAMOND_SIZING.placementModal.height} />
+                </View>
+              </View>
+            </GestureDetector>
+            <View style={styles.imalahPlacementActions}>
+              <TouchableOpacity
+                style={styles.imalahPlacementRemoveBtn}
+                onPress={() => {
+                  if (diamondPlacementLetterIndex !== null) {
+                    setDiamondOverlayIndices((prev) => {
+                      const next = new Set(prev);
+                      next.delete(diamondPlacementLetterIndex);
+                      return next;
+                    });
+                    setDiamondPlacementByLetter((prev) => {
+                      const o = { ...prev };
+                      delete o[diamondPlacementLetterIndex];
+                      return o;
+                    });
+                  }
+                  setDiamondPlacementModalVisible(false);
+                  setDiamondPlacementLetterIndex(null);
+                }}
+              >
+                <Text style={styles.imalahPlacementRemoveBtnText}>Remove</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.imalahPlacementDoneBtn} onPress={() => closeDiamondPlacement(true)}>
+                <Text style={styles.imalahPlacementDoneBtnText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 };
@@ -3632,8 +3853,7 @@ export default function App() {
     AswaatOne: require("./assets/aswaat-one.otf"),
     AswaatHelpers: require("./aswaat-helpers-one-Regular.ttf"),
     DigitalKhatt: require("./digitalkhatt.otf"),
-    DigitalKhattV1: require("./DigitalKhattQuranicV1.otf"),
-    DigitalKhattV2: require("./DigitalKhattV2.otf"),
+    DigitalKhattV3: require("./DigitalKhattV3.ttf"),
   });
   
   // Debug font loading
@@ -4300,7 +4520,13 @@ export default function App() {
 
           variations.forEach((variation) => {
             const key = `${variation.word_id}-${variation.narrator_id}`;
-            variationsMap[key] = variation.content;
+            const sc = variation.special_characters;
+            const imalah = sc?.imalah ?? sc?.["imalah"];
+            const diamond = sc?.diamond ?? sc?.["diamond"];
+            const hasOverlays = sc && (imalah || diamond);
+            variationsMap[key] = hasOverlays
+              ? { content: variation.content, imalah: imalah || null, diamond: diamond || null }
+              : variation.content;
             savedKeys.push(key);
           });
 
@@ -4312,9 +4538,14 @@ export default function App() {
             [pageNum]: cacheData,
           }));
 
-          // Only update current variations if this is the current page
           if (pageNum === currentPage) {
-            setAllVariations(variationsMap);
+            setAllVariations((prev) => {
+              const next = { ...prev };
+              Object.keys(variationsMap).forEach((key) => {
+                next[key] = variationsMap[key];
+              });
+              return next;
+            });
             setSavedVariations(savedKeys);
           }
         }
@@ -4351,7 +4582,13 @@ export default function App() {
       // Check if we have cached variations
       const cachedVariations = variationCacheRef.current[currentPage];
       if (cachedVariations) {
-        setAllVariations(cachedVariations.variationsMap);
+        setAllVariations((prev) => {
+          const next = { ...prev };
+          Object.keys(cachedVariations.variationsMap).forEach((key) => {
+            next[key] = cachedVariations.variationsMap[key];
+          });
+          return next;
+        });
         setSavedVariations(cachedVariations.savedKeys);
       } else if (selectedNarrators.length > 0) {
         // If narrators are selected, do background refresh of variations
@@ -4496,6 +4733,7 @@ export default function App() {
       setIsVariationBottomSheetVisible(false);
     }
   }, [firstSelectedNarratorId, allMushafVariations.length]);
+
   // All variations for first narrator (full mushaf) - used for traversal
   const narratorVariations = useMemo(() => {
     if (!firstSelectedNarratorId || allMushafVariations.length === 0) return [];
@@ -4635,18 +4873,30 @@ export default function App() {
           const response = await fetch(
             `${VARIATIONS_URL}?word_ids=${wordIds.join(",")}`
           );
-          if (response.ok) {
+if (response.ok) {
             const variations = await response.json();
             const variationsMap = {};
             const savedKeys = [];
             variations.forEach((variation) => {
               const key = `${variation.word_id}-${variation.narrator_id}`;
-              variationsMap[key] = variation.content;
+              const sc = variation.special_characters;
+              const imalah = sc?.imalah ?? sc?.["imalah"];
+              const diamond = sc?.diamond ?? sc?.["diamond"];
+              const hasOverlays = sc && (imalah || diamond);
+              variationsMap[key] = hasOverlays
+                ? { content: variation.content, imalah: imalah || null, diamond: diamond || null }
+                : variation.content;
               savedKeys.push(key);
             });
-            setAllVariations(variationsMap);
+            setAllVariations((prev) => {
+              const next = { ...prev };
+              Object.keys(variationsMap).forEach((key) => {
+                next[key] = variationsMap[key];
+              });
+              return next;
+            });
             setSavedVariations(savedKeys);
-            
+
             // Update cache for current page in both ref and state
             const cacheData = { variationsMap, savedKeys };
             variationCacheRef.current[currentPage] = cacheData;
@@ -4869,8 +5119,9 @@ export default function App() {
       const existingVariation = allVariations[variationKey];
 
       if (existingVariation) {
-        // Populate input with existing variation content
-        setInputValue(existingVariation);
+        setInputValue(
+          typeof existingVariation === "object" ? existingVariation.content : existingVariation
+        );
       } else {
         // Default to original word content
         setInputValue(selectedWord.content);
@@ -5016,10 +5267,14 @@ export default function App() {
     setSelectedNarrators(["hafs-an-asim"]);
   };
 
-  const handleSaveVariation = async (variationKey) => {
+  const handleSaveVariation = async (variationKey, payload) => {
     if (!variationKey || !selectedWord || !selectedNarrator) return;
 
     const isCurrentlySaved = savedVariations.includes(variationKey);
+    const content =
+      typeof payload === "object" && payload && payload.content != null
+        ? payload.content
+        : inputValue;
 
     try {
       if (isCurrentlySaved) {
@@ -5045,7 +5300,11 @@ export default function App() {
           return newVariations;
         });
       } else {
-        // Save variation to API
+        // Save variation to API (content + special_characters for imalah/diamond)
+        const special_characters =
+          typeof payload === "object" && payload && (payload.imalah || payload.diamond)
+            ? { imalah: payload.imalah || null, diamond: payload.diamond || null }
+            : null;
         const response = await fetch(VARIATIONS_URL, {
           method: "POST",
           headers: {
@@ -5053,9 +5312,10 @@ export default function App() {
           },
           body: JSON.stringify({
             variation: {
-              content: inputValue,
+              content,
               word_id: selectedWord.id,
               narrator_id: selectedNarrator.id,
+              ...(special_characters && { special_characters }),
             },
           }),
         });
@@ -5064,22 +5324,22 @@ export default function App() {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const savedVariation = await response.json();
-
-        // Update local state
+        // Store full payload locally (content + imalah + diamond) so Tweaked and mushaf show overlays
+        const toStore =
+          typeof payload === "object" && payload && (payload.imalah || payload.diamond)
+            ? { content: payload.content, imalah: payload.imalah, diamond: payload.diamond }
+            : content;
         setAllVariations((prev) => ({
           ...prev,
-          [variationKey]: inputValue,
+          [variationKey]: toStore,
         }));
 
         setSavedVariations((prev) => [...prev, variationKey]);
 
-        // Ensure sessions are synced
         await refreshVariations();
       }
     } catch (error) {
       console.error("Error saving variation:", error);
-      // You might want to show an error message to the user here
     }
   };
 
@@ -5124,6 +5384,59 @@ export default function App() {
     }
   };
 
+  // Delete variation from sheet (swipe-to-delete) - updates mushaf, sheet cache, and API
+  const handleDeleteVariationFromSheet = async (variation) => {
+    const wordId = variation.word?.id ?? variation.word_id;
+    const narratorId = variation.narrator?.id ?? variation.narrator_id;
+    if (wordId == null || narratorId == null) return;
+    const variationKey = `${wordId}-${narratorId}`;
+
+    // Optimistically remove from all caches
+    setAllVariations((prev) => {
+      const next = { ...prev };
+      delete next[variationKey];
+      return next;
+    });
+    setSavedVariations((prev) => prev.filter((k) => k !== variationKey));
+    setAllMushafVariations((prev) =>
+      prev.filter((v) => !(String(v.word?.id ?? v.word_id) === String(wordId) && String(v.narrator?.id ?? v.narrator_id) === String(narratorId)))
+    );
+
+    // Clear selection if we deleted the currently highlighted variation
+    if (
+      lastSelectedVariationHighlight &&
+      String(lastSelectedVariationHighlight.wordId) === String(wordId)
+    ) {
+      setLastSelectedVariationHighlight(null);
+      setSelectedWordId(null);
+      setSelectedWord(null);
+    }
+
+    try {
+      const response = await fetch(
+        `${VARIATIONS_URL}/by_keys?word_id=${wordId}&narrator_id=${narratorId}`,
+        { method: "DELETE" }
+      );
+
+      if (response.ok || response.status === 204) {
+        setTimeout(async () => {
+          await refreshVariations();
+          await fetchAllVariations();
+        }, 100);
+      } else {
+        console.error("Failed to delete variation on server, status:", response.status);
+        await refreshVariations();
+        await fetchAllVariations();
+      }
+    } catch (e) {
+      console.error("Error deleting variation:", e);
+      setTimeout(async () => {
+        await refreshVariations();
+        await fetchAllVariations();
+      }, 500);
+    }
+  };
+
   if (error) {
     return (
       <View style={styles.errorContainer}>
@@ -5148,8 +5461,8 @@ export default function App() {
   const bottomBarInset = Platform.OS === "ios" ? 34 : 0;
 
   return (
-    <SafeAreaProvider style={[styles.safeAreaProvider, styles.safeAreaProviderDark]}>
-      <GestureHandlerRootView style={[styles.rootView, styles.rootViewBg]}>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
         <SafeAreaViewEdged
           edges={["top"]}
@@ -5238,7 +5551,7 @@ export default function App() {
                 
                 <View style={styles.mushafRightIcons}>
                   <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.mushafIconButton}
                     onPress={() => setShowPageSlider(true)}
                   >
@@ -5309,6 +5622,7 @@ export default function App() {
                 getQuranFontFamily={getQuranFontFamily}
                 onExpandedChange={setIsVariationBottomSheetExpanded}
                 registerTranslateY={setSheetTranslateY}
+                onDeleteVariation={handleDeleteVariationFromSheet}
                 onSelectVariation={(variation, { pageNum, wordId }) => {
                   setLastSelectedVariationHighlight(
                     wordId != null ? { wordId, pageNum } : null
@@ -5330,9 +5644,7 @@ export default function App() {
                 <Animated.View
                   style={[
                     styles.variationTraversalBar,
-                    {
-                      paddingBottom: RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset,
-                    },
+                    { paddingBottom: RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset },
                     barVisibleStyle,
                   ]}
                   onStartShouldSetResponder={() => true}
@@ -5914,6 +6226,22 @@ export default function App() {
         selectedWord={selectedWord}
         savedVariations={savedVariations}
         allVariations={allVariations}
+        variationImalah={
+          selectedWord && selectedNarrator
+            ? (() => {
+                const v = allVariations[`${selectedWord.id}-${selectedNarrator.id}`];
+                return typeof v === "object" && v && v.imalah ? v.imalah : null;
+              })()
+            : null
+        }
+        variationDiamond={
+          selectedWord && selectedNarrator
+            ? (() => {
+                const v = allVariations[`${selectedWord.id}-${selectedNarrator.id}`];
+                return typeof v === "object" && v && v.diamond ? v.diamond : null;
+              })()
+            : null
+        }
         onSaveVariation={handleSaveVariation}
         onDeleteVariation={handleDeleteVariation}
         mushafId={mushafId}
@@ -6108,18 +6436,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  safeAreaProvider: {
-    flex: 1,
-  },
-  safeAreaProviderDark: {
-    backgroundColor: "#252529",
-  },
-  rootView: {
-    flex: 1,
-  },
-  rootViewBg: {
-    backgroundColor: "#252529",
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -6159,10 +6475,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   mainContainerDark: {
-    backgroundColor: "#252529",
+    backgroundColor: "#000",
   },
   safeAreaDark: {
-    backgroundColor: "#252529",
+    backgroundColor: "#000",
   },
   navBar: {
     minHeight: 50,
@@ -6255,22 +6571,14 @@ const styles = StyleSheet.create({
   variationTraversalBar: {
     flexDirection: "row",
     backgroundColor: "#2a2a2a",
-    paddingVertical: 12, // bottom is overridden by RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset (see top of file)
+    paddingVertical: 12, // bar inner top/bottom; bottom is overridden by RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset (see top of file)
     paddingHorizontal: 16,
-    paddingTop: 0,
     alignItems: "center",
     justifyContent: "space-between",
-    // borderTopWidth: StyleSheet.hairlineWidth,
-    // borderTopColor: "#444",
-    position: "relative",
-    zIndex: 10,
-  },
-  variationTraversalHandleContainer: {
-    display: "none",
-  },
-  variationTraversalHandle: {
-    width: 0,
-    height: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#444",
+    zIndex: 2,
+    elevation: 11,
   },
   variationTraversalArrowButton: {
     width: 44,
@@ -6342,7 +6650,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#252529",
+    backgroundColor: "#3a3a3a",
     marginHorizontal: 16,
     marginVertical: 12,
     paddingVertical: 14,
@@ -6404,10 +6712,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   containerDark: {
-    backgroundColor: "#252529",
+    backgroundColor: "#000",
   },
   pageContentDark: {
-    backgroundColor: "#252529",
+    backgroundColor: "#000",
   },
   line: {
     flexDirection: "row-reverse",
@@ -6452,6 +6760,18 @@ const styles = StyleSheet.create({
   wordSelected: {
     backgroundColor: "#e0e0e0",
     borderRadius: 4,
+  },
+  wordBlockWithOverlay: {
+    backgroundColor: "rgba(200, 230, 201, 0.5)",
+    borderRadius: 4,
+    padding: 0,
+    margin: 0,
+  },
+  wordBlockWithOverlayDark: {
+    backgroundColor: "rgba(76, 175, 80, 0.25)",
+    borderRadius: 4,
+    padding: 0,
+    margin: 0,
   },
   differentChar: {
     backgroundColor: "#ffb366",
@@ -7141,6 +7461,46 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     overflow: "hidden",
   },
+  keyboardImalahKey: {
+    minWidth: 56,
+    height: 36,
+    backgroundColor: "#f3f4f6",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  keyboardImalahKeyActive: {
+    backgroundColor: "#d1fae5",
+    borderColor: "#10b981",
+  },
+  keyboardImalahKeyText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  keyboardDiamondKey: {
+    minWidth: 56,
+    height: 36,
+    backgroundColor: "#f3f4f6",
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 6,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  keyboardDiamondKeyActive: {
+    backgroundColor: "#e0e7ff",
+    borderColor: "#6366f1",
+  },
+  keyboardDiamondKeyText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+  },
   keyboardKeyTextDisabled: {
     color: "#9ca3af",
   },
@@ -7226,13 +7586,6 @@ const styles = StyleSheet.create({
   keyboardKeyTextShaddaSelected: {
     color: "#ffffff",
   },
-  keyboardKeyShaddaImalahSelected: {
-    backgroundColor: "#3b82f6",
-    borderColor: "#3b82f6",
-  },
-  keyboardKeyTextShaddaImalahSelected: {
-    color: "#ffffff",
-  },
   keyboardKeyLongPressed: {
     backgroundColor: "#e5e7eb",
   },
@@ -7278,6 +7631,101 @@ const styles = StyleSheet.create({
     backgroundColor: "#dc2626",
     transform: [{ rotate: "45deg" }],
     borderWidth: 0,
+  },
+  imalahCircleContainer: {
+    position: "absolute",
+    bottom: -8,
+    alignItems: "center",
+    justifyContent: "center",
+    width: 8,
+    height: 8,
+  },
+  imalahCircle: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#000",
+  },
+  diamondOverlayContainer: {
+    position: "absolute",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  imalahPlacementOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  imalahPlacementPopover: {
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 16,
+    minWidth: 280,
+    maxWidth: 320,
+  },
+  imalahPlacementTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111",
+    marginBottom: 4,
+  },
+  imalahPlacementHint: {
+    fontSize: 13,
+    color: "#666",
+    marginBottom: 12,
+  },
+  imalahCanvas: {
+    width: "100%",
+    height: 72,
+    backgroundColor: "#f5f5f5",
+    borderRadius: 8,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  imalahCanvasText: {
+    fontSize: 28,
+    fontFamily: QURAN_FONT_FAMILY,
+    color: "#1a1a1a",
+    textAlign: "center",
+    writingDirection: "rtl",
+  },
+  imalahCanvasCircle: {
+    position: "absolute",
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#000",
+  },
+  imalahPlacementActions: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  imalahPlacementRemoveBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: "#fee2e2",
+  },
+  imalahPlacementRemoveBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#b91c1c",
+  },
+  imalahPlacementDoneBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: "#10b981",
+  },
+  imalahPlacementDoneBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
   },
   keyboardKeyHelperDot: {
     backgroundColor: "#f0fdf4",

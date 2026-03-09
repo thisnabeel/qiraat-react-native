@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 
 export default function VariationList({
   variations,
@@ -8,6 +9,7 @@ export default function VariationList({
   mushafId,
   getQuranFontFamily,
   onSelectVariation,
+  onDeleteVariation,
 }) {
   if (!variations || variations.length === 0) {
     return (
@@ -16,6 +18,20 @@ export default function VariationList({
       </View>
     );
   }
+
+  const renderRightActions = (progress, dragX, variation) => (
+    <View style={styles.deleteActions}>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => {
+          onDeleteVariation?.(variation);
+        }}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.deleteButtonText}>Delete</Text>
+      </TouchableOpacity>
+    </View>
+  );
 
   return (
     <ScrollView
@@ -34,9 +50,8 @@ export default function VariationList({
           currentPage === lastSelectedVariationHighlight.pageNum &&
           wordId === lastSelectedVariationHighlight.wordId;
 
-        return (
+        const content = (
           <TouchableOpacity
-            key={`${variation.word_id}-${variation.narrator_id}`}
             style={[styles.item, isActiveItem && styles.itemActive]}
             onPress={() => {
               onSelectVariation?.(variation, { pageNum, wordId });
@@ -70,6 +85,18 @@ export default function VariationList({
               </View>
             </View>
           </TouchableOpacity>
+        );
+
+        return onDeleteVariation ? (
+          <Swipeable
+            key={`${variation.word_id}-${variation.narrator_id}`}
+            renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, variation)}
+            friction={2}
+          >
+            {content}
+          </Swipeable>
+        ) : (
+          <View key={`${variation.word_id}-${variation.narrator_id}`}>{content}</View>
         );
       })}
     </ScrollView>
@@ -145,6 +172,25 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 18,
     color: "#ffffff",
+  },
+  deleteActions: {
+    justifyContent: "center",
+    alignItems: "flex-end",
+    width: 80,
+  },
+  deleteButton: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#dc2626",
+    width: 80,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
+  },
+  deleteButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
   },
 });
 

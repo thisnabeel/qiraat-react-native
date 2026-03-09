@@ -1,7 +1,9 @@
 import React, { useState, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import ImalahOverlayText from "./components/ImalahOverlayText";
+import DiamondOverlayText from "./components/DiamondOverlayText";
 
-const InlineComparison = ({ originalText, inputText, fontFamily, textStyle }) => {
+const InlineComparison = ({ originalText, inputText, fontFamily, textStyle, imalahData, diamondData }) => {
   const textRef = useRef(null);
   const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
@@ -159,32 +161,34 @@ const InlineComparison = ({ originalText, inputText, fontFamily, textStyle }) =>
 
     return (
       <View style={styles.inlineContainer}>
-        <View style={styles.textWithDotsWrapper}>
-          <Text
-            ref={textRef}
-            style={[styles.word, { fontFamily: fontFamilyToUse }, textStyle]}
-            onLayout={(event) => {
-              const { width, height } = event.nativeEvent.layout;
-              setTextLayout({ width, height });
-            }}
-          >
-            {textElements}
-          </Text>
-          {allDotPositions.map((dotInfo, dotIndex) => {
-            const dotRight = calculateDotPosition(dotInfo.charCount - 1, totalTextLength);
-            return (
-              <View
-                key={`dot-${dotIndex}`}
-                style={[
-                  styles.redDotContainerInline,
-                  { right: dotRight },
-                ]}
-              >
-                <View style={styles.redDotInline} />
-              </View>
-            );
-          })}
-        </View>
+        <DiamondOverlayText diamond={diamondData} containerStyle={styles.textWithDotsWrapper}>
+          <ImalahOverlayText imalah={imalahData} containerStyle={styles.textWithDotsWrapper}>
+            <Text
+              ref={textRef}
+              style={[styles.word, { fontFamily: fontFamilyToUse }, textStyle]}
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                setTextLayout({ width, height });
+              }}
+            >
+              {textElements}
+            </Text>
+            {allDotPositions.map((dotInfo, dotIndex) => {
+              const dotRight = calculateDotPosition(dotInfo.charCount - 1, totalTextLength);
+              return (
+                <View
+                  key={`dot-${dotIndex}`}
+                  style={[
+                    styles.redDotContainerInline,
+                    { right: dotRight },
+                  ]}
+                >
+                  <View style={styles.redDotInline} />
+                </View>
+              );
+            })}
+          </ImalahOverlayText>
+        </DiamondOverlayText>
       </View>
     );
   };

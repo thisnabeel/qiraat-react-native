@@ -1,7 +1,9 @@
 import React, { useState, useRef } from "react";
 import { View, Text, StyleSheet } from "react-native";
+import ImalahOverlayText from "./components/ImalahOverlayText";
+import DiamondOverlayText from "./components/DiamondOverlayText";
 
-const ComparisonTable = ({ originalText, inputText, fontFamily }) => {
+const ComparisonTable = ({ originalText, inputText, fontFamily, imalahData, diamondData, mainDisplaySize }) => {
   const textRef = useRef(null);
   const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
@@ -201,9 +203,33 @@ const ComparisonTable = ({ originalText, inputText, fontFamily }) => {
           <Text style={styles.arrow}>→</Text>
         </View>
 
-        <View style={styles.comparisonColumn}>
+        <View style={[styles.comparisonColumn, (imalahData?.indices?.length > 0 || diamondData?.indices?.length > 0) && mainDisplaySize && styles.comparisonColumnTweakedAlign]}>
           <Text style={styles.comparisonLabel}>Tweaked</Text>
-          {renderHighlightedText(inputText, originalText, fontFamily)}
+          {(imalahData?.indices?.length > 0 || diamondData?.indices?.length > 0) && mainDisplaySize && mainDisplaySize.width > 0 && mainDisplaySize.height > 0 ? (
+            <View style={[styles.tweakedScopedBlock, { width: mainDisplaySize.width, height: mainDisplaySize.height, maxWidth: "100%" }]}>
+              <View style={styles.tweakedScopedBlockInner}>
+                <DiamondOverlayText
+                  diamond={diamondData}
+                  containerStyle={[styles.comparisonTextWrapper, StyleSheet.absoluteFill]}
+                >
+                  <ImalahOverlayText
+                    imalah={imalahData}
+                    containerStyle={[styles.comparisonTextWrapper, StyleSheet.absoluteFill]}
+                  >
+                    <View style={styles.tweakedScopedContent}>
+                      {renderHighlightedText(inputText, originalText, fontFamily)}
+                    </View>
+                  </ImalahOverlayText>
+                </DiamondOverlayText>
+              </View>
+            </View>
+          ) : (
+            <DiamondOverlayText diamond={diamondData} containerStyle={styles.comparisonTextWrapper}>
+              <ImalahOverlayText imalah={imalahData} containerStyle={styles.comparisonTextWrapper}>
+                {renderHighlightedText(inputText, originalText, fontFamily)}
+              </ImalahOverlayText>
+            </DiamondOverlayText>
+          )}
         </View>
       </View>
     </View>
@@ -225,6 +251,11 @@ const styles = StyleSheet.create({
   },
   comparisonColumn: {
     flex: 1,
+    minWidth: 0,
+    overflow: "hidden",
+  },
+  comparisonColumnTweakedAlign: {
+    alignItems: "flex-end",
   },
   comparisonLabel: {
     fontSize: 12,
@@ -234,6 +265,27 @@ const styles = StyleSheet.create({
   },
   comparisonTextWrapper: {
     position: "relative",
+  },
+  tweakedScopedBlock: {
+    position: "relative",
+    alignSelf: "flex-end",
+    overflow: "hidden",
+  },
+  tweakedScopedBlockInner: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  tweakedScopedContent: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
   },
   comparisonText: {
     fontSize: 20,
@@ -264,7 +316,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#ff0000",
   },
   arrowContainer: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
+    flexShrink: 0,
   },
   arrow: {
     fontSize: 18,
