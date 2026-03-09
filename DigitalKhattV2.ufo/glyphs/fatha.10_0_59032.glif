@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="fatha.10_0_59032" format="2">
+  <anchor x="177" y="-16" name="_Anchor-1"/>
+  <anchor x="177" y="-16" name="_Anchor-4"/>
+  <anchor x="177" y="-16" name="_Anchor-27"/>
+  <anchor x="177" y="-16" name="_Anchor-29"/>
+  <anchor x="2" y="-231" name="Anchor-31"/>
+  <outline>
+    <contour>
+      <point x="0.94000244140625" y="0.0" type="curve" smooth="yes"/>
+      <point x="-3.7899932861328125" y="-0.42999267578125"/>
+      <point x="10.560012817382812" y="44.20001220703125"/>
+      <point x="15.740005493164062" y="46.62001037597656" type="curve" smooth="yes"/>
+      <point x="18.710006713867188" y="48.010009765625"/>
+      <point x="352.3100128173828" y="150.8500213623047"/>
+      <point x="353.9400177001953" y="151.3100128173828" type="curve" smooth="yes"/>
+      <point x="360.6800079345703" y="153.2200164794922"/>
+      <point x="342.87001037597656" y="106.32000732421875"/>
+      <point x="339.14002990722656" y="104.69000244140625" type="curve" smooth="yes"/>
+      <point x="337.2000274658203" y="103.83999633789062"/>
+      <point x="4.9300079345703125" y="0.3600006103515625"/>
+    </contour>
+  </outline>
+</glyph>

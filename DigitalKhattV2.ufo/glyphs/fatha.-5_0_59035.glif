@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="fatha.-5_0_59035" format="2">
+  <anchor x="85" y="9" name="_Anchor-1"/>
+  <anchor x="85" y="9" name="_Anchor-4"/>
+  <anchor x="85" y="9" name="_Anchor-27"/>
+  <anchor x="85" y="9" name="_Anchor-29"/>
+  <anchor x="2" y="-231" name="Anchor-31"/>
+  <outline>
+    <contour>
+      <point x="1" y="0" type="line"/>
+      <point x="-3.839996337890625" y="-1.100006103515625"/>
+      <point x="10.139999389648438" y="44.279998779296875"/>
+      <point x="15.800003051757812" y="46.61000061035156" type="curve" smooth="yes"/>
+      <point x="17.180007934570312" y="47.18000793457031"/>
+      <point x="168.4700164794922" y="98.29000854492188"/>
+      <point x="169.20001220703125" y="98.53001403808594" type="curve" smooth="yes"/>
+      <point x="176.03001403808594" y="100.76002502441406"/>
+      <point x="158.27001953125" y="53.46002197265625"/>
+      <point x="154.40000915527344" y="51.920013427734375" type="curve" smooth="yes"/>
+      <point x="153.510009765625" y="51.56001281738281"/>
+      <point x="2.7800140380859375" y="0.4000091552734375"/>
+      <point x="1.0000152587890625" y="1.52587890625e-05" type="curve"/>
+    </contour>
+  </outline>
+</glyph>

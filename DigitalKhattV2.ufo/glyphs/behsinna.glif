@@ -1,0 +1,32 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="behsinna" format="2">
+  <anchor x="0" y="500" name="Anchor-4"/>
+  <anchor x="0" y="-80" name="Anchor-5"/>
+  <anchor x="0" y="250" name="Anchor-6"/>
+  <anchor x="0" y="250" name="Anchor-7"/>
+  <anchor x="0" y="250" name="Anchor-8"/>
+  <anchor x="0" y="410" name="Anchor-9"/>
+  <anchor x="0" y="500" name="Anchor-10"/>
+  <outline>
+    <contour>
+      <point x="214.0" y="217.58999633789062" type="curve" smooth="yes"/>
+      <point x="214" y="228.4199981689453"/>
+      <point x="235.42999267578125" y="310.80999755859375"/>
+      <point x="241.5500030517578" y="310.80999755859375" type="curve" smooth="yes"/>
+      <point x="246.39999389648438" y="310.80999755859375"/>
+      <point x="284.7699890136719" y="274.29998779296875"/>
+      <point x="302.4800109863281" y="247.97000122070312" type="curve" smooth="yes"/>
+      <point x="314.3800048828125" y="230.27000427246094"/>
+      <point x="335.0" y="188.41000366210938"/>
+      <point x="335.0" y="135.0" type="curve" smooth="yes"/>
+      <point x="335.0" y="128.67999267578125"/>
+      <point x="329.80999755859375" y="77.97999572753906"/>
+      <point x="295.4200134277344" y="62.74998474121094" type="curve"/>
+      <point x="291.1700134277344" y="74.3699951171875"/>
+      <point x="289.0" y="86.63999938964844"/>
+      <point x="289.0" y="99.0" type="curve" smooth="yes"/>
+      <point x="289.0" y="151.8300018310547"/>
+      <point x="214.0" y="214.3300018310547"/>
+    </contour>
+  </outline>
+</glyph>

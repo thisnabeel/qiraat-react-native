@@ -32,8 +32,8 @@ import { getWordSegmentForText } from "./components/shubahTimestamps";
 import { Search, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
+// const API_BASE = "http://localhost:3000";
 const NARRATORS_URL = `${API_BASE}/api/narrators`;
 const VARIATIONS_URL = `${API_BASE}/api/variations`;
 

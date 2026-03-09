@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="cgj" format="2">
+  <unicode hex="034F"/>
+  <anchor x="0" y="500" name="Anchor-4"/>
+  <anchor x="0" y="-80" name="Anchor-5"/>
+  <anchor x="0" y="250" name="Anchor-6"/>
+  <anchor x="0" y="250" name="Anchor-7"/>
+  <anchor x="0" y="250" name="Anchor-8"/>
+  <anchor x="0" y="250" name="Anchor-9"/>
+  <anchor x="0" y="500" name="Anchor-10"/>
+  <outline>
+  </outline>
+</glyph>

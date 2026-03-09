@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="hah.onedotup.isol" format="2">
+  <unicode hex="062E"/>
+  <anchor x="0" y="80" name="Anchor-20"/>
+  <anchor x="0" y="-50" name="Anchor-23"/>
+  <anchor x="0" y="900" name="Anchor-25"/>
+  <outline>
+  </outline>
+</glyph>

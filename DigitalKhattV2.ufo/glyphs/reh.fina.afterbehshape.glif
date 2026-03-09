@@ -1,0 +1,47 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="reh.fina.afterbehshape" format="2">
+  <advance width="602"/>
+  <anchor x="327" y="306" name="Anchor-4"/>
+  <anchor x="300" y="-281" name="Anchor-5"/>
+  <anchor x="0" y="250" name="Anchor-6"/>
+  <anchor x="0" y="250" name="Anchor-7"/>
+  <anchor x="0" y="250" name="Anchor-8"/>
+  <anchor x="359" y="309" name="Anchor-9"/>
+  <anchor x="240" y="500" name="Anchor-10"/>
+  <anchor x="240" y="500" name="Anchor-11"/>
+  <anchor x="240" y="500" name="Anchor-12"/>
+  <anchor x="377" y="336" name="Anchor-20"/>
+  <anchor x="83" y="803" name="Anchor-25"/>
+  <outline>
+    <contour>
+      <point x="585" y="126" type="line"/>
+      <point x="591.7999877929688" y="126"/>
+      <point x="601.1699829101562" y="124.42999267578125"/>
+      <point x="601.0" y="122.99998474121094" type="curve" smooth="yes"/>
+      <point x="592.2999877929688" y="47.66998291015625"/>
+      <point x="557.719970703125" y="-67.46002197265625"/>
+      <point x="490.0" y="-141.00003051757812" type="curve" smooth="yes"/>
+      <point x="432.3900146484375" y="-203.56002807617188"/>
+      <point x="355.17999267578125" y="-231.00003051757812"/>
+      <point x="270.0" y="-231.00003051757812" type="curve" smooth="yes"/>
+      <point x="149.64999389648438" y="-231.00003051757812"/>
+      <point x="0.0" y="-177.1500244140625"/>
+      <point x="0.0" y="-158.00003051757812" type="curve" smooth="yes"/>
+      <point x="0.0" y="-152.13003540039062"/>
+      <point x="6.4499969482421875" y="-149.00003051757812"/>
+      <point x="13.0" y="-149.00003051757812" type="curve" smooth="yes"/>
+      <point x="19.680007934570312" y="-149.00003051757812"/>
+      <point x="96.3900146484375" y="-171.00003051757812"/>
+      <point x="165.00001525878906" y="-171.00003051757812" type="curve" smooth="yes"/>
+      <point x="209.9400177001953" y="-171.00003051757812"/>
+      <point x="322.2200164794922" y="-167.76002502441406"/>
+      <point x="406.00001525878906" y="-117.00003051757812" type="curve" smooth="yes"/>
+      <point x="523.6599884033203" y="-45.72003173828125"/>
+      <point x="569.4000396728516" y="95.61996459960938"/>
+      <point x="569.0000152587891" y="117.99996948242188" type="curve" smooth="yes"/>
+      <point x="568.9400177001953" y="121.469970703125"/>
+      <point x="576.2400054931641" y="125.99996948242188"/>
+      <point x="585.0000152587891" y="125.99996948242188" type="curve"/>
+    </contour>
+  </outline>
+</glyph>

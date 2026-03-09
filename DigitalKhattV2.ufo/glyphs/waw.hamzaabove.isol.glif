@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="waw.hamzaabove.isol" format="2">
+  <unicode hex="0624"/>
+  <anchor x="0" y="500" name="Anchor-11"/>
+  <anchor x="0" y="500" name="Anchor-12"/>
+  <anchor x="0" y="900" name="Anchor-25"/>
+  <outline>
+  </outline>
+</glyph>

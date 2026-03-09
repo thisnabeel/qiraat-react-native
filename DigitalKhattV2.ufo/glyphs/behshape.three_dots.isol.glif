@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="behshape.three_dots.isol" format="2">
+  <unicode hex="062B"/>
+  <anchor x="0" y="500" name="Anchor-11"/>
+  <anchor x="0" y="500" name="Anchor-12"/>
+  <anchor x="0" y="80" name="Anchor-20"/>
+  <anchor x="0" y="80" name="Anchor-21"/>
+  <anchor x="0" y="80" name="Anchor-22"/>
+  <anchor x="0" y="-50" name="Anchor-23"/>
+  <anchor x="0" y="-50" name="Anchor-24"/>
+  <anchor x="0" y="900" name="Anchor-25"/>
+  <outline>
+  </outline>
+</glyph>

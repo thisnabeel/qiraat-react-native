@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<glyph name="alef.hamzaabove.isol" format="2">
+  <unicode hex="0623"/>
+  <anchor x="0" y="500" name="Anchor-11"/>
+  <anchor x="0" y="500" name="Anchor-12"/>
+  <anchor x="0" y="-80" name="Anchor-17"/>
+  <anchor x="0" y="500" name="Anchor-18"/>
+  <anchor x="0" y="900" name="Anchor-25"/>
+  <outline>
+  </outline>
+</glyph>
