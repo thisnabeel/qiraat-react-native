@@ -1,0 +1,906 @@
+[
+  {
+    "index": 1,
+    "name": "Al Fatiha",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-001-al-fatiha-31281-4851.mp3",
+    "captured": "2026-04-07T08:26:38.479Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 2,
+    "name": "Al Baqara",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-002-al-baqara-31282-9391.mp3",
+    "captured": "2026-04-07T08:26:38.991Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 3,
+    "name": "Al I Mran",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-003-al-i-mran-31279-439.mp3",
+    "captured": "2026-04-07T08:26:39.503Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 4,
+    "name": "An Nisa",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-004-an-nisa-31278-9902.mp3",
+    "captured": "2026-04-07T08:26:40.021Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 5,
+    "name": "Al Mai Dah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-005-al-mai-dah-31283-7452.mp3",
+    "captured": "2026-04-07T08:26:40.543Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 6,
+    "name": "Al Ana M",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-006-al-ana-m-31274-4452.mp3",
+    "captured": "2026-04-07T08:26:41.062Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 7,
+    "name": "Al A Raf",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-007-al-a-raf-31275-5607.mp3",
+    "captured": "2026-04-07T08:26:41.587Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 8,
+    "name": "Al Anfal",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-008-al-anfal-31273-1382.mp3",
+    "captured": "2026-04-07T08:26:42.102Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 9,
+    "name": "At Tawbah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-009-at-tawbah-31271-6640.mp3",
+    "captured": "2026-04-07T08:26:42.621Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 10,
+    "name": "Younes",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-010-younes-31276-2110.mp3",
+    "captured": "2026-04-07T08:26:43.142Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 11,
+    "name": "Houd",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-011-houd-31269-7949.mp3",
+    "captured": "2026-04-07T08:26:43.662Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 12,
+    "name": "Youssef",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-012-youssef-31267-1633.mp3",
+    "captured": "2026-04-07T08:26:44.188Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 13,
+    "name": "Ar Ra D",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-013-ar-ra-d-31265-2137.mp3",
+    "captured": "2026-04-07T08:26:44.703Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 14,
+    "name": "Ibrahim",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-014-ibrahim-31268-9770.mp3",
+    "captured": "2026-04-07T08:26:45.222Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 15,
+    "name": "Al Hijr",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-015-al-hijr-31263-8654.mp3",
+    "captured": "2026-04-07T08:26:45.741Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 16,
+    "name": "An Nahl",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-016-an-nahl-31262-3124.mp3",
+    "captured": "2026-04-07T08:26:46.263Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 17,
+    "name": "Al Isra",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-017-al-isra-31260-2834.mp3",
+    "captured": "2026-04-07T08:26:46.788Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 18,
+    "name": "Al Kahf",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-018-al-kahf-31257-2294.mp3",
+    "captured": "2026-04-07T08:26:47.303Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 19,
+    "name": "Maryam",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-019-maryam-31255-3061.mp3",
+    "captured": "2026-04-07T08:26:47.822Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 20,
+    "name": "Taha",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-020-taha-31226-6579.mp3",
+    "captured": "2026-04-07T08:26:48.341Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 22,
+    "name": "Al Hajj",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-022-al-hajj-31227-4292.mp3",
+    "captured": "2026-04-07T08:26:48.864Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 23,
+    "name": "Al Moueminoun",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-023-al-moueminoun-31228-5171.mp3",
+    "captured": "2026-04-07T08:26:49.390Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 24,
+    "name": "An Nour",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-024-an-nour-31229-540.mp3",
+    "captured": "2026-04-07T08:26:49.902Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 25,
+    "name": "Al Fourqane",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-025-al-fourqane-31230-4700.mp3",
+    "captured": "2026-04-07T08:26:50.420Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 26,
+    "name": "As Shua Raa",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-026-as-shua-raa-31231-1387.mp3",
+    "captured": "2026-04-07T08:26:50.944Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 27,
+    "name": "An Naml",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-027-an-naml-31232-5819.mp3",
+    "captured": "2026-04-07T08:26:51.473Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 28,
+    "name": "Al Qasas",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-028-al-qasas-31233-729.mp3",
+    "captured": "2026-04-07T08:26:52.000Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 29,
+    "name": "Al Ankabout",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-029-al-ankabout-31234-9013.mp3",
+    "captured": "2026-04-07T08:26:52.517Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 30,
+    "name": "Ar Roum",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-030-ar-roum-31235-1188.mp3",
+    "captured": "2026-04-07T08:26:53.035Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 31,
+    "name": "Louqman",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-031-louqman-31236-8852.mp3",
+    "captured": "2026-04-07T08:26:53.562Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 32,
+    "name": "As Sajda",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-032-as-sajda-31237-7633.mp3",
+    "captured": "2026-04-07T08:26:54.076Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 33,
+    "name": "Al Ahzab",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-033-al-ahzab-31238-8107.mp3",
+    "captured": "2026-04-07T08:26:54.597Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 34,
+    "name": "Saba",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-034-saba-31239-8074.mp3",
+    "captured": "2026-04-07T08:26:55.127Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 35,
+    "name": "Fater",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-035-fater-31240-6871.mp3",
+    "captured": "2026-04-07T08:26:55.649Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 36,
+    "name": "Ya Sin",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-036-ya-sin-31241-2885.mp3",
+    "captured": "2026-04-07T08:26:56.170Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 37,
+    "name": "As Safaat",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-037-as-safaat-31242-1674.mp3",
+    "captured": "2026-04-07T08:26:56.686Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 38,
+    "name": "Sad",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-038-sad-31243-7813.mp3",
+    "captured": "2026-04-07T08:26:57.194Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 39,
+    "name": "Az Zoumar",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-039-az-zoumar-31244-4773.mp3",
+    "captured": "2026-04-07T08:26:57.718Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 40,
+    "name": "Ghafer",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-040-ghafer-31245-728.mp3",
+    "captured": "2026-04-07T08:26:58.232Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 41,
+    "name": "Foussilat",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-041-foussilat-31246-7745.mp3",
+    "captured": "2026-04-07T08:26:58.748Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 42,
+    "name": "Asshoura",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-042-asshoura-31247-4295.mp3",
+    "captured": "2026-04-07T08:26:59.260Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 43,
+    "name": "Az Zoukhrouf",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-043-az-zoukhrouf-31248-8330.mp3",
+    "captured": "2026-04-07T08:26:59.785Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 44,
+    "name": "Ad Doukhan",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-044-ad-doukhan-31249-493.mp3",
+    "captured": "2026-04-07T08:27:00.364Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 45,
+    "name": "Al Jathiya",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-045-al-jathiya-31250-4949.mp3",
+    "captured": "2026-04-07T08:27:00.874Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 46,
+    "name": "Al Ahqaf",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-046-al-ahqaf-31251-8952.mp3",
+    "captured": "2026-04-07T08:27:01.393Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 47,
+    "name": "Mouhammad",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-047-mouhammad-31252-4761.mp3",
+    "captured": "2026-04-07T08:27:01.915Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 48,
+    "name": "Al Fath",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-048-al-fath-31253-4014.mp3",
+    "captured": "2026-04-07T08:27:02.432Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 49,
+    "name": "Al Houjourat",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-049-al-houjourat-31254-5716.mp3",
+    "captured": "2026-04-07T08:27:02.946Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 50,
+    "name": "Qaf",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-050-qaf-31256-6565.mp3",
+    "captured": "2026-04-07T08:27:03.462Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 51,
+    "name": "Ad Dariyat",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-051-ad-dariyat-31258-7353.mp3",
+    "captured": "2026-04-07T08:27:03.986Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 52,
+    "name": "At Tour",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-052-at-tour-31259-1736.mp3",
+    "captured": "2026-04-07T08:27:04.500Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 53,
+    "name": "An Najm",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-053-an-najm-31261-2053.mp3",
+    "captured": "2026-04-07T08:27:05.019Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 54,
+    "name": "Al Qamar",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-054-al-qamar-31264-2782.mp3",
+    "captured": "2026-04-07T08:27:05.528Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 55,
+    "name": "Ar Rahman",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-055-ar-rahman-31266-9842.mp3",
+    "captured": "2026-04-07T08:27:06.051Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 56,
+    "name": "Al Waqi A",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-056-al-waqi-a-31270-9708.mp3",
+    "captured": "2026-04-07T08:27:06.572Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 57,
+    "name": "Al Hadid",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-057-al-hadid-31272-833.mp3",
+    "captured": "2026-04-07T08:27:07.085Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 58,
+    "name": "Al Moujadalah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-058-al-moujadalah-31277-2197.mp3",
+    "captured": "2026-04-07T08:27:07.594Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 59,
+    "name": "Al Hashr",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-059-al-hashr-31280-2691.mp3",
+    "captured": "2026-04-07T08:27:08.115Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 60,
+    "name": "Al Moumtahina",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-060-al-moumtahina-31284-8866.mp3",
+    "captured": "2026-04-07T08:27:08.638Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 61,
+    "name": "As Saff",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-061-as-saff-31285-5107.mp3",
+    "captured": "2026-04-07T08:27:09.153Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 62,
+    "name": "Al Joumou A",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-062-al-joumou-a-31286-512.mp3",
+    "captured": "2026-04-07T08:27:09.661Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 63,
+    "name": "Al Mounafiqoun",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-063-al-mounafiqoun-31287-5431.mp3",
+    "captured": "2026-04-07T08:27:10.182Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 64,
+    "name": "At Taghaboun",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-064-at-taghaboun-31288-7402.mp3",
+    "captured": "2026-04-07T08:27:10.705Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 65,
+    "name": "At Talaq",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-065-at-talaq-31289-7866.mp3",
+    "captured": "2026-04-07T08:27:11.220Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 66,
+    "name": "At Tahrim",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-066-at-tahrim-31290-7167.mp3",
+    "captured": "2026-04-07T08:27:11.752Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 67,
+    "name": "Al Moulk",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-067-al-moulk-31291-235.mp3",
+    "captured": "2026-04-07T08:27:12.263Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 68,
+    "name": "Al Qalam",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-068-al-qalam-31292-9919.mp3",
+    "captured": "2026-04-07T08:27:12.791Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 69,
+    "name": "Al Haqqah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-069-al-haqqah-31293-291.mp3",
+    "captured": "2026-04-07T08:27:13.309Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 70,
+    "name": "Al Maarij",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-070-al-maarij-31294-8890.mp3",
+    "captured": "2026-04-07T08:27:13.822Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 71,
+    "name": "Nooh",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-071-nooh-31295-2701.mp3",
+    "captured": "2026-04-07T08:27:14.345Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 72,
+    "name": "Al Jinn",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-072-al-jinn-31296-2428.mp3",
+    "captured": "2026-04-07T08:27:14.860Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 73,
+    "name": "Al Muzzammil",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-073-al-muzzammil-31297-8732.mp3",
+    "captured": "2026-04-07T08:27:15.389Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 74,
+    "name": "Al Muddathir",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-074-al-muddathir-31298-4334.mp3",
+    "captured": "2026-04-07T08:27:15.902Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 75,
+    "name": "Al Qiyamah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-075-al-qiyamah-31299-2198.mp3",
+    "captured": "2026-04-07T08:27:16.422Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 76,
+    "name": "Al Insan",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-076-al-insan-31300-6680.mp3",
+    "captured": "2026-04-07T08:27:16.949Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 77,
+    "name": "Al Moursalat",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-077-al-moursalat-31301-4042.mp3",
+    "captured": "2026-04-07T08:27:17.463Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 78,
+    "name": "An Naba",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-078-an-naba-31302-8838.mp3",
+    "captured": "2026-04-07T08:27:17.984Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 79,
+    "name": "An Nazi At",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-079-an-nazi-at-31303-7514.mp3",
+    "captured": "2026-04-07T08:27:18.505Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 80,
+    "name": "Abasa",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-080-abasa-31304-5424.mp3",
+    "captured": "2026-04-07T08:27:19.022Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 81,
+    "name": "At Takwir",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-081-at-takwir-31305-3290.mp3",
+    "captured": "2026-04-07T08:27:19.551Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 82,
+    "name": "Al Infitar",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-082-al-infitar-31306-3120.mp3",
+    "captured": "2026-04-07T08:27:20.066Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 83,
+    "name": "Al Moutaffifin",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-083-al-moutaffifin-31307-7534.mp3",
+    "captured": "2026-04-07T08:27:20.581Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 84,
+    "name": "Al Inshiqaq",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-084-al-inshiqaq-31308-5488.mp3",
+    "captured": "2026-04-07T08:27:21.106Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 85,
+    "name": "Al Bourouj",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-085-al-bourouj-31309-3022.mp3",
+    "captured": "2026-04-07T08:27:21.621Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 86,
+    "name": "At Tariq",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-086-at-tariq-31310-7974.mp3",
+    "captured": "2026-04-07T08:27:22.145Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 87,
+    "name": "Al Ala",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-087-al-ala-31311-8179.mp3",
+    "captured": "2026-04-07T08:27:22.655Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 88,
+    "name": "Al Ghashiya",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-088-al-ghashiya-31312-7874.mp3",
+    "captured": "2026-04-07T08:27:23.171Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 89,
+    "name": "Al Fajr",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-089-al-fajr-31313-7365.mp3",
+    "captured": "2026-04-07T08:27:23.690Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 90,
+    "name": "Al Balad",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-090-al-balad-31314-5630.mp3",
+    "captured": "2026-04-07T08:27:24.206Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 91,
+    "name": "Ash Shams",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-091-ash-shams-31315-6739.mp3",
+    "captured": "2026-04-07T08:27:24.715Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 92,
+    "name": "Al Layl",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-092-al-layl-31316-2471.mp3",
+    "captured": "2026-04-07T08:27:25.240Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 93,
+    "name": "Ad Dhuha",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-093-ad-dhuha-31317-6143.mp3",
+    "captured": "2026-04-07T08:27:25.758Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 94,
+    "name": "Ash Sharh",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-094-ash-sharh-31318-2169.mp3",
+    "captured": "2026-04-07T08:27:26.281Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 95,
+    "name": "At Tin",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-095-at-tin-31319-9873.mp3",
+    "captured": "2026-04-07T08:27:26.798Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 96,
+    "name": "Al Alaq",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-096-al-alaq-31320-4008.mp3",
+    "captured": "2026-04-07T08:27:27.314Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 97,
+    "name": "Al Qadr",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-097-al-qadr-31321-9337.mp3",
+    "captured": "2026-04-07T08:27:27.826Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 98,
+    "name": "Al Bayyinah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-098-al-bayyinah-31322-108.mp3",
+    "captured": "2026-04-07T08:27:28.341Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 99,
+    "name": "Al Zalzalah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-099-al-zalzalah-31323-3927.mp3",
+    "captured": "2026-04-07T08:27:28.853Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 100,
+    "name": "Al Adiyat",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-100-al-adiyat-31324-9628.mp3",
+    "captured": "2026-04-07T08:27:29.378Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 101,
+    "name": "Al Qariah",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-101-al-qariah-31325-8998.mp3",
+    "captured": "2026-04-07T08:27:29.892Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 102,
+    "name": "At Takathour",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-102-at-takathour-31326-6628.mp3",
+    "captured": "2026-04-07T08:27:30.410Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 103,
+    "name": "Al Asr",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-103-al-asr-31327-2056.mp3",
+    "captured": "2026-04-07T08:27:30.940Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 104,
+    "name": "Al Humaza",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-104-al-humaza-31328-7730.mp3",
+    "captured": "2026-04-07T08:27:31.453Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 105,
+    "name": "Al Fil",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-105-al-fil-31329-962.mp3",
+    "captured": "2026-04-07T08:27:31.967Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 106,
+    "name": "Quraish",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-106-quraish-31330-4254.mp3",
+    "captured": "2026-04-07T08:27:32.478Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 107,
+    "name": "Al Maun",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-107-al-maun-31331-4410.mp3",
+    "captured": "2026-04-07T08:27:32.997Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 108,
+    "name": "Al Kawtar",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-108-al-kawtar-31332-5004.mp3",
+    "captured": "2026-04-07T08:27:33.517Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 109,
+    "name": "Al Kafiroune",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-109-al-kafiroune-31333-3092.mp3",
+    "captured": "2026-04-07T08:27:34.037Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 110,
+    "name": "An Nasr",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-110-an-nasr-31334-1924.mp3",
+    "captured": "2026-04-07T08:27:34.562Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 111,
+    "name": "Al Masad",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-111-al-masad-31335-428.mp3",
+    "captured": "2026-04-07T08:27:35.077Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 112,
+    "name": "Al Ikhlas",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-112-al-ikhlas-31336-6382.mp3",
+    "captured": "2026-04-07T08:27:35.597Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 113,
+    "name": "Al Falaq",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-113-al-falaq-31337-5044.mp3",
+    "captured": "2026-04-07T08:27:36.123Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  },
+  {
+    "index": 114,
+    "name": "An Nas",
+    "url": "https://media.assabile.com/assabile/recitations_7892537823/mp3/abdul-rashid-ali-sufi/abdul-rashid-ali-sufi-114-an-nas-31338-7962.mp3",
+    "captured": "2026-04-07T08:27:36.638Z",
+    "source": "xhr-text",
+    "narrator_id": 1
+  }
+]

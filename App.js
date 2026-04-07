@@ -4,6 +4,7 @@ import {
   StyleSheet,
   View,
   Text,
+  Image,
   ScrollView,
   ActivityIndicator,
   StatusBar,
@@ -16,6 +17,7 @@ import {
   SafeAreaView,
   Animated,
   Easing,
+  PanResponder,
 } from "react-native";
 import { SafeAreaProvider, SafeAreaView as SafeAreaViewEdged } from "react-native-safe-area-context";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
@@ -31,6 +33,9 @@ import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/Variatio
 import { getWordSegmentForText } from "./components/shubahTimestamps";
 import { Search, Bookmark } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Audio } from "expo-av";
+import hafsAnAsimAbdulRashidAliSufiRecitations from "./recitations/hafs_an_asim/abdul-rashid-ali-sufi.json";
+import shubahAnAsimAbdulRashidAliSufiRecitations from "./recitations/shubah_an_asim/abdul-rashid-ali-sufi.json";
 
 const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
 // const API_BASE = "http://localhost:3000";
@@ -44,15 +49,41 @@ const QURAN_FONT_FAMILY = "DigitalKhatt"; // default for styles; use getQuranFon
 // Manual font size and line height per mushaf (set to null to use style defaults)
 const MUSHAF_2_FONT_SIZE = null;   // 13 Liner IndoPak — set number to override (e.g. 22)
 const MUSHAF_2_LINE_HEIGHT = null; // 13 Liner IndoPak — set number to override (e.g. 44)
-const MUSHAF_3_FONT_SIZE = 20;   // 15 Liner Uthmani — tuned for Bayaan-like spacing
+const MUSHAF_3_FONT_SIZE = 19;   // 15 Liner Uthmani — tuned for Bayaan-like spacing
 const MUSHAF_3_LINE_HEIGHT = 36; // 15 Liner Uthmani — slightly tighter than before to mimic Qul/Bayaan layout
 const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : MUSHAF_3_FONT_SIZE);
 const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
+const SURAH_HEADER_IMAGE_BY_MUSHAF_POSITION = {
+  2: {
+    3: require("./surah_headers/2/3/header.png"),
+    4: require("./surah_headers/2/4/header.png"),
+  },
+};
+
+const SurahHeaderImage = ({ mushafId, surahHeaderPosition, height }) => {
+  const normalizedMushafId = Number(mushafId);
+  const normalizedPosition = Number(surahHeaderPosition);
+  const positionalStaticSource =
+    SURAH_HEADER_IMAGE_BY_MUSHAF_POSITION?.[normalizedMushafId]?.[normalizedPosition];
+  if (!positionalStaticSource) return null;
+
+  return (
+    <Image
+      source={positionalStaticSource}
+      style={{ width: "100%", height }}
+      resizeMode="stretch"
+    />
+  );
+};
 
 // Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
 const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -28;
 
 const HELPER_FONT_FAMILY = "AswaatHelpers";
+const LISTEN_RECITER_TITLE = "Abdul Rashid Ali Sufi";
+const LISTEN_RECITER_FILE_SLUG = "abdul-rashid-ali-sufi";
+const LISTEN_RECITER_AVATAR = require("./reciters/avatars/abdul-rashid-ali-sufi.png");
+const LISTEN_PLAYER_MARGIN = 10;
 
 // Helper function to render highlighted text (extracted from ComparisonTable logic)
 const renderHighlightedText = (text1, text2, wordStyle, differentCharStyle) => {
@@ -142,7 +173,14 @@ const Line = ({
   isFirstLineOfJuz = false,
   isDarkMode = false,
   mushafId = 3,
+  linePosition = null,
+  surahHeaderPosition = 0,
+  headerSpanLines = 1,
+  suppressLine = false,
+  forceHeaderRender = false,
 }) => {
+  if (suppressLine) return null;
+
   const wordRefs = useRef({});
   const lineStyle = [styles.line];
   const wordStyle = [styles.word];
@@ -181,9 +219,43 @@ const Line = ({
     lineStyle.push({ minHeight: lineHeight });
   }
 
+  const effectiveWordLineHeight =
+    getMushafLineHeight(mushafId) ?? styles.word.lineHeight;
+  const normalizedWords = Array.isArray(words) ? words : [];
+  const hasRenderableWords = normalizedWords.some((word) => {
+    if (!word) return false;
+    if (typeof word.content === "string") return word.content.trim().length > 0;
+    return !!word.content;
+  });
+
+  // 13-line Indo-Pak (mushaf 2): placeholder lines (e.g. basmalah) have no words from the API
+  if (mushafId === 2 && (forceHeaderRender || !hasRenderableWords)) {
+    const totalHeaderHeight = effectiveWordLineHeight * headerSpanLines;
+    return (
+      <View
+        style={[
+          ...lineStyle,
+          {
+            height: totalHeaderHeight,
+            minHeight: totalHeaderHeight,
+            overflow: "hidden",
+            alignItems: "stretch",
+            justifyContent: "flex-start",
+          },
+        ]}
+      >
+        <SurahHeaderImage
+          mushafId={mushafId}
+          surahHeaderPosition={surahHeaderPosition}
+          height={totalHeaderHeight}
+        />
+      </View>
+    );
+  }
+
   return (
     <View style={lineStyle}>
-      {words.map((word, index) => {
+      {normalizedWords.map((word, index) => {
         let contentToRender = <Text style={wordStyle}>{word.content}</Text>;
 
         // Find a saved variation for this word from selected narrators
@@ -330,11 +402,49 @@ const PageView = ({
   const pageContentStyle = isDarkMode
     ? [styles.pageContent, styles.pageContentDark]
     : styles.pageContent;
+  const linesWithHeaderRenderMeta = page.lines.map((line, index) => {
+    const currentWords = Array.isArray(line.words) ? line.words : [];
+    const currentHasText = currentWords.some((word) =>
+      typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
+    );
+
+    const nextLine = page.lines[index + 1];
+    const nextWords = Array.isArray(nextLine?.words) ? nextLine.words : [];
+    const nextHasText = nextWords.some((word) =>
+      typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
+    );
+
+    const currentHeaderPos = Number(line?.surah_header_position || 0);
+    const nextHeaderPos = Number(nextLine?.surah_header_position || 0);
+    const shouldStartDoubleHeader =
+      mushafId === 2 &&
+      currentHeaderPos > 0 &&
+      !nextHasText;
+
+    const prevLine = page.lines[index - 1];
+    const prevWords = Array.isArray(prevLine?.words) ? prevLine.words : [];
+    const prevHasText = prevWords.some((word) =>
+      typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
+    );
+    const prevHeaderPos = Number(prevLine?.surah_header_position || 0);
+    const isSecondLineOfDoubleHeader =
+      mushafId === 2 &&
+      !currentHasText &&
+      prevHeaderPos > 0 &&
+      !prevHasText;
+
+    return {
+      line,
+      shouldStartDoubleHeader,
+      isSecondLineOfDoubleHeader,
+      currentHeaderPos,
+    };
+  });
 
   return (
     <View style={containerStyle}>
       <View style={pageContentStyle}>
-        {page.lines.map((line, lineIndex) => (
+        {linesWithHeaderRenderMeta.map(({ line, shouldStartDoubleHeader, isSecondLineOfDoubleHeader, currentHeaderPos }, lineIndex) => (
           <Line
             key={line.id}
             words={line.words}
@@ -346,6 +456,11 @@ const PageView = ({
             isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
             isDarkMode={isDarkMode}
             mushafId={mushafId}
+            linePosition={line.position}
+            surahHeaderPosition={currentHeaderPos}
+            headerSpanLines={shouldStartDoubleHeader ? 2 : 1}
+            suppressLine={isSecondLineOfDoubleHeader}
+            forceHeaderRender={shouldStartDoubleHeader}
           />
         ))}
       </View>
@@ -3962,6 +4077,15 @@ export default function App() {
   const [expandedParents, setExpandedParents] = useState(new Set());
   const [parentNarrators, setParentNarrators] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [activeListenTrack, setActiveListenTrack] = useState(null);
+  const [listenIsPlaying, setListenIsPlaying] = useState(false);
+  const [listenPositionMs, setListenPositionMs] = useState(0);
+  const [listenDurationMs, setListenDurationMs] = useState(0);
+  const [listenPlayerVisible, setListenPlayerVisible] = useState(false);
+  const [selectedListenReciter, setSelectedListenReciter] = useState(LISTEN_RECITER_FILE_SLUG);
+  const [selectedListenNarrator, setSelectedListenNarrator] = useState("all");
+  const [listenSurahQuery, setListenSurahQuery] = useState("");
+  const [listenPlayerLayout, setListenPlayerLayout] = useState({ width: 0, height: 0 });
   const [pageCache, setPageCache] = useState({}); // Cache for pre-fetched pages (for React re-renders)
   const [variationCache, setVariationCache] = useState({}); // Cache for variations per page (for React re-renders)
   const pageCacheRef = useRef({}); // Ref cache for synchronous access
@@ -3980,6 +4104,168 @@ export default function App() {
   const drawerStartValueRef = useRef(-DRAWER_WIDTH);
   const isAnimatingDrawerRef = useRef(false);
   const pagerRef = useRef(null);
+  const listenSoundRef = useRef(null);
+  const listenPlayerDrag = useRef(
+    new Animated.ValueXY({
+      x: LISTEN_PLAYER_MARGIN,
+      y: Dimensions.get("window").height - 245,
+    })
+  ).current;
+  const listenPlayerDragInitializedRef = useRef(false);
+
+  const listenLibraries = useMemo(() => {
+    const normalizeTracks = (tracks, riwayahId, riwayahLabel) =>
+      (Array.isArray(tracks) ? tracks : [])
+        .filter((item) => item?.index != null && item?.name && item?.url)
+        .sort((a, b) => Number(a.index) - Number(b.index))
+        .map((item) => ({
+          ...item,
+          trackKey: `${riwayahId}-${item.index}`,
+          riwayahId,
+          riwayahLabel,
+        }));
+
+    const toRows = (tracks) => {
+      const rowSize = 3;
+      const rows = [];
+      for (let i = 0; i < tracks.length; i += rowSize) {
+        rows.push(tracks.slice(i, i + rowSize));
+      }
+      return rows;
+    };
+
+    const hafsTracks = normalizeTracks(
+      hafsAnAsimAbdulRashidAliSufiRecitations,
+      "hafs-an-asim",
+      "Hafs an Asim"
+    );
+    const shubahTracks = normalizeTracks(
+      shubahAnAsimAbdulRashidAliSufiRecitations,
+      "shubah-an-asim",
+      "Shu'bah an Asim"
+    );
+
+    return [
+      { id: "hafs", title: "Hafs an Asim", tracks: hafsTracks, rows: toRows(hafsTracks) },
+      { id: "shubah", title: "Shu'bah an Asim", tracks: shubahTracks, rows: toRows(shubahTracks) },
+    ];
+  }, []);
+
+  const listenNarratorOptions = useMemo(
+    () => [
+      { id: "all", label: "All Narrators" },
+      ...listenLibraries.map((library) => ({
+        id: library.id,
+        label: library.title,
+      })),
+    ],
+    [listenLibraries]
+  );
+
+  const listenFilteredRows = useMemo(() => {
+    const normalize = (text) => (text || "").toString().trim().toLowerCase();
+    const query = normalize(listenSurahQuery);
+    const selectedNarratorLibrary = selectedListenNarrator === "all"
+      ? listenLibraries
+      : listenLibraries.filter((library) => library.id === selectedListenNarrator);
+
+    const allTracks = selectedNarratorLibrary.flatMap((library) =>
+      (library.tracks || []).map((track) => ({
+        ...track,
+        reciterSlug: LISTEN_RECITER_FILE_SLUG,
+      }))
+    );
+
+    const byReciter = allTracks.filter(
+      (track) => track.reciterSlug === selectedListenReciter
+    );
+
+    const byQuery = query
+      ? byReciter.filter((track) => {
+          const surahNumber = String(track.index || "");
+          const name = normalize(track.name);
+          return surahNumber.includes(query) || name.includes(query);
+        })
+      : byReciter;
+
+    const rows = [];
+    for (let i = 0; i < byQuery.length; i += 3) {
+      rows.push(byQuery.slice(i, i + 3));
+    }
+    return rows;
+  }, [listenLibraries, listenSurahQuery, selectedListenNarrator, selectedListenReciter]);
+
+  const listenNarratorMetaById = useMemo(() => {
+    const map = {};
+    parentNarrators.forEach((parent) => {
+      const parentTitle = parent?.title || "Asim";
+      (parent?.children || []).forEach((child) => {
+        if (!child?.id) return;
+        map[child.id] = {
+          label: `${child.title || "Narrator"} <- ${parentTitle}`,
+          color: child.highlight_color || "#0f172a",
+        };
+      });
+    });
+
+    // Fallback when parent/child tree is not yet available
+    if (!map["hafs-an-asim"]) {
+      map["hafs-an-asim"] = { label: "Hafs <- Asim", color: "#0f172a" };
+    }
+    if (!map["shubah-an-asim"]) {
+      map["shubah-an-asim"] = { label: "Shu'bah <- Asim", color: "#334155" };
+    }
+
+    return map;
+  }, [parentNarrators]);
+
+  useEffect(() => {
+    if (!listenPlayerVisible || isDrawerVisible) return;
+    if (listenPlayerDragInitializedRef.current) return;
+    listenPlayerDrag.setValue({
+      x: LISTEN_PLAYER_MARGIN,
+      y: Dimensions.get("window").height - 245,
+    });
+    listenPlayerDragInitializedRef.current = true;
+  }, [isDrawerVisible, listenPlayerDrag, listenPlayerVisible]);
+
+  const listenPlayerPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dy) > 3,
+        onPanResponderGrant: () => {
+          listenPlayerDrag.setOffset({
+            x: listenPlayerDrag.x.__getValue(),
+            y: listenPlayerDrag.y.__getValue(),
+          });
+          listenPlayerDrag.setValue({ x: 0, y: 0 });
+        },
+        onPanResponderMove: (_, gestureState) => {
+          listenPlayerDrag.x.setValue(0);
+          listenPlayerDrag.y.setValue(gestureState.dy);
+        },
+        onPanResponderRelease: () => {
+          listenPlayerDrag.flattenOffset();
+          const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
+          const playerWidth = listenPlayerLayout.width || screenWidth - LISTEN_PLAYER_MARGIN * 2;
+          const playerHeight = listenPlayerLayout.height || 156;
+          const minX = LISTEN_PLAYER_MARGIN;
+          const maxX = Math.max(minX, screenWidth - playerWidth - LISTEN_PLAYER_MARGIN);
+          const minY = 64;
+          const maxY = Math.max(minY, screenHeight - playerHeight - LISTEN_PLAYER_MARGIN);
+          const clampedX = Math.min(maxX, Math.max(minX, listenPlayerDrag.x.__getValue()));
+          const clampedY = Math.min(maxY, Math.max(minY, listenPlayerDrag.y.__getValue()));
+          Animated.spring(listenPlayerDrag, {
+            toValue: { x: clampedX, y: clampedY },
+            useNativeDriver: false,
+            damping: 18,
+            stiffness: 220,
+          }).start();
+        },
+      }),
+    [listenPlayerDrag, listenPlayerLayout]
+  );
 
   useEffect(() => {
     currentTabRef.current = currentTab;
@@ -5437,6 +5723,109 @@ if (response.ok) {
     }
   };
 
+  const handleListenPlaybackStatusUpdate = useCallback((status) => {
+    if (!status?.isLoaded) {
+      setListenIsPlaying(false);
+      return;
+    }
+    setListenPositionMs(status.positionMillis ?? 0);
+    setListenDurationMs(status.durationMillis ?? 0);
+    setListenIsPlaying(status.isPlaying ?? false);
+    if (status.didJustFinish) {
+      setListenIsPlaying(false);
+    }
+  }, []);
+
+  const unloadListenSound = useCallback(async () => {
+    if (listenSoundRef.current) {
+      try {
+        await listenSoundRef.current.unloadAsync();
+      } catch (e) {
+        console.warn("Unable to unload recitation sound:", e);
+      } finally {
+        listenSoundRef.current = null;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    Audio.setAudioModeAsync({
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playsInSilentModeIOS: true,
+      playThroughEarpieceAndroid: false,
+    }).catch((e) => console.warn("Audio mode setup failed:", e));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      unloadListenSound();
+    };
+  }, [unloadListenSound]);
+
+  const handlePlayListenTrack = useCallback(
+    async (track) => {
+      if (!track?.url) return;
+      try {
+        if (activeListenTrack?.trackKey === track.trackKey && listenSoundRef.current) {
+          const status = await listenSoundRef.current.getStatusAsync();
+          if (status?.isLoaded) {
+            if (status.isPlaying) {
+              await listenSoundRef.current.pauseAsync();
+            } else {
+              await listenSoundRef.current.playAsync();
+            }
+          }
+          return;
+        }
+
+        await unloadListenSound();
+
+        const { sound } = await Audio.Sound.createAsync(
+          { uri: track.url },
+          { shouldPlay: true, progressUpdateIntervalMillis: 400 },
+          handleListenPlaybackStatusUpdate
+        );
+        listenSoundRef.current = sound;
+        setActiveListenTrack(track);
+        setListenPlayerVisible(true);
+        setListenPositionMs(0);
+      } catch (e) {
+        console.error("Error playing surah recitation:", e);
+      }
+    },
+    [activeListenTrack, handleListenPlaybackStatusUpdate, unloadListenSound]
+  );
+
+  const handleCloseListenPlayer = useCallback(async () => {
+    await unloadListenSound();
+    setActiveListenTrack(null);
+    setListenIsPlaying(false);
+    setListenPositionMs(0);
+    setListenDurationMs(0);
+    setListenPlayerVisible(false);
+  }, [unloadListenSound]);
+
+  const handleSeekListenTrack = useCallback(async (value) => {
+    if (!listenSoundRef.current) return;
+    const nextPosition = Array.isArray(value) ? value[0] : value;
+    if (typeof nextPosition !== "number") return;
+    try {
+      await listenSoundRef.current.setPositionAsync(nextPosition);
+      setListenPositionMs(nextPosition);
+    } catch (e) {
+      console.warn("Failed to seek recitation:", e);
+    }
+  }, []);
+
+  const formatListenTime = useCallback((millis) => {
+    const safeMs = Number.isFinite(millis) ? Math.max(0, millis) : 0;
+    const totalSeconds = Math.floor(safeMs / 1000);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${String(secs).padStart(2, "0")}`;
+  }, []);
+
   if (error) {
     return (
       <View style={styles.errorContainer}>
@@ -5459,10 +5848,17 @@ if (response.ok) {
 
   // Bottom inset for home indicator so bar can extend to screen bottom without overlap
   const bottomBarInset = Platform.OS === "ios" ? 34 : 0;
+  const isDrawerPlayerCompact = isDrawerVisible;
 
   return (
     <SafeAreaProvider>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+      <GestureHandlerRootView
+        style={[
+          { flex: 1 },
+          currentTab === "Recite" &&
+            isMushafDarkMode && { backgroundColor: "#1F1F22" },
+        ]}
+      >
         <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
         <SafeAreaViewEdged
           edges={["top"]}
@@ -5566,10 +5962,18 @@ if (response.ok) {
                 </View>
               </View>
               
-              <View style={styles.contentContainer}>
+              <View
+                style={[
+                  styles.contentContainer,
+                  isMushafDarkMode && styles.contentContainerDark,
+                ]}
+              >
                 <PagerView
                   ref={pagerRef}
-                  style={{ flex: 1 }}
+                  style={[
+                    { flex: 1 },
+                    isMushafDarkMode && { backgroundColor: "#1F1F22" },
+                  ]}
                   // RTL: initial index is inverted so higher page numbers appear on the left
                   initialPage={Math.max(0, TOTAL_PAGES - currentPage)}
                   onPageSelected={(e) => {
@@ -5591,7 +5995,13 @@ if (response.ok) {
                     const isLoading = isCurrent && (!pageData || loading);
 
                     return (
-                      <View key={String(pageNum)} style={styles.pageViewContainer}>
+                      <View
+                        key={String(pageNum)}
+                        style={[
+                          styles.pageViewContainer,
+                          isMushafDarkMode && styles.pageViewContainerDark,
+                        ]}
+                      >
                         <PageView
                           page={pageData}
                           onWordPress={isCurrent ? handleWordPress : () => {}}
@@ -5906,12 +6316,207 @@ if (response.ok) {
           )}
 
           {currentTab === "Listen" && (
-            <View style={styles.listenPlaceholder}>
-              <Text style={styles.listenText}>Listening coming soon</Text>
+            <View style={styles.listenContainer}>
+              <ScrollView
+                contentContainerStyle={[
+                  styles.listenScrollContent,
+                  listenPlayerVisible && styles.listenScrollContentWithPlayer,
+                ]}
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.listenSection}>
+                  <Text style={styles.listenSectionTitle}>Quran Library</Text>
+                  <Text style={styles.listenSectionSubtitle}>{LISTEN_RECITER_TITLE}</Text>
+                  <View style={styles.listenFilterRow}>
+                    <TouchableOpacity
+                      style={styles.listenFilterChip}
+                      onPress={() =>
+                        setSelectedListenReciter((prev) =>
+                          prev === LISTEN_RECITER_FILE_SLUG ? "all" : LISTEN_RECITER_FILE_SLUG
+                        )
+                      }
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.listenFilterChipLabel}>Reciter</Text>
+                      <Text style={styles.listenFilterChipValue} numberOfLines={1}>
+                        {selectedListenReciter === "all" ? "All" : LISTEN_RECITER_TITLE}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.listenNarratorPills}
+                    >
+                      {listenNarratorOptions.map((option) => {
+                        const selected = selectedListenNarrator === option.id;
+                        return (
+                          <TouchableOpacity
+                            key={option.id}
+                            style={[
+                              styles.listenNarratorPill,
+                              selected && styles.listenNarratorPillSelected,
+                            ]}
+                            onPress={() => setSelectedListenNarrator(option.id)}
+                            activeOpacity={0.85}
+                          >
+                            <Text
+                              style={[
+                                styles.listenNarratorPillText,
+                                selected && styles.listenNarratorPillTextSelected,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+
+                    <View style={styles.listenSurahInputWrap}>
+                      <Text style={styles.listenSurahInputLabel}>Surah</Text>
+                      <TextInput
+                        value={listenSurahQuery}
+                        onChangeText={setListenSurahQuery}
+                        placeholder="Search name or #"
+                        placeholderTextColor="#94a3b8"
+                        style={styles.listenSurahInput}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.listenGrid}>
+                    {listenFilteredRows.length === 0 ? (
+                      <Text style={styles.listenEmptyText}>No surahs match these filters.</Text>
+                    ) : (
+                      listenFilteredRows.map((row, rowIndex) => (
+                        <View key={`listen-row-filtered-${rowIndex}`} style={styles.listenGridRow}>
+                          {row.map((track) => {
+                            const isActive = activeListenTrack?.trackKey === track.trackKey;
+                            const narratorMeta = listenNarratorMetaById[track.riwayahId] || {
+                              label: track.riwayahLabel || "Narrator",
+                              color: "#334155",
+                            };
+                            return (
+                              <TouchableOpacity
+                                key={`listen-track-${track.trackKey}`}
+                                style={styles.listenCard}
+                                activeOpacity={0.85}
+                                onPress={() => handlePlayListenTrack(track)}
+                              >
+                                <View style={styles.listenThumb}>
+                                  <Image
+                                    source={LISTEN_RECITER_AVATAR}
+                                    style={styles.listenThumbImage}
+                                    resizeMode="cover"
+                                  />
+                                  <View style={styles.listenPlayBadge}>
+                                    <Text style={styles.listenPlayBadgeText}>
+                                      {isActive && listenIsPlaying ? "❚❚" : "▶"}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <Text style={styles.listenCardTitle} numberOfLines={1}>
+                                  {`Surah ${track.index}`}
+                                </Text>
+                                <Text style={styles.listenCardSubtitle} numberOfLines={1}>
+                                  {track.name}
+                                </Text>
+                                <View
+                                  style={[
+                                    styles.listenNarratorBadge,
+                                    { backgroundColor: narratorMeta.color },
+                                  ]}
+                                >
+                                  <Text style={styles.listenNarratorBadgeText} numberOfLines={1}>
+                                    {narratorMeta.label}
+                                  </Text>
+                                </View>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+              </ScrollView>
             </View>
           )}
         </View>
         </SafeAreaViewEdged>
+
+      {listenPlayerVisible && activeListenTrack && !isDrawerPlayerCompact && (
+        <Animated.View
+          style={[
+            styles.globalListenPlayer,
+            {
+              transform: [
+                { translateX: listenPlayerDrag.x },
+                { translateY: listenPlayerDrag.y },
+              ],
+            },
+          ]}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout || {};
+            if (!width || !height) return;
+            if (
+              width !== listenPlayerLayout.width ||
+              height !== listenPlayerLayout.height
+            ) {
+              setListenPlayerLayout({ width, height });
+            }
+          }}
+        >
+          <>
+            <View style={styles.globalListenPlayerTop} {...listenPlayerPanResponder.panHandlers}>
+              <View style={styles.globalListenPlayerMeta}>
+                <Image source={LISTEN_RECITER_AVATAR} style={styles.globalListenPlayerAvatar} />
+                <View style={styles.globalListenPlayerMetaText}>
+                  <Text style={styles.globalListenPlayerTitle} numberOfLines={1}>
+                    {`Surah ${activeListenTrack.index} · ${activeListenTrack.name}`}
+                  </Text>
+                  <Text style={styles.globalListenPlayerSubtitle} numberOfLines={1}>
+                    {`${LISTEN_RECITER_FILE_SLUG} · ${activeListenTrack.riwayahLabel || ""}`}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={handleCloseListenPlayer}
+                style={styles.globalListenPlayerClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close global recitation player"
+              >
+                <Text style={styles.globalListenPlayerCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <Slider
+              value={listenPositionMs}
+              minimumValue={0}
+              maximumValue={Math.max(listenDurationMs, 1)}
+              onSlidingComplete={handleSeekListenTrack}
+              minimumTrackTintColor="#111"
+              maximumTrackTintColor="#d0d4da"
+              thumbTintColor="#111"
+              thumbStyle={styles.globalListenPlayerThumb}
+              trackStyle={styles.globalListenPlayerTrack}
+              containerStyle={styles.globalListenPlayerSlider}
+            />
+            <View style={styles.globalListenPlayerTimeRow}>
+              <Text style={styles.globalListenPlayerTime}>{formatListenTime(listenPositionMs)}</Text>
+              <TouchableOpacity
+                onPress={() => activeListenTrack && handlePlayListenTrack(activeListenTrack)}
+                style={styles.globalListenPlayerToggle}
+              >
+                <Text style={styles.globalListenPlayerToggleText}>
+                  {listenIsPlaying ? "Pause" : "Play"}
+                </Text>
+              </TouchableOpacity>
+              <Text style={styles.globalListenPlayerTime}>{formatListenTime(listenDurationMs)}</Text>
+            </View>
+          </>
+        </Animated.View>
+      )}
 
       {isDrawerVisible && (
         <SafeAreaView style={styles.drawerOverlay}>
@@ -6101,6 +6706,39 @@ if (response.ok) {
               </Text>
             </TouchableOpacity>
           </View>
+          {listenPlayerVisible && activeListenTrack && isDrawerPlayerCompact && (
+            <View style={[styles.globalListenPlayer, styles.globalListenPlayerDrawerCompact]}>
+              <TouchableOpacity
+                onPress={handleCloseListenPlayer}
+                style={styles.globalListenPlayerCompactClose}
+                accessibilityRole="button"
+                accessibilityLabel="Close global recitation player"
+              >
+                <Text style={styles.globalListenPlayerCloseText}>✕</Text>
+              </TouchableOpacity>
+              <Image source={LISTEN_RECITER_AVATAR} style={styles.globalListenPlayerCompactAvatar} />
+              <Slider
+                value={listenPositionMs}
+                minimumValue={0}
+                maximumValue={Math.max(listenDurationMs, 1)}
+                onSlidingComplete={handleSeekListenTrack}
+                minimumTrackTintColor="#111"
+                maximumTrackTintColor="#d0d4da"
+                thumbTintColor="#111"
+                thumbStyle={styles.globalListenPlayerCompactThumb}
+                trackStyle={styles.globalListenPlayerCompactTrack}
+                containerStyle={styles.globalListenPlayerCompactSlider}
+              />
+              <TouchableOpacity
+                onPress={() => activeListenTrack && handlePlayListenTrack(activeListenTrack)}
+                style={styles.globalListenPlayerCompactToggle}
+              >
+                <Text style={styles.globalListenPlayerCompactToggleText}>
+                  {listenIsPlaying ? "❚❚" : "▶"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </SafeAreaView>
       )}
 
@@ -6475,10 +7113,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   mainContainerDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#1F1F22",
   },
   safeAreaDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#1F1F22",
   },
   navBar: {
     minHeight: 50,
@@ -6511,7 +7149,7 @@ const styles = StyleSheet.create({
   mushafTopBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#282828",
+    backgroundColor: "#1F1F22",
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: 2,
@@ -6568,9 +7206,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  contentContainerDark: {
+    backgroundColor: "#1F1F22",
+  },
   variationTraversalBar: {
     flexDirection: "row",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1F1F22",
     paddingVertical: 12, // bar inner top/bottom; bottom is overridden by RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset (see top of file)
     paddingHorizontal: 16,
     alignItems: "center",
@@ -6688,6 +7329,9 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
+  pageViewContainerDark: {
+    backgroundColor: "#1F1F22",
+  },
   pageBehind: {
     opacity: 0.95,
     zIndex: 0,
@@ -6712,10 +7356,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   containerDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#1F1F22",
   },
   pageContentDark: {
-    backgroundColor: "#000",
+    backgroundColor: "#1F1F22",
   },
   line: {
     flexDirection: "row-reverse",
@@ -6856,7 +7500,7 @@ const styles = StyleSheet.create({
   drawer: {
     width: 260,
     flex: 1,
-    backgroundColor: "#282828",
+    backgroundColor: "#1F1F22",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: "#3a3a3a",
     paddingTop: Platform.OS === "ios" ? 50 : (StatusBar.currentHeight || 0) + 20,
@@ -7038,7 +7682,7 @@ const styles = StyleSheet.create({
     right: 0,
     width: "100%",
     flexDirection: "row",
-    backgroundColor: "#282828",
+    backgroundColor: "#1F1F22",
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingTop: 12,
@@ -7182,6 +7826,330 @@ const styles = StyleSheet.create({
   videoTitle: {
     fontSize: 12,
     color: "#1a1a1a",
+  },
+  listenContainer: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  listenScrollContent: {
+    paddingTop: 12,
+    paddingBottom: 28,
+  },
+  listenScrollContentWithPlayer: {
+    paddingBottom: 180,
+  },
+  listenSection: {
+    marginBottom: 18,
+  },
+  listenSectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    paddingHorizontal: 16,
+  },
+  listenSectionSubtitle: {
+    fontSize: 13,
+    color: "#667085",
+    paddingHorizontal: 16,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  listenFilterRow: {
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  listenFilterChip: {
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginHorizontal: 4,
+    marginBottom: 10,
+  },
+  listenFilterChipLabel: {
+    fontSize: 11,
+    color: "#64748b",
+    marginBottom: 2,
+    fontWeight: "500",
+  },
+  listenFilterChipValue: {
+    fontSize: 14,
+    color: "#0f172a",
+    fontWeight: "600",
+  },
+  listenNarratorPills: {
+    paddingHorizontal: 4,
+    paddingBottom: 8,
+  },
+  listenNarratorPill: {
+    borderWidth: 1,
+    borderColor: "#dbe3ea",
+    backgroundColor: "#fff",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    marginRight: 8,
+  },
+  listenNarratorPillSelected: {
+    backgroundColor: "#111827",
+    borderColor: "#111827",
+  },
+  listenNarratorPillText: {
+    fontSize: 12,
+    color: "#334155",
+    fontWeight: "600",
+  },
+  listenNarratorPillTextSelected: {
+    color: "#fff",
+  },
+  listenSurahInputWrap: {
+    marginHorizontal: 4,
+  },
+  listenSurahInputLabel: {
+    fontSize: 11,
+    color: "#64748b",
+    marginBottom: 5,
+    fontWeight: "500",
+  },
+  listenSurahInput: {
+    borderWidth: 1,
+    borderColor: "#dbe3ea",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 14,
+    color: "#0f172a",
+    backgroundColor: "#fff",
+  },
+  listenGrid: {
+    paddingHorizontal: 12,
+  },
+  listenGridRow: {
+    flexDirection: "row",
+    marginBottom: 14,
+  },
+  listenCard: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  listenThumb: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: "#dfe3e6",
+    overflow: "hidden",
+    justifyContent: "flex-end",
+  },
+  listenThumbImage: {
+    width: "100%",
+    height: "100%",
+  },
+  listenPlayBadge: {
+    position: "absolute",
+    right: 8,
+    bottom: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(17, 17, 17, 0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listenPlayBadgeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  listenCardTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1a1a1a",
+    marginTop: 7,
+  },
+  listenCardSubtitle: {
+    fontSize: 12,
+    color: "#667085",
+    marginTop: 2,
+  },
+  listenNarratorBadge: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    maxWidth: "100%",
+  },
+  listenNarratorBadgeText: {
+    fontSize: 11,
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  listenEmptyText: {
+    fontSize: 14,
+    color: "#64748b",
+    textAlign: "center",
+    paddingVertical: 20,
+  },
+  globalListenPlayer: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    width: Dimensions.get("window").width - LISTEN_PLAYER_MARGIN * 2,
+    maxWidth: 520,
+    borderRadius: 16,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 8,
+    zIndex: 999,
+  },
+  globalListenPlayerDrawerCompact: {
+    width: 124,
+    height: 138,
+    top: undefined,
+    left: undefined,
+    right: 18,
+    bottom: Platform.OS === "ios" ? 132 : 110,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "space-between",
+    zIndex: 1100,
+    elevation: 12,
+  },
+  globalListenPlayerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  globalListenPlayerMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 8,
+  },
+  globalListenPlayerAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    marginRight: 10,
+  },
+  globalListenPlayerMetaText: {
+    flex: 1,
+  },
+  globalListenPlayerTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0f172a",
+  },
+  globalListenPlayerSubtitle: {
+    fontSize: 12,
+    color: "#64748b",
+    marginTop: 1,
+  },
+  globalListenPlayerClose: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  globalListenPlayerCloseText: {
+    fontSize: 16,
+    color: "#334155",
+    fontWeight: "700",
+  },
+  globalListenPlayerCompactClose: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.85)",
+    zIndex: 2,
+  },
+  globalListenPlayerCompactAvatar: {
+    width: 66,
+    height: 66,
+    borderRadius: 8,
+    marginTop: 6,
+  },
+  globalListenPlayerCompactSlider: {
+    width: "100%",
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  globalListenPlayerCompactTrack: {
+    height: 3,
+    borderRadius: 999,
+  },
+  globalListenPlayerCompactThumb: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  globalListenPlayerCompactToggle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: "#111827",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  globalListenPlayerCompactToggleText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+    marginLeft: 1,
+  },
+  globalListenPlayerSlider: {
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  globalListenPlayerTrack: {
+    height: 4,
+    borderRadius: 999,
+  },
+  globalListenPlayerThumb: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  globalListenPlayerTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 2,
+  },
+  globalListenPlayerTime: {
+    fontSize: 11,
+    color: "#64748b",
+    minWidth: 42,
+  },
+  globalListenPlayerToggle: {
+    paddingHorizontal: 16,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#111827",
+  },
+  globalListenPlayerToggleText: {
+    color: "#ffffff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   listenPlaceholder: {
     flex: 1,
@@ -7895,7 +8863,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 320,
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1F1F22",
     shadowColor: "#000",
     shadowOffset: { width: -2, height: 0 },
     shadowOpacity: 0.15,
@@ -7911,7 +8879,7 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "ios" ? 56 : (StatusBar.currentHeight || 0) + 24,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#3a3a3a",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1F1F22",
   },
   variationsSidebarTitle: {
     fontSize: 18,
@@ -7941,7 +8909,7 @@ const styles = StyleSheet.create({
   },
   variationsSidebarList: {
     flex: 1,
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1F1F22",
   },
   variationsSidebarListContent: {
     paddingBottom: 40,
@@ -7952,7 +8920,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#3a3a3a",
-    backgroundColor: "#2a2a2a",
+    backgroundColor: "#1F1F22",
   },
   variationsSidebarItemActive: {
     backgroundColor: "#353535",
