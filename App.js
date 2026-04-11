@@ -57,27 +57,14 @@ const MUSHAF_3_FONT_SIZE = 18;   // 15 Liner Uthmani — tuned for Bayaan-like s
 const MUSHAF_3_LINE_HEIGHT = 39; // 15 Liner Uthmani — slightly tighter than before to mimic Qul/Bayaan layout
 const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : MUSHAF_3_FONT_SIZE);
 const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
-const SURAH_HEADER_IMAGE_BY_MUSHAF_POSITION = {
-  2: {
-    3: require("./surah_headers/2/3/header.png"),
-    4: require("./surah_headers/2/4/header.png"),
-  },
-};
 
-const SurahHeaderImage = ({ mushafId, surahHeaderPosition, height }) => {
-  const normalizedMushafId = Number(mushafId);
-  const normalizedPosition = Number(surahHeaderPosition);
-  const positionalStaticSource =
-    SURAH_HEADER_IMAGE_BY_MUSHAF_POSITION?.[normalizedMushafId]?.[normalizedPosition];
-  if (!positionalStaticSource) return null;
+/** Indo-Pak mushaf (2): surah-name-v2.ttf maps surah banners to U+E001, U+E002, … (U+E000 + position). */
+const SURAH_HEADER_V2_FONT_FAMILY = "SurahNameV2";
 
-  return (
-    <Image
-      source={positionalStaticSource}
-      style={{ width: "100%", height }}
-      resizeMode="stretch"
-    />
-  );
+const getSurahHeaderV2Glyph = (surahHeaderPosition) => {
+  const n = Number(surahHeaderPosition);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return String.fromCodePoint(0xe000 + n);
 };
 
 // Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
@@ -238,6 +225,7 @@ const Line = ({
   // 13-line Indo-Pak (mushaf 2): placeholder lines (e.g. basmalah) have no words from the API
   if (mushafId === 2 && (forceHeaderRender || !hasRenderableWords)) {
     const totalHeaderHeight = effectiveWordLineHeight * headerSpanLines;
+    const headerGlyph = getSurahHeaderV2Glyph(surahHeaderPosition);
     return (
       <View
         style={[
@@ -246,16 +234,28 @@ const Line = ({
             height: totalHeaderHeight,
             minHeight: totalHeaderHeight,
             overflow: "hidden",
-            alignItems: "stretch",
-            justifyContent: "flex-start",
+            alignItems: "center",
+            justifyContent: "center",
           },
         ]}
       >
-        <SurahHeaderImage
-          mushafId={mushafId}
-          surahHeaderPosition={surahHeaderPosition}
-          height={totalHeaderHeight}
-        />
+        {headerGlyph ? (
+          <Text
+            allowFontScaling={false}
+            style={{
+              fontFamily: SURAH_HEADER_V2_FONT_FAMILY,
+              fontSize: totalHeaderHeight * 0.88,
+              lineHeight: totalHeaderHeight,
+              height: totalHeaderHeight,
+              width: "100%",
+              textAlign: "center",
+              color: isDarkMode ? "#ffffff" : "#1a1a1a",
+              ...(Platform.OS === "ios" && { fontWeight: "normal", fontStyle: "normal" }),
+            }}
+          >
+            {headerGlyph}
+          </Text>
+        ) : null}
       </View>
     );
   }
@@ -3991,6 +3991,7 @@ export default function App() {
     // DigitalKhatt: require("./digitalkhatt.otf"),
     DigitalKhatt: require("./DigitalKhattV2.otf"),
     DigitalKhattV3: require("./DigitalKhattV3.ttf"),
+    SurahNameV2: require("./surah-name-v2.ttf"),
   });
   
   // Debug font loading
