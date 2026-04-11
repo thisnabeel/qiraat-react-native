@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useMemo } from "react";
 import {
   Animated,
   PanResponder,
@@ -11,7 +11,7 @@ import VariationList from "./VariationList";
 
 const { height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-const MIN_HEIGHT = 149;
+const MIN_HEIGHT = 118;
 const MAX_HEIGHT = SCREEN_HEIGHT - 70;
 
 // We use translateY with native driver for smooth 60fps. Sheet has fixed height MAX_HEIGHT;
@@ -22,16 +22,17 @@ export { TRANSLATE_MINIMIZED };
 
 export default function VariationBottomSheet({
   isVisible,
+  showHandle = true,
   variations,
   currentPage,
   lastSelectedVariationHighlight,
   mushafId,
   getQuranFontFamily,
+  comparisonNarrators,
   onSelectVariation,
-  onDeleteVariation,
   onExpandedChange,
   registerTranslateY,
-  backgroundColor = "#252529",
+  backgroundColor = "#313237",
 }) {
   const translateYAnim = useRef(new Animated.Value(TRANSLATE_MINIMIZED)).current;
 
@@ -69,9 +70,10 @@ export default function VariationBottomSheet({
     }
   }, [isVisible]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+      onStartShouldSetPanResponder: () => !!showHandle,
       onMoveShouldSetPanResponder: () => false,
       onPanResponderGrant: () => {
         heightAtStartRef.current = currentHeightRef.current;
@@ -97,8 +99,9 @@ export default function VariationBottomSheet({
         }
         snapTo(target);
       },
-    })
-  ).current;
+    }),
+    [showHandle]
+  );
 
   if (!isVisible) return null;
 
@@ -113,21 +116,25 @@ export default function VariationBottomSheet({
         },
       ]}
     >
-      <View style={styles.handleArea} {...panResponder.panHandlers}>
-        <View style={styles.handle} />
+      {showHandle && (
+        <View style={styles.handleArea} {...panResponder.panHandlers}>
+          <View style={styles.handle} />
+        </View>
+      )}
+      <View style={styles.listFill}>
+        <VariationList
+          variations={variations}
+          comparisonNarrators={comparisonNarrators}
+          currentPage={currentPage}
+          lastSelectedVariationHighlight={lastSelectedVariationHighlight}
+          mushafId={mushafId}
+          getQuranFontFamily={getQuranFontFamily}
+          onSelectVariation={(variation, meta) => {
+            onSelectVariation?.(variation, meta);
+            snapTo(MIN_HEIGHT);
+          }}
+        />
       </View>
-      <VariationList
-        variations={variations}
-        currentPage={currentPage}
-        lastSelectedVariationHighlight={lastSelectedVariationHighlight}
-        mushafId={mushafId}
-        getQuranFontFamily={getQuranFontFamily}
-        onSelectVariation={(variation, meta) => {
-          onSelectVariation?.(variation, meta);
-          snapTo(MIN_HEIGHT);
-        }}
-        onDeleteVariation={onDeleteVariation}
-      />
     </Animated.View>
   );
 }
@@ -150,8 +157,8 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   handleArea: {
-    paddingTop: 6,
-    paddingBottom: 24,
+    paddingTop: 8,
+    paddingBottom: 10,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -160,6 +167,10 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255,255,255,0.3)",
+  },
+  listFill: {
+    flex: 1,
+    minHeight: 0,
   },
 });
 

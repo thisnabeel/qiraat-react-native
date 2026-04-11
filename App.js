@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useFonts } from "expo-font";
 import {
   StyleSheet,
@@ -19,7 +19,11 @@ import {
   Easing,
   PanResponder,
 } from "react-native";
-import { SafeAreaProvider, SafeAreaView as SafeAreaViewEdged } from "react-native-safe-area-context";
+import {
+  SafeAreaProvider,
+  SafeAreaView as SafeAreaViewEdged,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import PagerView from "react-native-pager-view";
 import { Slider } from "@miblanchard/react-native-slider";
@@ -31,7 +35,7 @@ import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
 import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/VariationBottomSheet";
 import { getWordSegmentForText } from "./components/shubahTimestamps";
-import { Search, Bookmark } from "react-native-feather";
+import { Search } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
 import hafsAnAsimAbdulRashidAliSufiRecitations from "./recitations/hafs_an_asim/abdul-rashid-ali-sufi.json";
@@ -49,8 +53,8 @@ const QURAN_FONT_FAMILY = "DigitalKhatt"; // default for styles; use getQuranFon
 // Manual font size and line height per mushaf (set to null to use style defaults)
 const MUSHAF_2_FONT_SIZE = null;   // 13 Liner IndoPak — set number to override (e.g. 22)
 const MUSHAF_2_LINE_HEIGHT = null; // 13 Liner IndoPak — set number to override (e.g. 44)
-const MUSHAF_3_FONT_SIZE = 19;   // 15 Liner Uthmani — tuned for Bayaan-like spacing
-const MUSHAF_3_LINE_HEIGHT = 36; // 15 Liner Uthmani — slightly tighter than before to mimic Qul/Bayaan layout
+const MUSHAF_3_FONT_SIZE = 18;   // 15 Liner Uthmani — tuned for Bayaan-like spacing
+const MUSHAF_3_LINE_HEIGHT = 39; // 15 Liner Uthmani — slightly tighter than before to mimic Qul/Bayaan layout
 const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : MUSHAF_3_FONT_SIZE);
 const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
 const SURAH_HEADER_IMAGE_BY_MUSHAF_POSITION = {
@@ -78,6 +82,9 @@ const SurahHeaderImage = ({ mushafId, surahHeaderPosition, height }) => {
 
 // Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
 const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -28;
+
+// Drawer header lines up with mushaf body text: approximate mushafTopBar height + PageView top padding (container + pageContent).
+const MUSHAF_DRAWER_CONTENT_TOP_OFFSET = 56 + 10;
 
 const HELPER_FONT_FAMILY = "AswaatHelpers";
 const LISTEN_RECITER_TITLE = "Abdul Rashid Ali Sufi";
@@ -3956,6 +3963,20 @@ const NarratorPopup = ({
   );
 };
 
+function DrawerAnimatedPanel({ drawerAnim, alignWithMushafContent, children }) {
+  const insets = useSafeAreaInsets();
+  const paddingTop = alignWithMushafContent
+    ? insets.top + MUSHAF_DRAWER_CONTENT_TOP_OFFSET
+    : insets.top + 14;
+  return (
+    <Animated.View
+      style={[styles.drawer, { paddingTop, transform: [{ translateX: drawerAnim }] }]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState(null);
   const [nextPage, setNextPage] = useState(null);
@@ -3967,7 +3988,8 @@ export default function App() {
     MeQuran: require("./assets/me_quran_volt_newmet.ttf"),
     AswaatOne: require("./assets/aswaat-one.otf"),
     AswaatHelpers: require("./aswaat-helpers-one-Regular.ttf"),
-    DigitalKhatt: require("./digitalkhatt.otf"),
+    // DigitalKhatt: require("./digitalkhatt.otf"),
+    DigitalKhatt: require("./DigitalKhattV2.otf"),
     DigitalKhattV3: require("./DigitalKhattV3.ttf"),
   });
   
@@ -4074,6 +4096,8 @@ export default function App() {
   const variationsSidebarScrollOffsetRef = useRef(0);
   const VARIATIONS_SIDEBAR_ROW_HEIGHT = 72;
   const [currentTab, setCurrentTab] = useState("Recite");
+  /** Top chrome (safe area, status bar, outer nav): leads currentTab during Recite←Listen slide to avoid flash */
+  const [chromeTab, setChromeTab] = useState("Recite");
   const [expandedParents, setExpandedParents] = useState(new Set());
   const [parentNarrators, setParentNarrators] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
@@ -4091,8 +4115,17 @@ export default function App() {
   const pageCacheRef = useRef({}); // Ref cache for synchronous access
   const variationCacheRef = useRef({}); // Ref cache for variations
   const DRAWER_WIDTH = 260;
+  const TAB_SLIDE_DURATION = 320;
+  // Bottom tab bar slides down off-screen in sync with drawer closing (translateY when drawer closed)
+  const DRAWER_BOTTOM_NAV_SLIDE = 140;
   const drawerAnim = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
+  // Default off-screen so the tab bar never flashes at translateY 0 before the open animation runs
+  const drawerBottomNavAnim = useRef(new Animated.Value(DRAWER_BOTTOM_NAV_SLIDE)).current;
+  /** Horizontal offset for Recite | Listen carousel: 0 = Mushaf, -screenWidth = Listen */
+  const tabSlideAnim = useRef(new Animated.Value(0)).current;
+  const [listenColumnMounted, setListenColumnMounted] = useState(false);
+  const listenColumnEverMountedRef = useRef(false);
   const currentTabRef = useRef(currentTab);
   const isDrawerVisibleRef = useRef(isDrawerVisible);
   const currentPageRef = useRef(currentPage);
@@ -4272,12 +4305,39 @@ export default function App() {
   }, [currentTab]);
 
   useEffect(() => {
+    setChromeTab(currentTab);
+  }, [currentTab]);
+
+  // Keep carousel offset aligned with tab (e.g. after remount, or if tab changed without animation).
+  useLayoutEffect(() => {
+    if (currentTab === "Learn") return;
+    const w = Dimensions.get("window").width;
+    if (currentTab === "Listen") {
+      tabSlideAnim.setValue(-w);
+      if (!listenColumnEverMountedRef.current) {
+        listenColumnEverMountedRef.current = true;
+        setListenColumnMounted(true);
+      }
+    } else if (currentTab === "Recite") {
+      tabSlideAnim.setValue(0);
+    }
+  }, [currentTab]);
+
+  useEffect(() => {
     isDrawerVisibleRef.current = isDrawerVisible;
   }, [isDrawerVisible]);
 
   useEffect(() => {
     currentPageRef.current = currentPage;
   }, [currentPage]);
+
+  useEffect(() => {
+    // Listen UX toggle: if no recitation player is visible, force-hide the left sidebar.
+    // Keep this guard here so we can easily relax it later.
+    if (currentTab === "Listen" && !listenPlayerVisible && isDrawerVisible) {
+      closeDrawer();
+    }
+  }, [currentTab, listenPlayerVisible, isDrawerVisible]);
 
   // Load saved mushaf preference (2 = 13 Liner IndoPak, 3 = 15 Liner Uthmani)
   useEffect(() => {
@@ -4348,18 +4408,21 @@ export default function App() {
           // Drawer is in invalid state - force close immediately
           console.warn("Drawer in invalid state, forcing close:", currentValue);
           drawerAnim.setValue(-DRAWER_WIDTH);
+          drawerBottomNavAnim.setValue(DRAWER_BOTTOM_NAV_SLIDE);
           backdropAnim.setValue(0);
           setIsDrawerVisible(false);
           setIsDrawerFullyOpen(false);
         } else if (currentValue === 0) {
           // Drawer is fully open
           setIsDrawerFullyOpen(true);
+          drawerBottomNavAnim.setValue(0);
         }
       } else if (!isDrawerVisible && currentTab === "Recite") {
         // If drawer should be invisible, ensure it's fully closed
         const currentValue = drawerAnim._value;
         if (currentValue > -DRAWER_WIDTH) {
           drawerAnim.setValue(-DRAWER_WIDTH);
+          drawerBottomNavAnim.setValue(0);
           backdropAnim.setValue(0);
         }
         setIsDrawerFullyOpen(false);
@@ -4383,11 +4446,13 @@ export default function App() {
         if (value > -DRAWER_WIDTH * 0.5) {
           // More than halfway, snap to open
           drawerAnim.setValue(0);
+          drawerBottomNavAnim.setValue(0);
           backdropAnim.setValue(1);
           setIsDrawerFullyOpen(true);
         } else {
           // Less than halfway, snap to closed
           drawerAnim.setValue(-DRAWER_WIDTH);
+          drawerBottomNavAnim.setValue(DRAWER_BOTTOM_NAV_SLIDE);
           backdropAnim.setValue(0);
           setIsDrawerVisible(false);
           setIsDrawerFullyOpen(false);
@@ -4408,12 +4473,20 @@ export default function App() {
     // If drawer is in an intermediate state, snap it to nearest valid state
     if (currentValue > -threshold && currentValue < 0) {
       // More than 30% open, snap to fully open
-      Animated.spring(drawerAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        damping: 20,
-        stiffness: 300,
-      }).start(() => {
+      Animated.parallel([
+        Animated.spring(drawerAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 20,
+          stiffness: 300,
+        }),
+        Animated.spring(drawerBottomNavAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 20,
+          stiffness: 300,
+        }),
+      ]).start(() => {
         Animated.timing(backdropAnim, {
           toValue: 1,
           duration: 200,
@@ -4453,7 +4526,10 @@ export default function App() {
         drawerStartValueRef.current = drawerAnim._value;
         
         if (!isDrawerOpen) {
+          backdropAnim.setValue(0);
           setIsDrawerVisible(true);
+          isDrawerVisibleRef.current = true;
+          drawerBottomNavAnim.setValue(DRAWER_BOTTOM_NAV_SLIDE);
         }
       })
       .onUpdate((event) => {
@@ -4465,6 +4541,10 @@ export default function App() {
           Math.min(0, drawerStartValueRef.current + event.translationX)
         );
         drawerAnim.setValue(newValue);
+        const openT = (newValue + DRAWER_WIDTH) / DRAWER_WIDTH;
+        drawerBottomNavAnim.setValue(
+          DRAWER_BOTTOM_NAV_SLIDE * (1 - Math.max(0, Math.min(1, openT)))
+        );
       })
       .onEnd((event) => {
         const wasDragging = isDraggingDrawerRef.current;
@@ -4496,18 +4576,25 @@ export default function App() {
           (velocity > 500 && event.translationX > 0);
         
         if (shouldOpen) {
-          // Animate to fully open - MUST reach 0
-          Animated.spring(drawerAnim, {
-            toValue: 0,
-            useNativeDriver: true,
-            damping: 20,
-            stiffness: 300,
-          }).start((finished) => {
+          // Animate to fully open - MUST reach 0 (bottom nav rises in parallel)
+          Animated.parallel([
+            Animated.spring(drawerAnim, {
+              toValue: 0,
+              useNativeDriver: true,
+              damping: 20,
+              stiffness: 300,
+            }),
+            Animated.spring(drawerBottomNavAnim, {
+              toValue: 0,
+              useNativeDriver: true,
+              damping: 20,
+              stiffness: 300,
+            }),
+          ]).start(({ finished }) => {
             if (finished) {
-              // Ensure it's exactly 0
               drawerAnim.setValue(0);
+              drawerBottomNavAnim.setValue(0);
               setIsDrawerFullyOpen(true);
-              // Only fade in backdrop when drawer is fully open
               Animated.timing(backdropAnim, {
                 toValue: 1,
                 duration: 200,
@@ -4530,9 +4617,11 @@ export default function App() {
             // Invalid state - force to nearest valid state
             if (currentValue > -DRAWER_WIDTH * 0.5) {
               drawerAnim.setValue(0);
+              drawerBottomNavAnim.setValue(0);
               backdropAnim.setValue(1);
             } else {
               drawerAnim.setValue(-DRAWER_WIDTH);
+              drawerBottomNavAnim.setValue(DRAWER_BOTTOM_NAV_SLIDE);
               backdropAnim.setValue(0);
               setIsDrawerVisible(false);
               setIsDrawerFullyOpen(false);
@@ -4545,59 +4634,133 @@ export default function App() {
   const openDrawer = () => {
     isAnimatingDrawerRef.current = true;
     setIsDrawerVisible(true);
-    // First open the drawer, then fade in the backdrop when fully open
-    Animated.timing(drawerAnim, {
-      toValue: 0,
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start((finished) => {
-      if (finished) {
-        // Ensure it's exactly 0
-        drawerAnim.setValue(0);
-        setIsDrawerFullyOpen(true);
-        // Only fade in backdrop when drawer is fully open
-        Animated.timing(backdropAnim, {
-          toValue: 1,
+    isDrawerVisibleRef.current = true;
+    backdropAnim.setValue(0);
+    drawerAnim.setValue(-DRAWER_WIDTH);
+    drawerBottomNavAnim.setValue(DRAWER_BOTTOM_NAV_SLIDE);
+    // Start motion after the next frame so the overlay mounts at the “fully hidden” start pose (mirrors close)
+    requestAnimationFrame(() => {
+      Animated.parallel([
+        Animated.timing(drawerAnim, {
+          toValue: 0,
           duration: 200,
-          easing: Easing.out(Easing.ease),
+          easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
-        }).start(() => {
+        }),
+        Animated.timing(drawerBottomNavAnim, {
+          toValue: 0,
+          duration: 200,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) {
+          drawerAnim.setValue(0);
+          drawerBottomNavAnim.setValue(0);
+          setIsDrawerFullyOpen(true);
+          Animated.timing(backdropAnim, {
+            toValue: 1,
+            duration: 200,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }).start(() => {
+            isAnimatingDrawerRef.current = false;
+          });
+        } else {
           isAnimatingDrawerRef.current = false;
-        });
-      } else {
-        isAnimatingDrawerRef.current = false;
-      }
+        }
+      });
     });
   };
 
-  const closeDrawer = () => {
-    isDraggingDrawerRef.current = false; // Stop any dragging
+  const closeDrawer = (options) => {
+    const opts =
+      options && typeof options === "object" && options.nativeEvent === undefined
+        ? options
+        : {};
+    const { animateBottomNav = true, onClosed } = opts;
+
+    isDraggingDrawerRef.current = false;
     isAnimatingDrawerRef.current = true;
-    Animated.parallel([
+    backdropAnim.setValue(0);
+
+    const finishClose = () => {
+      drawerAnim.setValue(-DRAWER_WIDTH);
+      backdropAnim.setValue(0);
+      isDrawerVisibleRef.current = false;
+      setIsDrawerVisible(false);
+      setIsDrawerFullyOpen(false);
+      onClosed?.();
+    };
+
+    if (animateBottomNav) {
+      Animated.parallel([
+        Animated.timing(drawerAnim, {
+          toValue: -DRAWER_WIDTH,
+          duration: 200,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+        Animated.timing(drawerBottomNavAnim, {
+          toValue: DRAWER_BOTTOM_NAV_SLIDE,
+          duration: 200,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished) finishClose();
+        isAnimatingDrawerRef.current = false;
+      });
+    } else {
+      drawerBottomNavAnim.setValue(0);
       Animated.timing(drawerAnim, {
         toValue: -DRAWER_WIDTH,
         duration: 200,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
-      }),
-      Animated.timing(backdropAnim, {
-        toValue: 0,
-        duration: 200,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start((finished) => {
-      if (finished) {
-        // Ensure it's exactly closed
-        drawerAnim.setValue(-DRAWER_WIDTH);
-        backdropAnim.setValue(0);
-        setIsDrawerVisible(false);
-        setIsDrawerFullyOpen(false);
-      }
-      isAnimatingDrawerRef.current = false;
-    });
+      }).start(({ finished }) => {
+        if (finished) finishClose();
+        isAnimatingDrawerRef.current = false;
+      });
+    }
   };
+
+  const goToListenTabAnimated = useCallback(() => {
+    if (currentTabRef.current === "Listen") return;
+    const w = Dimensions.get("window").width;
+    const runSlide = () => {
+      tabSlideAnim.stopAnimation();
+      Animated.timing(tabSlideAnim, {
+        toValue: -w,
+        duration: TAB_SLIDE_DURATION,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setCurrentTab("Listen");
+      });
+    };
+    if (!listenColumnEverMountedRef.current) {
+      listenColumnEverMountedRef.current = true;
+      setListenColumnMounted(true);
+      requestAnimationFrame(() => requestAnimationFrame(runSlide));
+    } else {
+      runSlide();
+    }
+  }, [tabSlideAnim]);
+
+  const goToReciteTabAnimated = useCallback(() => {
+    if (currentTabRef.current === "Recite") return;
+    setChromeTab("Recite");
+    tabSlideAnim.stopAnimation();
+    Animated.timing(tabSlideAnim, {
+      toValue: 0,
+      duration: TAB_SLIDE_DURATION,
+      easing: Easing.inOut(Easing.cubic),
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) setCurrentTab("Recite");
+    });
+  }, [tabSlideAnim]);
 
   // Variations sidebar (right-sliding) - lists all narration changes for mushaf traversal
   // Fetched once in background when narrators are selected; no refetch on sidebar open
@@ -5072,6 +5235,61 @@ export default function App() {
     [narratorVariations, currentPage]
   );
 
+  const selectedTraversalNarratorIds = useMemo(
+    () => selectedNarrators.filter((id) => id !== "hafs-an-asim").slice(0, 2),
+    [selectedNarrators]
+  );
+
+  const selectedTraversalNarrators = useMemo(
+    () =>
+      selectedTraversalNarratorIds.map((id) => {
+        for (const parent of parentNarrators) {
+          const child = parent.children.find((c) => c.id === id);
+          if (child) {
+            return {
+              id,
+              title: child.title || "Narrator",
+              highlightColor: child.highlight_color || "#f5a623",
+            };
+          }
+        }
+        return { id, title: "Narrator", highlightColor: "#f5a623" };
+      }),
+    [selectedTraversalNarratorIds, parentNarrators]
+  );
+
+  const activeTraversalVariation = narratorVariations[currentVariationIndex] ?? null;
+  const activeTraversalWordId = activeTraversalVariation?.word?.id ?? null;
+  const activeHafsTraversalText = activeTraversalVariation?.word?.content ?? "—";
+
+  const traversalNarratorCards = useMemo(() => {
+    return selectedTraversalNarrators.map((narrator) => {
+      const narratorAll = allMushafVariations.filter(
+        (v) =>
+          String(v.narrator_id) === String(narrator.id) ||
+          String(v.narrator?.id) === String(narrator.id)
+      );
+
+      let active = null;
+      if (activeTraversalWordId != null) {
+        active = narratorAll.find((v) => String(v.word?.id) === String(activeTraversalWordId)) ?? null;
+      }
+      if (!active) {
+        active =
+          narratorAll.find((v) => (v.word?.line?.page?.position ?? 0) === currentPage) ??
+          narratorAll[0] ??
+          null;
+      }
+
+      return {
+        id: narrator.id,
+        title: narrator.title,
+        highlightColor: narrator.highlightColor,
+        content: active?.content ?? "—",
+      };
+    });
+  }, [selectedTraversalNarrators, allMushafVariations, activeTraversalWordId, currentPage]);
+
   // When page changes (e.g. via swipe) or variations load, sync active state to first variation on current page
   useEffect(() => {
     if (currentPageVariations.length === 0) return;
@@ -5367,6 +5585,9 @@ if (response.ok) {
   }, [selectedNarrators]);
 
   const handleWordPress = (word) => {
+    if (isDrawerVisibleRef.current) {
+      closeDrawer();
+    }
     try {
       // Temporary debug logging for Shu'bah word audio work
       console.log("🔍 Held word info:", {
@@ -5670,59 +5891,6 @@ if (response.ok) {
     }
   };
 
-  // Delete variation from sheet (swipe-to-delete) - updates mushaf, sheet cache, and API
-  const handleDeleteVariationFromSheet = async (variation) => {
-    const wordId = variation.word?.id ?? variation.word_id;
-    const narratorId = variation.narrator?.id ?? variation.narrator_id;
-    if (wordId == null || narratorId == null) return;
-    const variationKey = `${wordId}-${narratorId}`;
-
-    // Optimistically remove from all caches
-    setAllVariations((prev) => {
-      const next = { ...prev };
-      delete next[variationKey];
-      return next;
-    });
-    setSavedVariations((prev) => prev.filter((k) => k !== variationKey));
-    setAllMushafVariations((prev) =>
-      prev.filter((v) => !(String(v.word?.id ?? v.word_id) === String(wordId) && String(v.narrator?.id ?? v.narrator_id) === String(narratorId)))
-    );
-
-    // Clear selection if we deleted the currently highlighted variation
-    if (
-      lastSelectedVariationHighlight &&
-      String(lastSelectedVariationHighlight.wordId) === String(wordId)
-    ) {
-      setLastSelectedVariationHighlight(null);
-      setSelectedWordId(null);
-      setSelectedWord(null);
-    }
-
-    try {
-      const response = await fetch(
-        `${VARIATIONS_URL}/by_keys?word_id=${wordId}&narrator_id=${narratorId}`,
-        { method: "DELETE" }
-      );
-
-      if (response.ok || response.status === 204) {
-        setTimeout(async () => {
-          await refreshVariations();
-          await fetchAllVariations();
-        }, 100);
-      } else {
-        console.error("Failed to delete variation on server, status:", response.status);
-        await refreshVariations();
-        await fetchAllVariations();
-      }
-    } catch (e) {
-      console.error("Error deleting variation:", e);
-      setTimeout(async () => {
-        await refreshVariations();
-        await fetchAllVariations();
-      }, 500);
-    }
-  };
-
   const handleListenPlaybackStatusUpdate = useCallback((status) => {
     if (!status?.isLoaded) {
       setListenIsPlaying(false);
@@ -5849,25 +6017,39 @@ if (response.ok) {
   // Bottom inset for home indicator so bar can extend to screen bottom without overlap
   const bottomBarInset = Platform.OS === "ios" ? 34 : 0;
   const isDrawerPlayerCompact = isDrawerVisible;
+  const isListenTab = currentTab === "Listen";
+  const screenWidth = Dimensions.get("window").width;
+  // Listen UX toggle: sidebar allowed only when recitation window/player is active.
+  // Keep this condition explicit so we can switch behavior later.
+  const canShowListenSidebar = listenPlayerVisible;
+  /** Dark notch / status strip like mushaf top bar (#1F1F22), not Learn */
+  const mushafStyleTopChrome =
+    chromeTab === "Recite" || chromeTab === "Listen";
 
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView
         style={[
           { flex: 1 },
-          currentTab === "Recite" &&
-            isMushafDarkMode && { backgroundColor: "#1F1F22" },
+          mushafStyleTopChrome && { backgroundColor: "#1F1F22" },
         ]}
       >
-        <StatusBar barStyle={isMushafDarkMode ? "light-content" : "dark-content"} />
+        <StatusBar
+          barStyle={
+            mushafStyleTopChrome || isMushafDarkMode
+              ? "light-content"
+              : "dark-content"
+          }
+        />
         <SafeAreaViewEdged
           edges={["top"]}
           style={[
             styles.safeArea,
             isMushafDarkMode && styles.safeAreaDark,
+            mushafStyleTopChrome && styles.safeAreaReciteTopChrome,
           ]}
         >
-        {currentTab !== "Recite" && (
+        {chromeTab === "Learn" && (
           <View style={styles.navBar}>
             <TouchableOpacity
               accessibilityRole="button"
@@ -5876,7 +6058,7 @@ if (response.ok) {
             >
               <Text style={styles.navIcon}>☰</Text>
             </TouchableOpacity>
-            <Text style={styles.navTitle}>{currentTab}</Text>
+            <Text style={styles.navTitle}>{chromeTab}</Text>
             <View style={styles.navRightSpacer} />
           </View>
         )}
@@ -5887,12 +6069,31 @@ if (response.ok) {
             isMushafDarkMode && styles.mainContainerDark,
           ]}
         >
-          {currentTab === "Recite" && (
-            <>
+          {currentTab !== "Learn" && (
+            <View style={{ flex: 1, width: screenWidth, overflow: "hidden" }}>
+              <Animated.View
+                style={{
+                  flexDirection: "row",
+                  width: screenWidth * 2,
+                  flex: 1,
+                  minWidth: screenWidth * 2,
+                  transform: [{ translateX: tabSlideAnim }],
+                }}
+              >
+                <View style={{ width: screenWidth, flex: 1 }}>
+            <View
+              style={styles.mushafReciteColumn}
+              onStartShouldSetResponderCapture={() => {
+                if (isDrawerVisibleRef.current) {
+                  closeDrawer();
+                }
+                return false;
+              }}
+            >
               {/* Top bar with selected narrators */}
               <View style={styles.mushafTopBar}>
                 <TouchableOpacity
-                  onPress={isDrawerFullyOpen ? closeDrawer : openDrawer}
+                  onPress={() => (isDrawerFullyOpen ? closeDrawer() : openDrawer())}
                   style={styles.mushafMenuButton}
                 >
                   <Text style={styles.mushafMenuIcon}>☰</Text>
@@ -5902,6 +6103,9 @@ if (response.ok) {
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.mushafNarratorPills}
+                  onScrollBeginDrag={() => {
+                    if (isDrawerVisibleRef.current) closeDrawer();
+                  }}
                 >
                   {selectedNarrators
                     .filter(id => id !== "hafs-an-asim") // Exclude Hafs from pills
@@ -5949,15 +6153,12 @@ if (response.ok) {
                   <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
                   <TouchableOpacity
                     style={styles.mushafIconButton}
-                    onPress={() => setShowPageSlider(true)}
+                    onPress={() => {
+                      if (isDrawerVisibleRef.current) closeDrawer();
+                      setShowPageSlider(true);
+                    }}
                   >
                     <Search stroke="#ffffff" width={20} height={20} />
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.mushafIconButton}
-                    onPress={() => {}}
-                  >
-                    <Bookmark stroke="#ffffff" width={20} height={20} />
                   </TouchableOpacity>
                 </View>
               </View>
@@ -5977,6 +6178,9 @@ if (response.ok) {
                   // RTL: initial index is inverted so higher page numbers appear on the left
                   initialPage={Math.max(0, TOTAL_PAGES - currentPage)}
                   onPageSelected={(e) => {
+                    if (isDrawerVisibleRef.current) {
+                      closeDrawer();
+                    }
                     const position = e.nativeEvent.position ?? 0;
                     // RTL: pager index is inverted into page number
                     const newPageNum = TOTAL_PAGES - position;
@@ -6024,15 +6228,20 @@ if (response.ok) {
 
               {/* Variations bottom sheet - sits under the traversal bar */}
               <VariationBottomSheet
-                isVisible={currentTab === "Recite" && isVariationBottomSheetVisible}
+                isVisible={
+                  currentTab === "Recite" &&
+                  !!firstSelectedNarratorId &&
+                  isVariationBottomSheetVisible
+                }
+                showHandle={!!firstSelectedNarratorId}
                 variations={allMushafVariations}
+                comparisonNarrators={selectedTraversalNarrators}
                 currentPage={currentPage}
                 lastSelectedVariationHighlight={lastSelectedVariationHighlight}
                 mushafId={mushafId}
                 getQuranFontFamily={getQuranFontFamily}
                 onExpandedChange={setIsVariationBottomSheetExpanded}
                 registerTranslateY={setSheetTranslateY}
-                onDeleteVariation={handleDeleteVariationFromSheet}
                 onSelectVariation={(variation, { pageNum, wordId }) => {
                   setLastSelectedVariationHighlight(
                     wordId != null ? { wordId, pageNum } : null
@@ -6049,22 +6258,27 @@ if (response.ok) {
                 }}
               />
 
-              {/* Bottom bar: variation traversal when narrator selected, else prompt to select */}
-              {firstSelectedNarratorId ? (
-                <Animated.View
-                  style={[
-                    styles.variationTraversalBar,
-                    { paddingBottom: RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset },
-                    barVisibleStyle,
-                  ]}
-                  onStartShouldSetResponder={() => true}
-                  onResponderRelease={() => {
-                    if (allMushafVariations.length > 0) {
-                      setIsVariationBottomSheetVisible(true);
-                    }
-                  }}
-                >
-                  {/* Left arrow - next variation */}
+              {/* Bottom bar always visible; empty-state content lives inside this same container */}
+              <Animated.View
+                style={[
+                  styles.variationTraversalBar,
+                  !firstSelectedNarratorId && styles.variationTraversalBarEmpty,
+                  {
+                    paddingBottom: firstSelectedNarratorId
+                      ? RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset
+                      : 0 + bottomBarInset,
+                  },
+                  barVisibleStyle,
+                ]}
+                onStartShouldSetResponder={() => true}
+                onResponderRelease={() => {
+                  if (firstSelectedNarratorId && allMushafVariations.length > 0) {
+                    setIsVariationBottomSheetVisible(true);
+                  }
+                }}
+              >
+                {firstSelectedNarratorId && (
+                  /* Left arrow - next variation */
                   <TouchableOpacity
                     style={[
                       styles.variationTraversalArrowButton,
@@ -6098,79 +6312,72 @@ if (response.ok) {
                       ‹
                     </Text>
                   </TouchableOpacity>
+                )}
 
-                  {/* Centered segmented control: Hafs | Shubah */}
+                {firstSelectedNarratorId ? (
                   <View style={styles.variationTraversalSegmentedControl}>
-                    <View style={styles.variationTraversalSegment}>
-                      <Text style={styles.variationTraversalSegmentLabel}>Hafs</Text>
-                      <Text
-                        style={[styles.variationTraversalSegmentText, { fontFamily: getQuranFontFamily(mushafId) }]}
-                        numberOfLines={1}
-                      >
-                        {narratorVariations[currentVariationIndex]?.word?.content ??
-                          (narratorVariations.length === 0 ? "—" : "")}
-                      </Text>
-                    </View>
-                    <Text style={styles.variationTraversalSegmentDivider}>›</Text>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() => {
-                        if (
-                          isShubahHighlight &&
-                          currentSurahNumber &&
-                          selectedWord &&
-                          shubahBottomPlayRef.current?.play
-                        ) {
-                          shubahBottomPlayRef.current.play();
-                        }
-                      }}
-                      style={[
-                        styles.variationTraversalSegment,
-                        styles.variationTraversalSegmentActive,
-                        styles.variationTraversalSegmentPlayable,
-                      ]}
-                    >
-                      <Text style={styles.variationTraversalSegmentLabel}>
-                        {firstNarratorTitle || narratorVariations[0]?.narrator?.title || "Narrator"}
-                      </Text>
-                      <View style={styles.variationTraversalNarratorRow}>
+                    <View style={styles.variationTraversalCard}>
+                      <Text style={styles.variationTraversalCardLabel}>Hafs</Text>
+                      <View style={styles.variationTraversalCardWordWrap}>
                         <Text
                           style={[
-                            styles.variationTraversalSegmentText,
-                            styles.variationTraversalSegmentTextActive,
+                            styles.variationTraversalCardWord,
                             { fontFamily: getQuranFontFamily(mushafId) },
                           ]}
                           numberOfLines={1}
                         >
-                          {narratorVariations[currentVariationIndex]?.content ??
-                            (narratorVariations.length === 0
-                              ? "No variations on this page"
-                              : "")}
+                          {activeHafsTraversalText}
                         </Text>
-                        {isShubahHighlight &&
-                          currentSurahNumber &&
-                          selectedWord && (
-                            <View style={styles.variationTraversalPlayWrapper}>
-                              <ShubahWordAudioButton
-                                ref={shubahBottomPlayRef}
-                                word={selectedWord}
-                                surahNumber={currentSurahNumber}
-                                showIcon={false}
-                              />
-                            </View>
-                          )}
                       </View>
-                      {shubahHasTimestamp && (
-                        <View style={styles.variationTraversalPlayIndicator}>
-                          <Text style={styles.variationTraversalPlayIndicatorIcon}>
-                            ▶
+                    </View>
+                    <Text style={styles.variationTraversalSwapIcon}>↔</Text>
+                    {traversalNarratorCards.map((card) => (
+                      <View
+                        key={`traversal-card-${card.id}`}
+                        style={[styles.variationTraversalCard, styles.variationTraversalCardNarrator]}
+                      >
+                        <Text style={styles.variationTraversalCardLabel}>{card.title}</Text>
+                        <View
+                          style={[
+                            styles.variationTraversalCardWordWrap,
+                            styles.variationTraversalCardWordWrapNarrator,
+                            { borderColor: card.highlightColor },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.variationTraversalCardWord,
+                              styles.variationTraversalCardWordActive,
+                              { fontFamily: getQuranFontFamily(mushafId) },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {card.content}
                           </Text>
                         </View>
-                      )}
-                    </TouchableOpacity>
+                      </View>
+                    ))}
                   </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.noRiwayahBannerInTraversal}
+                    onPress={openDrawer}
+                    activeOpacity={0.8}
+                  >
+                    <View style={styles.noRiwayahBannerIcon}>
+                      <Text style={styles.noRiwayahBannerIconText}>+</Text>
+                    </View>
+                    <View style={styles.noRiwayahBannerText}>
+                      <Text style={styles.noRiwayahBannerTitle}>No Riwaayah Selected</Text>
+                      <Text style={styles.noRiwayahBannerSubtitle}>
+                        Open menu to compare recitations
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
 
-                  {/* Right arrow - previous variation */}
+                {firstSelectedNarratorId && (
+                  /* Right arrow - previous variation */
                   <TouchableOpacity
                     style={[
                       styles.variationTraversalArrowButton,
@@ -6205,25 +6412,175 @@ if (response.ok) {
                       ›
                     </Text>
                   </TouchableOpacity>
-                </Animated.View>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.noRiwayahBanner, { marginBottom: bottomBarInset }]}
-                  onPress={openDrawer}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.noRiwayahBannerIcon}>
-                    <Text style={styles.noRiwayahBannerIconText}>+</Text>
-                  </View>
-                  <View style={styles.noRiwayahBannerText}>
-                    <Text style={styles.noRiwayahBannerTitle}>No Riwaayah Selected</Text>
-                    <Text style={styles.noRiwayahBannerSubtitle}>
-                      Open menu to compare recitations
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-            </>
+                )}
+              </Animated.View>
+            </View>
+                </View>
+
+                <View style={{ width: screenWidth, flex: 1, position: "relative" }}>
+                  {listenColumnMounted ? (
+                    <>
+                      <View style={styles.listenContainer}>
+                        <ScrollView
+                          contentContainerStyle={[
+                            styles.listenScrollContent,
+                            styles.listenScrollContentWithBottomNav,
+                            listenPlayerVisible && styles.listenScrollContentWithPlayer,
+                          ]}
+                          showsVerticalScrollIndicator={false}
+                        >
+                          <View style={styles.listenSection}>
+                            <Text style={styles.listenSectionTitle}>Quran Library</Text>
+                            <Text style={styles.listenSectionSubtitle}>{LISTEN_RECITER_TITLE}</Text>
+                            <View style={styles.listenFilterRow}>
+                              <TouchableOpacity
+                                style={styles.listenFilterChip}
+                                onPress={() =>
+                                  setSelectedListenReciter((prev) =>
+                                    prev === LISTEN_RECITER_FILE_SLUG ? "all" : LISTEN_RECITER_FILE_SLUG
+                                  )
+                                }
+                                activeOpacity={0.85}
+                              >
+                                <Text style={styles.listenFilterChipLabel}>Reciter</Text>
+                                <Text style={styles.listenFilterChipValue} numberOfLines={1}>
+                                  {selectedListenReciter === "all" ? "All" : LISTEN_RECITER_TITLE}
+                                </Text>
+                              </TouchableOpacity>
+
+                              <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={styles.listenNarratorPills}
+                              >
+                                {listenNarratorOptions.map((option) => {
+                                  const selected = selectedListenNarrator === option.id;
+                                  return (
+                                    <TouchableOpacity
+                                      key={option.id}
+                                      style={[
+                                        styles.listenNarratorPill,
+                                        selected && styles.listenNarratorPillSelected,
+                                      ]}
+                                      onPress={() => setSelectedListenNarrator(option.id)}
+                                      activeOpacity={0.85}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.listenNarratorPillText,
+                                          selected && styles.listenNarratorPillTextSelected,
+                                        ]}
+                                      >
+                                        {option.label}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </ScrollView>
+
+                              <View style={styles.listenSurahInputWrap}>
+                                <Text style={styles.listenSurahInputLabel}>Surah</Text>
+                                <TextInput
+                                  value={listenSurahQuery}
+                                  onChangeText={setListenSurahQuery}
+                                  placeholder="Search name or #"
+                                  placeholderTextColor="#94a3b8"
+                                  style={styles.listenSurahInput}
+                                />
+                              </View>
+                            </View>
+
+                            <View style={styles.listenGrid}>
+                              {listenFilteredRows.length === 0 ? (
+                                <Text style={styles.listenEmptyText}>No surahs match these filters.</Text>
+                              ) : (
+                                listenFilteredRows.map((row, rowIndex) => (
+                                  <View key={`listen-row-filtered-${rowIndex}`} style={styles.listenGridRow}>
+                                    {row.map((track) => {
+                                      const isActive = activeListenTrack?.trackKey === track.trackKey;
+                                      const narratorMeta = listenNarratorMetaById[track.riwayahId] || {
+                                        label: track.riwayahLabel || "Narrator",
+                                        color: "#334155",
+                                      };
+                                      return (
+                                        <TouchableOpacity
+                                          key={`listen-track-${track.trackKey}`}
+                                          style={styles.listenCard}
+                                          activeOpacity={0.85}
+                                          onPress={() => handlePlayListenTrack(track)}
+                                        >
+                                          <View style={styles.listenThumb}>
+                                            <Image
+                                              source={LISTEN_RECITER_AVATAR}
+                                              style={styles.listenThumbImage}
+                                              resizeMode="cover"
+                                            />
+                                            <View style={styles.listenPlayBadge}>
+                                              <Text style={styles.listenPlayBadgeText}>
+                                                {isActive && listenIsPlaying ? "❚❚" : "▶"}
+                                              </Text>
+                                            </View>
+                                          </View>
+                                          <Text style={styles.listenCardTitle} numberOfLines={1}>
+                                            {`Surah ${track.index}`}
+                                          </Text>
+                                          <Text style={styles.listenCardSubtitle} numberOfLines={1}>
+                                            {track.name}
+                                          </Text>
+                                          <View
+                                            style={[
+                                              styles.listenNarratorBadge,
+                                              { backgroundColor: narratorMeta.color },
+                                            ]}
+                                          >
+                                            <Text style={styles.listenNarratorBadgeText} numberOfLines={1}>
+                                              {narratorMeta.label}
+                                            </Text>
+                                          </View>
+                                        </TouchableOpacity>
+                                      );
+                                    })}
+                                  </View>
+                                ))
+                              )}
+                            </View>
+                          </View>
+                        </ScrollView>
+                      </View>
+                      <View style={styles.listenPersistentBottomNav}>
+                        <TouchableOpacity style={styles.drawerNavButton} onPress={goToReciteTabAnimated}>
+                          <Text
+                            style={[styles.drawerNavIcon, chromeTab === "Recite" && styles.drawerNavIconActive]}
+                          >
+                            📖
+                          </Text>
+                          <Text
+                            style={[styles.drawerNavLabel, chromeTab === "Recite" && styles.drawerNavLabelActive]}
+                          >
+                            Mushaf
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.drawerNavButton} onPress={goToListenTabAnimated}>
+                          <Text
+                            style={[styles.drawerNavIcon, chromeTab === "Listen" && styles.drawerNavIconActive]}
+                          >
+                            🎧
+                          </Text>
+                          <Text
+                            style={[styles.drawerNavLabel, chromeTab === "Listen" && styles.drawerNavLabelActive]}
+                          >
+                            Recitation
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <View style={{ flex: 1 }} />
+                  )}
+                </View>
+              </Animated.View>
+            </View>
           )}
 
           {currentTab === "Learn" && (
@@ -6314,135 +6671,6 @@ if (response.ok) {
               )}
             </View>
           )}
-
-          {currentTab === "Listen" && (
-            <View style={styles.listenContainer}>
-              <ScrollView
-                contentContainerStyle={[
-                  styles.listenScrollContent,
-                  listenPlayerVisible && styles.listenScrollContentWithPlayer,
-                ]}
-                showsVerticalScrollIndicator={false}
-              >
-                <View style={styles.listenSection}>
-                  <Text style={styles.listenSectionTitle}>Quran Library</Text>
-                  <Text style={styles.listenSectionSubtitle}>{LISTEN_RECITER_TITLE}</Text>
-                  <View style={styles.listenFilterRow}>
-                    <TouchableOpacity
-                      style={styles.listenFilterChip}
-                      onPress={() =>
-                        setSelectedListenReciter((prev) =>
-                          prev === LISTEN_RECITER_FILE_SLUG ? "all" : LISTEN_RECITER_FILE_SLUG
-                        )
-                      }
-                      activeOpacity={0.85}
-                    >
-                      <Text style={styles.listenFilterChipLabel}>Reciter</Text>
-                      <Text style={styles.listenFilterChipValue} numberOfLines={1}>
-                        {selectedListenReciter === "all" ? "All" : LISTEN_RECITER_TITLE}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.listenNarratorPills}
-                    >
-                      {listenNarratorOptions.map((option) => {
-                        const selected = selectedListenNarrator === option.id;
-                        return (
-                          <TouchableOpacity
-                            key={option.id}
-                            style={[
-                              styles.listenNarratorPill,
-                              selected && styles.listenNarratorPillSelected,
-                            ]}
-                            onPress={() => setSelectedListenNarrator(option.id)}
-                            activeOpacity={0.85}
-                          >
-                            <Text
-                              style={[
-                                styles.listenNarratorPillText,
-                                selected && styles.listenNarratorPillTextSelected,
-                              ]}
-                            >
-                              {option.label}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-
-                    <View style={styles.listenSurahInputWrap}>
-                      <Text style={styles.listenSurahInputLabel}>Surah</Text>
-                      <TextInput
-                        value={listenSurahQuery}
-                        onChangeText={setListenSurahQuery}
-                        placeholder="Search name or #"
-                        placeholderTextColor="#94a3b8"
-                        style={styles.listenSurahInput}
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.listenGrid}>
-                    {listenFilteredRows.length === 0 ? (
-                      <Text style={styles.listenEmptyText}>No surahs match these filters.</Text>
-                    ) : (
-                      listenFilteredRows.map((row, rowIndex) => (
-                        <View key={`listen-row-filtered-${rowIndex}`} style={styles.listenGridRow}>
-                          {row.map((track) => {
-                            const isActive = activeListenTrack?.trackKey === track.trackKey;
-                            const narratorMeta = listenNarratorMetaById[track.riwayahId] || {
-                              label: track.riwayahLabel || "Narrator",
-                              color: "#334155",
-                            };
-                            return (
-                              <TouchableOpacity
-                                key={`listen-track-${track.trackKey}`}
-                                style={styles.listenCard}
-                                activeOpacity={0.85}
-                                onPress={() => handlePlayListenTrack(track)}
-                              >
-                                <View style={styles.listenThumb}>
-                                  <Image
-                                    source={LISTEN_RECITER_AVATAR}
-                                    style={styles.listenThumbImage}
-                                    resizeMode="cover"
-                                  />
-                                  <View style={styles.listenPlayBadge}>
-                                    <Text style={styles.listenPlayBadgeText}>
-                                      {isActive && listenIsPlaying ? "❚❚" : "▶"}
-                                    </Text>
-                                  </View>
-                                </View>
-                                <Text style={styles.listenCardTitle} numberOfLines={1}>
-                                  {`Surah ${track.index}`}
-                                </Text>
-                                <Text style={styles.listenCardSubtitle} numberOfLines={1}>
-                                  {track.name}
-                                </Text>
-                                <View
-                                  style={[
-                                    styles.listenNarratorBadge,
-                                    { backgroundColor: narratorMeta.color },
-                                  ]}
-                                >
-                                  <Text style={styles.listenNarratorBadgeText} numberOfLines={1}>
-                                    {narratorMeta.label}
-                                  </Text>
-                                </View>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      ))
-                    )}
-                  </View>
-                </View>
-              </ScrollView>
-            </View>
-          )}
         </View>
         </SafeAreaViewEdged>
 
@@ -6518,10 +6746,21 @@ if (response.ok) {
         </Animated.View>
       )}
 
-      {isDrawerVisible && (
-        <SafeAreaView style={styles.drawerOverlay}>
-          <Animated.View
-            style={[styles.drawer, { transform: [{ translateX: drawerAnim }] }]}
+      {isDrawerVisible && (!isListenTab || canShowListenSidebar) && (
+        <View style={styles.drawerOverlay}>
+          <Pressable
+            style={styles.drawerBackdropPressable}
+            onPressIn={() => closeDrawer()}
+            pointerEvents="auto"
+          >
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.drawerBackdropFill, { opacity: backdropAnim }]}
+            />
+          </Pressable>
+          <DrawerAnimatedPanel
+            drawerAnim={drawerAnim}
+            alignWithMushafContent={!isListenTab}
           >
             <View style={styles.drawerHeader}>
               <View style={styles.drawerHeaderTop}>
@@ -6604,6 +6843,7 @@ if (response.ok) {
                                 key={child.id}
                     style={[
                                   styles.childCard,
+                                  isSelected && styles.childCardSelected,
                                   isHafs && styles.childCardDisabled,
                                 ]}
                                 onPress={isHafs ? undefined : () => handleToggleNarrator(child.id)}
@@ -6652,60 +6892,54 @@ if (response.ok) {
                 );
               })}
             </ScrollView>
-          </Animated.View>
-          <Pressable style={styles.drawerBackdrop} onPress={closeDrawer}>
+          </DrawerAnimatedPanel>
+          {!isListenTab && (
             <Animated.View
-              style={[styles.drawerBackdropFill, { opacity: backdropAnim }]}
-            />
-          </Pressable>
-          
-          {/* Bottom Navigation Bar - Outside drawer, spans full width */}
-          <View style={styles.drawerBottomNav}>
-            <TouchableOpacity
-              style={styles.drawerNavButton}
-              onPress={() => {
-                setCurrentTab("Recite");
-                closeDrawer();
-              }}
+              style={[
+                styles.drawerBottomNav,
+                { transform: [{ translateY: drawerBottomNavAnim }] },
+              ]}
             >
-              <Text style={[styles.drawerNavIcon, currentTab === "Recite" && styles.drawerNavIconActive]}>
-                📖
-              </Text>
-              <Text style={[styles.drawerNavLabel, currentTab === "Recite" && styles.drawerNavLabelActive]}>
-                Mushaf
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.drawerNavButton}
-              onPress={() => {
-                setCurrentTab("Listen");
-                closeDrawer();
-              }}
-            >
-              <Text style={[styles.drawerNavIcon, currentTab === "Listen" && styles.drawerNavIconActive]}>
-                🎧
-              </Text>
-              <Text style={[styles.drawerNavLabel, currentTab === "Listen" && styles.drawerNavLabelActive]}>
-                Recitation
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.drawerNavButton}
-              onPress={() => {
-                setCurrentTab("Learn");
-                closeDrawer();
-              }}
-            >
-              <Text style={[styles.drawerNavIcon, currentTab === "Learn" && styles.drawerNavIconActive]}>
-                📺
-              </Text>
-              <Text style={[styles.drawerNavLabel, currentTab === "Learn" && styles.drawerNavLabelActive]}>
-                Education
-              </Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={styles.drawerNavButton}
+                onPress={() => {
+                  if (currentTab === "Listen") {
+                    closeDrawer({
+                      onClosed: () => goToReciteTabAnimated(),
+                    });
+                  } else {
+                    tabSlideAnim.setValue(0);
+                    if (currentTab !== "Recite") setCurrentTab("Recite");
+                    closeDrawer();
+                  }
+                }}
+              >
+                <Text style={[styles.drawerNavIcon, chromeTab === "Recite" && styles.drawerNavIconActive]}>
+                  📖
+                </Text>
+                <Text style={[styles.drawerNavLabel, chromeTab === "Recite" && styles.drawerNavLabelActive]}>
+                  Mushaf
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.drawerNavButton}
+                onPress={() => {
+                  closeDrawer({
+                    animateBottomNav: false,
+                    onClosed: () => goToListenTabAnimated(),
+                  });
+                }}
+              >
+                <Text style={[styles.drawerNavIcon, chromeTab === "Listen" && styles.drawerNavIconActive]}>
+                  🎧
+                </Text>
+                <Text style={[styles.drawerNavLabel, chromeTab === "Listen" && styles.drawerNavLabelActive]}>
+                  Recitation
+                </Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
           {listenPlayerVisible && activeListenTrack && isDrawerPlayerCompact && (
             <View style={[styles.globalListenPlayer, styles.globalListenPlayerDrawerCompact]}>
               <TouchableOpacity
@@ -6739,7 +6973,7 @@ if (response.ok) {
               </TouchableOpacity>
             </View>
           )}
-        </SafeAreaView>
+        </View>
       )}
 
       {/* Variations sidebar - right-sliding, lists all narration changes for mushaf traversal */}
@@ -7073,6 +7307,29 @@ if (response.ok) {
   );
 }
 
+/** Shared shell for Mushaf / Recitation tab bars (drawer + listen column) — keep pixel-identical */
+const tabBarSurfaceBase = {
+  position: "absolute",
+  bottom: 0,
+  left: 0,
+  right: 0,
+  width: "100%",
+  flexDirection: "row",
+  backgroundColor: "#1F1F22",
+  borderTopLeftRadius: 16,
+  borderTopRightRadius: 16,
+  paddingTop: 12,
+  paddingBottom: Platform.OS === "ios" ? 35 : 12,
+  paddingHorizontal: 8,
+  justifyContent: "space-around",
+  alignItems: "center",
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: -2 },
+  shadowOpacity: 0.1,
+  shadowRadius: 4,
+  elevation: 5,
+};
+
 const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
@@ -7108,6 +7365,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
+  mushafReciteColumn: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
     backgroundColor: "#fff",
@@ -7116,6 +7376,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#1F1F22",
   },
   safeAreaDark: {
+    backgroundColor: "#1F1F22",
+  },
+  // Recite: match status / notch strip to mushafTopBar (#1F1F22) even when page is light mode
+  safeAreaReciteTopChrome: {
     backgroundColor: "#1F1F22",
   },
   navBar: {
@@ -7133,6 +7397,9 @@ const styles = StyleSheet.create({
   navButton: {
     paddingHorizontal: 8,
     paddingVertical: 6,
+  },
+  navButtonHidden: {
+    width: 28,
   },
   navIcon: {
     fontSize: 22,
@@ -7211,21 +7478,30 @@ const styles = StyleSheet.create({
   },
   variationTraversalBar: {
     flexDirection: "row",
-    backgroundColor: "#1F1F22",
-    paddingVertical: 12, // bar inner top/bottom; bottom is overridden by RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset (see top of file)
-    paddingHorizontal: 16,
+    backgroundColor: "#313237",
+    paddingTop: 8,
+    paddingBottom: 8,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "space-between",
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#444",
+    borderTopColor: "#313237",
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    overflow: "hidden",
     zIndex: 2,
     elevation: 11,
   },
+  variationTraversalBarEmpty: {
+    minHeight: 120,
+    paddingTop: 12,
+    justifyContent: "center",
+  },
   variationTraversalArrowButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#56565E",
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -7234,74 +7510,88 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   variationTraversalArrowButtonText: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "600",
     color: "#fff",
+    lineHeight: 30,
   },
   variationTraversalSegmentedControl: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: 12,
-    backgroundColor: "#e8e8e8",
-    borderRadius: 24,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    gap: 4,
+    marginHorizontal: 6,
+    backgroundColor: "#4a4d5b",
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    minHeight: 82,
   },
-  variationTraversalSegment: {
+  variationTraversalCard: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 18,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 12,
     minWidth: 0,
   },
-  variationTraversalSegmentActive: {
-    backgroundColor: "#3a3a3a",
-    borderWidth: 1.5,
-    borderColor: "#f5a623",
+  variationTraversalCardNarrator: {
+    backgroundColor: "transparent",
   },
-  variationTraversalSegmentLabel: {
-    fontSize: 10,
-    color: "#888",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
+  variationTraversalCardLabel: {
+    fontSize: 11,
+    color: "#d8d8db",
+    marginBottom: 4,
   },
-  variationTraversalSegmentText: {
-    fontSize: 32,
-    color: "#1a1a1a",
+  variationTraversalCardWordWrap: {
+    alignSelf: "center",
+    backgroundColor: "#2f313d",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 46,
+    minWidth: 92,
+    paddingHorizontal: 16,
+  },
+  variationTraversalCardWordWrapNarrator: {
+    borderWidth: 1.8,
+  },
+  variationTraversalCardWord: {
+    fontSize: 22,
+    color: "#ffffff",
     textAlign: "center",
+    lineHeight: 0,
   },
-  variationTraversalSegmentTextActive: {
+  variationTraversalCardWordActive: {
     color: "#fff",
   },
-  variationTraversalSegmentDivider: {
-    fontSize: 16,
-    color: "#999",
-    paddingHorizontal: 4,
+  variationTraversalSwapIcon: {
+    fontSize: 24,
+    color: "#d5d5d9",
+    marginHorizontal: 5,
+    lineHeight: 26,
   },
   variationTraversalArrowDisabled: {
     opacity: 0.5,
   },
-  noRiwayahBanner: {
+  noRiwayahBannerInTraversal: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#3a3a3a",
-    marginHorizontal: 16,
-    marginVertical: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    justifyContent: "flex-start",
+    backgroundColor: "#4a4d5b",
+    flex: 1,
+    marginHorizontal: 10,
+    marginVertical: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    minHeight: 60,
   },
   noRiwayahBannerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
@@ -7316,7 +7606,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   noRiwayahBannerTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "600",
     color: "#fff",
     marginBottom: 2,
@@ -7482,12 +7772,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: "row",
+    flexDirection: "column",
     backgroundColor: "transparent",
   },
-  drawerBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.25)",
+  drawerBackdropPressable: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
   drawerBackdropFill: {
     position: "absolute",
@@ -7498,12 +7788,15 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.25)",
   },
   drawer: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
     width: 260,
-    flex: 1,
+    zIndex: 1,
     backgroundColor: "#1F1F22",
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: "#3a3a3a",
-    paddingTop: Platform.OS === "ios" ? 50 : (StatusBar.currentHeight || 0) + 20,
     paddingHorizontal: 16,
     shadowColor: "#000",
     shadowOffset: { width: 2, height: 0 },
@@ -7627,11 +7920,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   childCard: {
-    backgroundColor: "#3a3a3a",
+    backgroundColor: "transparent",
     borderRadius: 12,
     marginBottom: 8,
     overflow: "hidden",
     position: "relative",
+  },
+  childCardSelected: {
+    backgroundColor: "#3a3a3a",
   },
   childCardDisabled: {
     opacity: 0.7,
@@ -7676,25 +7972,7 @@ const styles = StyleSheet.create({
     width: 4,
   },
   drawerBottomNav: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    width: "100%",
-    flexDirection: "row",
-    backgroundColor: "#1F1F22",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === "ios" ? 35 : 12,
-    paddingHorizontal: 8,
-    justifyContent: "space-around",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
+    ...tabBarSurfaceBase,
     zIndex: 10,
   },
   drawerNavButton: {
@@ -7835,8 +8113,16 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 28,
   },
+  listenScrollContentWithBottomNav: {
+    // Clears unified tab bar (same height as drawerBottomNav)
+    paddingBottom: 120,
+  },
   listenScrollContentWithPlayer: {
-    paddingBottom: 180,
+    paddingBottom: 196,
+  },
+  listenPersistentBottomNav: {
+    ...tabBarSurfaceBase,
+    zIndex: 120,
   },
   listenSection: {
     marginBottom: 18,
