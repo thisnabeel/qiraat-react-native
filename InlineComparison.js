@@ -3,7 +3,15 @@ import { View, Text, StyleSheet } from "react-native";
 import ImalahOverlayText from "./components/ImalahOverlayText";
 import DiamondOverlayText from "./components/DiamondOverlayText";
 
-const InlineComparison = ({ originalText, inputText, fontFamily, textStyle, imalahData, diamondData }) => {
+const InlineComparison = ({
+  originalText,
+  inputText,
+  fontFamily,
+  textStyle,
+  imalahData,
+  diamondData,
+  comparisonHighlightColor,
+}) => {
   const textRef = useRef(null);
   const [textLayout, setTextLayout] = useState(null);
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
@@ -133,13 +141,21 @@ const InlineComparison = ({ originalText, inputText, fontFamily, textStyle, imal
     });
 
     const fontFamilyToUse = fontFamily || "NaskhNastaleeqIndoPakQWBW";
-    
+    const differentSegmentStyle = comparisonHighlightColor
+      ? [styles.differentChar, { backgroundColor: comparisonHighlightColor }]
+      : styles.differentChar;
+
     // Render all text segments as nested Text components (like ComparisonTable)
     // This keeps Arabic text continuous
     const textElements = segments.map((segment, index) => (
       <Text
         key={index}
-        style={[styles.word, { fontFamily: fontFamilyToUse }, segment.isDifferent ? styles.differentChar : null, textStyle]}
+        style={[
+          styles.word,
+          { fontFamily: fontFamilyToUse },
+          segment.isDifferent ? differentSegmentStyle : null,
+          textStyle,
+        ]}
       >
         {segment.text}
       </Text>

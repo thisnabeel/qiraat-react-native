@@ -21,7 +21,7 @@ A React Native app for displaying Quranic mushaf pages from the Minrawi Rails AP
 2. Make sure the Rails API server is running:
 
    ```bash
-   # In the minrawi directory
+   # In the Aswaat directory
    rails server
    ```
 

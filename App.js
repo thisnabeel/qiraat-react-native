@@ -164,13 +164,14 @@ const Line = ({
   savedVariations,
   selectedNarrators,
   allVariations = {},
+  narratorHighlightColorById = {},
   isFirstLineOfJuz = false,
   isDarkMode = false,
   mushafId = 3,
   linePosition = null,
   surahHeaderPosition = 0,
-  headerSpanLines = 1,
   suppressLine = false,
+  // Kept for compatibility: older bundles or merges referenced this; always false now (single-line header).
   forceHeaderRender = false,
 }) => {
   if (suppressLine) return null;
@@ -224,7 +225,7 @@ const Line = ({
 
   // 13-line Indo-Pak (mushaf 2): placeholder lines (e.g. basmalah) have no words from the API
   if (mushafId === 2 && (forceHeaderRender || !hasRenderableWords)) {
-    const totalHeaderHeight = effectiveWordLineHeight * headerSpanLines;
+    const totalHeaderHeight = effectiveWordLineHeight;
     const headerGlyph = getSurahHeaderV2Glyph(surahHeaderPosition);
     return (
       <View
@@ -292,6 +293,16 @@ const Line = ({
           variation && typeof variation === "object" && variation.diamond ? variation.diamond : null;
         const hasOverlay = !!(variationImalah?.indices?.length || variationDiamond?.indices?.length);
 
+        const variationKeyStr = matchingVariation ? matchingVariation[0] : "";
+        const narratorIdFromKey =
+          variationKeyStr && variationKeyStr.includes("-")
+            ? variationKeyStr.slice(variationKeyStr.indexOf("-") + 1)
+            : null;
+        const comparisonHighlightColor =
+          narratorIdFromKey != null
+            ? narratorHighlightColorById[String(narratorIdFromKey)]
+            : undefined;
+
         if (matchingVariation && variation) {
           contentToRender = (
             <InlineComparison
@@ -301,6 +312,7 @@ const Line = ({
               textStyle={inlineTextStyle}
               imalahData={variationImalah}
               diamondData={variationDiamond}
+              comparisonHighlightColor={comparisonHighlightColor}
             />
           );
         }
@@ -349,6 +361,7 @@ const PageView = ({
   savedVariations,
   selectedNarrators,
   allVariations,
+  narratorHighlightColorById = {},
   highlightFirstLine = false,
   isDarkMode = false,
   mushafId = 3,
@@ -415,18 +428,7 @@ const PageView = ({
       typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
     );
 
-    const nextLine = page.lines[index + 1];
-    const nextWords = Array.isArray(nextLine?.words) ? nextLine.words : [];
-    const nextHasText = nextWords.some((word) =>
-      typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
-    );
-
     const currentHeaderPos = Number(line?.surah_header_position || 0);
-    const nextHeaderPos = Number(nextLine?.surah_header_position || 0);
-    const shouldStartDoubleHeader =
-      mushafId === 2 &&
-      currentHeaderPos > 0 &&
-      !nextHasText;
 
     const prevLine = page.lines[index - 1];
     const prevWords = Array.isArray(prevLine?.words) ? prevLine.words : [];
@@ -434,7 +436,8 @@ const PageView = ({
       typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
     );
     const prevHeaderPos = Number(prevLine?.surah_header_position || 0);
-    const isSecondLineOfDoubleHeader =
+    // API often emits two consecutive wordless rows for one surah banner; hide the spare row.
+    const isSpareHeaderCompanionLine =
       mushafId === 2 &&
       !currentHasText &&
       prevHeaderPos > 0 &&
@@ -442,8 +445,7 @@ const PageView = ({
 
     return {
       line,
-      shouldStartDoubleHeader,
-      isSecondLineOfDoubleHeader,
+      isSpareHeaderCompanionLine,
       currentHeaderPos,
     };
   });
@@ -451,7 +453,7 @@ const PageView = ({
   return (
     <View style={containerStyle}>
       <View style={pageContentStyle}>
-        {linesWithHeaderRenderMeta.map(({ line, shouldStartDoubleHeader, isSecondLineOfDoubleHeader, currentHeaderPos }, lineIndex) => (
+        {linesWithHeaderRenderMeta.map(({ line, isSpareHeaderCompanionLine, currentHeaderPos }, lineIndex) => (
           <Line
             key={line.id}
             words={line.words}
@@ -460,14 +462,13 @@ const PageView = ({
             savedVariations={savedVariations}
             selectedNarrators={selectedNarrators}
             allVariations={allVariations}
+            narratorHighlightColorById={narratorHighlightColorById}
             isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
             isDarkMode={isDarkMode}
             mushafId={mushafId}
             linePosition={line.position}
             surahHeaderPosition={currentHeaderPos}
-            headerSpanLines={shouldStartDoubleHeader ? 2 : 1}
-            suppressLine={isSecondLineOfDoubleHeader}
-            forceHeaderRender={shouldStartDoubleHeader}
+            suppressLine={isSpareHeaderCompanionLine}
           />
         ))}
       </View>
@@ -5259,6 +5260,26 @@ export default function App() {
     [selectedTraversalNarratorIds, parentNarrators]
   );
 
+  /** Maps narrator id (string) to API `highlight_color` for mushaf inline comparison highlights */
+  const narratorHighlightColorById = useMemo(() => {
+    const map = {};
+    for (const parent of parentNarrators) {
+      for (const child of parent.children || []) {
+        if (child?.id != null) {
+          map[String(child.id)] = child.highlight_color || "#00d4ff";
+        }
+      }
+    }
+    for (const n of narrators) {
+      if (n?.id == null) continue;
+      const id = String(n.id);
+      if (!map[id]) {
+        map[id] = n.highlight_color || "#00d4ff";
+      }
+    }
+    return map;
+  }, [parentNarrators, narrators]);
+
   const activeTraversalVariation = narratorVariations[currentVariationIndex] ?? null;
   const activeTraversalWordId = activeTraversalVariation?.word?.id ?? null;
   const activeHafsTraversalText = activeTraversalVariation?.word?.content ?? "—";
@@ -6215,6 +6236,7 @@ if (response.ok) {
                           savedVariations={isCurrent ? savedVariations : []}
                           selectedNarrators={selectedNarrators}
                           allVariations={isCurrent ? allVariations : {}}
+                          narratorHighlightColorById={narratorHighlightColorById}
                           highlightFirstLine={juzSegments.some(
                             (j) => j.fields.first_page === pageNum
                           )}

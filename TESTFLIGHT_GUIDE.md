@@ -56,7 +56,7 @@ Before building, you need to create your app in App Store Connect:
    - Name: Minrawi App (or your preferred name)
    - Primary Language: English (or your choice)
    - Bundle ID: Select or create `com.aswaat.app` (must match app.json)
-   - SKU: A unique identifier (e.g., "minrawi-app-001")
+   - SKU: A unique identifier (e.g., "Aswaat-001")
 5. Click "Create"
 
 ## Step 6: Build for iOS
