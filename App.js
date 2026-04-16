@@ -5676,6 +5676,22 @@ if (response.ok) {
     }
   };
 
+  /** When the traversal bar shows a variation from another page, tap Hafs / narrator word to jump there. */
+  const goToActiveTraversalVariationPage = () => {
+    const v = activeTraversalVariation;
+    const word = v?.word;
+    if (!word?.id) return;
+    const pageNum = word.line?.page?.position;
+    if (pageNum == null) return;
+    if (Number(pageNum) === Number(currentPage)) return;
+    setLastSelectedVariationHighlight({ wordId: word.id, pageNum });
+    setCurrentPage(pageNum);
+    setPageInput(String(pageNum));
+    handlePageChange(String(pageNum));
+    setSelectedWordId(word.id);
+    setSelectedWord({ id: word.id, content: word.content });
+  };
+
   const handlePreviousPage = () => {
     const page = currentPageRef.current;
     if (page > 1) {
@@ -6339,7 +6355,14 @@ if (response.ok) {
 
                 {firstSelectedNarratorId ? (
                   <View style={styles.variationTraversalSegmentedControl}>
-                    <View style={styles.variationTraversalCard}>
+                    <TouchableOpacity
+                      style={styles.variationTraversalCard}
+                      activeOpacity={0.72}
+                      disabled={
+                        narratorVariations.length === 0 || !activeTraversalVariation?.word?.id
+                      }
+                      onPress={goToActiveTraversalVariationPage}
+                    >
                       <Text style={styles.variationTraversalCardLabel}>Hafs</Text>
                       <View style={styles.variationTraversalCardWordWrap}>
                         <Text
@@ -6352,12 +6375,20 @@ if (response.ok) {
                           {activeHafsTraversalText}
                         </Text>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                     <Text style={styles.variationTraversalSwapIcon}>↔</Text>
                     {traversalNarratorCards.map((card) => (
-                      <View
+                      <TouchableOpacity
                         key={`traversal-card-${card.id}`}
-                        style={[styles.variationTraversalCard, styles.variationTraversalCardNarrator]}
+                        style={[
+                          styles.variationTraversalCard,
+                          styles.variationTraversalCardNarrator,
+                        ]}
+                        activeOpacity={0.72}
+                        disabled={
+                          narratorVariations.length === 0 || !activeTraversalVariation?.word?.id
+                        }
+                        onPress={goToActiveTraversalVariationPage}
                       >
                         <Text style={styles.variationTraversalCardLabel}>{card.title}</Text>
                         <View
@@ -6378,7 +6409,7 @@ if (response.ok) {
                             {card.content}
                           </Text>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 ) : (
