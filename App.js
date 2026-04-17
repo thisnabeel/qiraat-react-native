@@ -41,10 +41,24 @@ import { Audio } from "expo-av";
 import hafsAnAsimAbdulRashidAliSufiRecitations from "./recitations/hafs_an_asim/abdul-rashid-ali-sufi.json";
 import shubahAnAsimAbdulRashidAliSufiRecitations from "./recitations/shubah_an_asim/abdul-rashid-ali-sufi.json";
 
-const API_BASE = "https://qiraat-api-v2-production.up.railway.app";
-// const API_BASE = "http://localhost:3000";
-const NARRATORS_URL = `${API_BASE}/api/narrators`;
-const VARIATIONS_URL = `${API_BASE}/api/variations`;
+/** Direct Railway API (native apps and local Expo web). */
+const RAILWAY_API_BASE = "https://qiraat-api-v2-production.up.railway.app";
+
+/**
+ * On deployed web (e.g. Vercel), use same-origin `/api/*` so the browser does not
+ * cross-origin call Railway; `vercel.json` rewrites `/api` to Railway.
+ * Local web (`localhost`) still calls Railway — ensure `api/config/initializers/cors.rb` allows that origin.
+ */
+const getApiBase = () => {
+  if (Platform.OS !== "web") return RAILWAY_API_BASE;
+  if (typeof window === "undefined") return RAILWAY_API_BASE;
+  const { hostname, origin } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return RAILWAY_API_BASE;
+  return origin;
+};
+
+const getNarratorsUrl = () => `${getApiBase()}/api/narrators`;
+const getVariationsUrl = () => `${getApiBase()}/api/variations`;
 
 // Font by mushaf: 2 = 13 Liner IndoPak (AswaatOne), 3 = 15 Liner Uthmani (DigitalKhattV3)
 const getQuranFontFamily = (mushafId) => (mushafId === 3 ? "DigitalKhatt" : "AswaatOne");
@@ -4775,7 +4789,7 @@ export default function App() {
       return;
     }
     const params = new URLSearchParams({ mushaf_id: mushafId, narrator_ids: narratorIds.join(",") });
-    const url = `${VARIATIONS_URL}?${params.toString()}`;
+    const url = `${getVariationsUrl()}?${params.toString()}`;
     try {
       const response = await fetch(url);
       if (response.ok) {
@@ -4900,7 +4914,7 @@ export default function App() {
     fetchingPagesRef.current.add(pageNum);
     
     try {
-      const response = await fetch(`${API_BASE}/api/mushafs/${mushafId}/pages/${pageNum}`);
+      const response = await fetch(`${getApiBase()}/api/mushafs/${mushafId}/pages/${pageNum}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
@@ -4928,9 +4942,10 @@ export default function App() {
       const isCurrentPage = pageNum === currentPage;
       
       if (isCurrentPage || (isCorsError && Platform.OS === 'web')) {
-        const errorMessage = isCorsError && Platform.OS === 'web'
-          ? 'CORS error: API server does not allow requests from this origin. This is normal for web development. The app works on iOS/Android.'
-          : err.message;
+        const errorMessage =
+          isCorsError && Platform.OS === "web"
+            ? "Could not reach the API from the browser (often a CORS block). On Vercel, requests should go to /api on the same site. On Expo web at localhost, the API must allow your origin in Rails CORS."
+            : err.message;
         
         if (isCurrentPage) {
           console.error(`Error fetching page ${pageNum}:`, err);
@@ -4938,9 +4953,8 @@ export default function App() {
           if (showLoading) {
             setLoading(false);
           }
-        } else if (isCorsError && Platform.OS === 'web') {
-          // Silently handle CORS errors for pre-fetched pages on web
-          // This is expected behavior when API doesn't allow CORS
+        } else if (isCorsError && Platform.OS === "web") {
+          // Prefetch failures on web (e.g. CORS) — avoid spamming the UI
         }
       }
       return null;
@@ -4960,7 +4974,7 @@ export default function App() {
 
       if (wordIds.length > 0) {
         const response = await fetch(
-          `${VARIATIONS_URL}?word_ids=${wordIds.join(",")}`
+          `${getVariationsUrl()}?word_ids=${wordIds.join(",")}`
         );
         if (response.ok) {
           const variations = await response.json();
@@ -5397,7 +5411,7 @@ export default function App() {
         );
         if (wordIds.length > 0) {
           const response = await fetch(
-            `${VARIATIONS_URL}?word_ids=${wordIds.join(",")}`
+            `${getVariationsUrl()}?word_ids=${wordIds.join(",")}`
           );
 if (response.ok) {
             const variations = await response.json();
@@ -5441,7 +5455,7 @@ if (response.ok) {
   useEffect(() => {
     const fetchNarrators = async () => {
       try {
-        const response = await fetch(NARRATORS_URL);
+        const response = await fetch(getNarratorsUrl());
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -5826,7 +5840,7 @@ if (response.ok) {
         // Delete variation on API then unsave locally
         try {
           await fetch(
-            `${VARIATIONS_URL}/by_keys?word_id=${selectedWord.id}&narrator_id=${selectedNarrator.id}`,
+            `${getVariationsUrl()}/by_keys?word_id=${selectedWord.id}&narrator_id=${selectedNarrator.id}`,
             { method: "DELETE" }
           );
         } catch (e) {
@@ -5850,7 +5864,7 @@ if (response.ok) {
           typeof payload === "object" && payload && (payload.imalah || payload.diamond)
             ? { imalah: payload.imalah || null, diamond: payload.diamond || null }
             : null;
-        const response = await fetch(VARIATIONS_URL, {
+        const response = await fetch(getVariationsUrl(), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -5904,7 +5918,7 @@ if (response.ok) {
     try {
       // Then delete from API
       const response = await fetch(
-        `${VARIATIONS_URL}/by_keys?word_id=${selectedWord.id}&narrator_id=${selectedNarrator.id}`,
+        `${getVariationsUrl()}/by_keys?word_id=${selectedWord.id}&narrator_id=${selectedNarrator.id}`,
         { method: "DELETE" }
       );
       
