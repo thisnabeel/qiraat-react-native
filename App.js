@@ -75,6 +75,9 @@ const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT
 
 /** Indo-Pak mushaf (2): surah-name-v2.ttf maps surah banners to U+E001, U+E002, … (U+E000 + position). */
 const SURAH_HEADER_V2_FONT_FAMILY = "SurahNameV2";
+/** Mushaf 2: lines with surah_header_position -1 (basmalah row) use nastaleeq.ttf for U+FDFD. */
+const MUSHAF2_BISMILLAH_HEADER_FONT_FAMILY = "Nastaleeq";
+const BISMILLAH_LIGATURE_U_FDFD = "\uFDFD";
 
 const getSurahHeaderV2Glyph = (surahHeaderPosition) => {
   const n = Number(surahHeaderPosition);
@@ -241,7 +244,18 @@ const Line = ({
   // 13-line Indo-Pak (mushaf 2): placeholder lines (e.g. basmalah) have no words from the API
   if (mushafId === 2 && (forceHeaderRender || !hasRenderableWords)) {
     const totalHeaderHeight = effectiveWordLineHeight;
-    const headerGlyph = getSurahHeaderV2Glyph(surahHeaderPosition);
+    const headerPosNum = Number(surahHeaderPosition);
+    const isBismillahLigatureRow = headerPosNum === -1;
+    const headerGlyph = isBismillahLigatureRow
+      ? BISMILLAH_LIGATURE_U_FDFD
+      : getSurahHeaderV2Glyph(surahHeaderPosition);
+    const headerFontFamily = isBismillahLigatureRow
+      ? MUSHAF2_BISMILLAH_HEADER_FONT_FAMILY
+      : SURAH_HEADER_V2_FONT_FAMILY;
+    // Nastaleeq U+FDFD has loose vertical metrics; center optically and keep clear of row borders.
+    const bismillahFontSize = Math.round(totalHeaderHeight * 0.5);
+    const bismillahLineHeight = Math.round(bismillahFontSize + 30);
+    const bismillahNudgeY = -Math.round(totalHeaderHeight * 0.130);
     return (
       <View
         style={[
@@ -252,6 +266,7 @@ const Line = ({
             overflow: "hidden",
             alignItems: "center",
             justifyContent: "center",
+            ...(isBismillahLigatureRow && { paddingVertical: 3 }),
           },
         ]}
       >
@@ -259,14 +274,24 @@ const Line = ({
           <Text
             allowFontScaling={false}
             style={{
-              fontFamily: SURAH_HEADER_V2_FONT_FAMILY,
-              fontSize: totalHeaderHeight * 0.88,
-              lineHeight: totalHeaderHeight,
-              height: totalHeaderHeight,
+              fontFamily: headerFontFamily,
               width: "100%",
               textAlign: "center",
               color: isDarkMode ? "#ffffff" : "#1a1a1a",
               ...(Platform.OS === "ios" && { fontWeight: "normal", fontStyle: "normal" }),
+              ...(isBismillahLigatureRow
+                ? {
+                    fontSize: bismillahFontSize,
+                    lineHeight: bismillahLineHeight,
+                    includeFontPadding: Platform.OS === "android" ? false : undefined,
+                    ...(Platform.OS === "android" && { textAlignVertical: "center" }),
+                    transform: [{ translateY: bismillahNudgeY }],
+                  }
+                : {
+                    fontSize: totalHeaderHeight * 0.88,
+                    lineHeight: totalHeaderHeight,
+                    height: totalHeaderHeight,
+                  }),
             }}
           >
             {headerGlyph}
@@ -452,11 +477,12 @@ const PageView = ({
     );
     const prevHeaderPos = Number(prevLine?.surah_header_position || 0);
     // API often emits two consecutive wordless rows for one surah banner; hide the spare row.
+    // Same for basmalah (-1): two consecutive empty -1 rows → hide the second.
     const isSpareHeaderCompanionLine =
       mushafId === 2 &&
       !currentHasText &&
-      prevHeaderPos > 0 &&
-      !prevHasText;
+      !prevHasText &&
+      (prevHeaderPos > 0 || (prevHeaderPos === -1 && currentHeaderPos === -1));
 
     return {
       line,
@@ -4028,6 +4054,7 @@ export default function App() {
     DigitalKhatt: require("./DigitalKhattV2.otf"),
     DigitalKhattV3: require("./DigitalKhattV3.ttf"),
     SurahNameV2: require("./surah-name-v2.ttf"),
+    Nastaleeq: require("./nastaleeq.ttf"),
   });
   
   // Debug font loading
@@ -4077,7 +4104,7 @@ export default function App() {
   const [sliderValue, setSliderValue] = useState(5); // Temporary value for slider (doesn't trigger page load)
   /** "Go to Page" modal number field — string so users can clear/retype; synced from currentPage while modal open */
   const [goPageField, setGoPageField] = useState("");
-  const TOTAL_PAGES = 604; // Total pages in the Quran
+  const [totalPages, setTotalPages] = useState(604);
   const juzSegments = useMemo(
     () =>
       segmentsData
@@ -4404,6 +4431,84 @@ export default function App() {
     };
     load();
   }, []);
+
+  // Load total pages dynamically for the selected mushaf.
+  useEffect(() => {
+    const loadMushafMeta = async () => {
+      const pageExists = async (position) => {
+        try {
+          const res = await fetch(`${getApiBase()}/api/mushafs/${mushafId}/pages/${position}`);
+          if (!res.ok) return false;
+          const data = await res.json();
+          return Boolean(data && typeof data === "object" && data.id && data.position);
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const discoverTotalPagesFromPagesApi = async () => {
+        // Fast-path bounds for known mushafs while still validating via API.
+        const lowerSeed = mushafId === 2 ? 604 : 300;
+        const upperSeed = mushafId === 2 ? 1200 : 800;
+
+        let low = 0;
+        let high = upperSeed;
+
+        // If lower seed exists, start from there to reduce probes for long mushafs.
+        if (await pageExists(lowerSeed)) {
+          low = lowerSeed;
+        }
+
+        // Ensure upper bound is missing; if it exists, expand until missing.
+        while (await pageExists(high)) {
+          low = high;
+          high *= 2;
+          if (high > 5000) break;
+        }
+
+        // Binary search for highest existing page.
+        while (low + 1 < high) {
+          const mid = Math.floor((low + high) / 2);
+          if (await pageExists(mid)) {
+            low = mid;
+          } else {
+            high = mid;
+          }
+        }
+
+        return low > 0 ? low : 604;
+      };
+
+      try {
+        const response = await fetch(`${getApiBase()}/api/mushafs/${mushafId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const parsedTotalPages = Number(data?.total_pages);
+          if (Number.isFinite(parsedTotalPages) && parsedTotalPages > 0) {
+            setTotalPages(parsedTotalPages);
+            return;
+          }
+        }
+
+        // Backward compatibility: older APIs may not include total_pages.
+        const discoveredTotalPages = await discoverTotalPagesFromPagesApi();
+        setTotalPages(discoveredTotalPages);
+      } catch (err) {
+        console.error("Error loading mushaf metadata:", err);
+        const discoveredTotalPages = await discoverTotalPagesFromPagesApi();
+        setTotalPages(discoveredTotalPages);
+      }
+    };
+    loadMushafMeta();
+  }, [mushafId]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+      setPageInput(String(totalPages));
+      setSliderValue(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // When mushaf changes: persist, clear page cache, and clear current page so we don't show wrong content with new font
   useEffect(() => {
@@ -4909,9 +5014,9 @@ export default function App() {
 
   const syncPagerToPage = (pageNum, animated = true) => {
     if (!pagerRef.current) return;
-    const clampedPage = Math.min(Math.max(pageNum, 1), TOTAL_PAGES);
-    // RTL: index 0 is last page, index TOTAL_PAGES - 1 is first page
-    const index = TOTAL_PAGES - clampedPage;
+    const clampedPage = Math.min(Math.max(pageNum, 1), totalPages);
+    // RTL: index 0 is last page, index totalPages - 1 is first page
+    const index = totalPages - clampedPage;
     try {
       if (animated && typeof pagerRef.current.setPage === "function") {
         pagerRef.current.setPage(index);
@@ -4945,6 +5050,9 @@ export default function App() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data = await response.json();
+      if (!data || typeof data !== "object" || !data.id) {
+        throw new Error(`Invalid page payload for mushaf ${mushafId} page ${pageNum}`);
+      }
       
       // Cache the page in both ref and state
       pageCacheRef.current[pageNum] = data;
@@ -5739,7 +5847,7 @@ if (response.ok) {
   const handlePageChange = (newPage) => {
     const pageNum = parseInt(newPage, 10);
     if (Number.isNaN(pageNum) || pageNum < 1) return;
-    const clamped = Math.min(pageNum, TOTAL_PAGES);
+    const clamped = Math.min(pageNum, totalPages);
     setCurrentPage(clamped);
     setPageInput(String(clamped));
     syncPagerToPage(clamped);
@@ -5776,12 +5884,14 @@ if (response.ok) {
 
   const handleNextPage = () => {
     const page = currentPageRef.current;
-    const newPage = page + 1;
-    console.log("handleNextPage: going from", page, "to", newPage);
-    setCurrentPage(newPage);
-    setPageInput(newPage.toString());
-    syncPagerToPage(newPage);
-    // Loading state is handled by useEffect based on cache
+    if (page < totalPages) {
+      const newPage = page + 1;
+      console.log("handleNextPage: going from", page, "to", newPage);
+      setCurrentPage(newPage);
+      setPageInput(newPage.toString());
+      syncPagerToPage(newPage);
+      // Loading state is handled by useEffect based on cache
+    }
   };
 
   // Update handler refs whenever handlers are recreated
@@ -6280,23 +6390,23 @@ if (response.ok) {
                     isMushafDarkMode && { backgroundColor: "#1F1F22" },
                   ]}
                   // RTL: initial index is inverted so higher page numbers appear on the left
-                  initialPage={Math.max(0, TOTAL_PAGES - currentPage)}
+                  initialPage={Math.max(0, totalPages - currentPage)}
                   onPageSelected={(e) => {
                     if (isDrawerVisibleRef.current) {
                       closeDrawer();
                     }
                     const position = e.nativeEvent.position ?? 0;
                     // RTL: pager index is inverted into page number
-                    const newPageNum = TOTAL_PAGES - position;
+                    const newPageNum = totalPages - position;
                     if (newPageNum !== currentPageRef.current) {
                       setCurrentPage(newPageNum);
                       setPageInput(String(newPageNum));
                     }
                   }}
                 >
-                  {Array.from({ length: TOTAL_PAGES }).map((_, idx) => {
-                    // RTL: index 0 shows last page, index TOTAL_PAGES - 1 shows first page
-                    const pageNum = TOTAL_PAGES - idx;
+                  {Array.from({ length: totalPages }).map((_, idx) => {
+                    // RTL: index 0 shows last page, index totalPages - 1 shows first page
+                    const pageNum = totalPages - idx;
                     const cachedPage = pageCacheRef.current[pageNum];
                     const isCurrent = pageNum === currentPage;
                     const pageData = cachedPage;
@@ -7390,7 +7500,7 @@ if (response.ok) {
                   if (digits === "") return;
                   const num = parseInt(digits, 10);
                   if (Number.isNaN(num) || num < 1) return;
-                  if (num <= TOTAL_PAGES) {
+                  if (num <= totalPages) {
                     handlePageChange(String(num));
                   }
                 }}
@@ -7405,21 +7515,21 @@ if (response.ok) {
               />
               <View style={styles.pageSliderWrapper}>
                 <Slider
-                  value={TOTAL_PAGES - sliderValue + 1}
+                  value={totalPages - sliderValue + 1}
                   minimumValue={1}
-                  maximumValue={TOTAL_PAGES}
+                  maximumValue={totalPages}
                   step={1}
                   onValueChange={(value) => {
                     const pageNum = Array.isArray(value) ? value[0] : value;
                     // Convert slider value to actual page (inverted for RTL)
-                    // Slider left (min) = page 604, Slider right (max) = page 1
-                    const actualPage = TOTAL_PAGES - Math.round(pageNum) + 1;
+                    // Slider left (min) = last page, Slider right (max) = page 1
+                    const actualPage = totalPages - Math.round(pageNum) + 1;
                     setSliderValue(actualPage); // Only update display, don't trigger page load
                   }}
                   onSlidingComplete={(value) => {
                     const pageNum = Array.isArray(value) ? value[0] : value;
                     // Convert slider value to actual page (inverted for RTL)
-                    const actualPage = TOTAL_PAGES - Math.round(pageNum) + 1;
+                    const actualPage = totalPages - Math.round(pageNum) + 1;
                     setCurrentPage(actualPage);
                     setSliderValue(actualPage);
                     setPageInput(actualPage.toString());
@@ -7435,7 +7545,7 @@ if (response.ok) {
                 />
               </View>
               <View style={styles.pageSliderLabels}>
-                <Text style={styles.pageSliderLabel}>{TOTAL_PAGES}</Text>
+                <Text style={styles.pageSliderLabel}>{totalPages}</Text>
                 <Text style={styles.pageSliderLabel}>1</Text>
               </View>
             </View>

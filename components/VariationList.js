@@ -1,5 +1,12 @@
 import React, { useMemo } from "react";
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  SectionList,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
+import surahNamesByNumber from "../surah_numbers.json";
 
 const ARROW_COL_WIDTH = 40;
 
@@ -18,6 +25,14 @@ function rowSortKey(word) {
   const linePos = word.line?.position ?? word.line?.id ?? 0;
   const wpos = word.position ?? 0;
   return page * 1e9 + Number(linePos) * 1e6 + Number(wpos);
+}
+
+function parseSurahNumberFromAyah(ayah) {
+  if (typeof ayah !== "string" || ayah.length === 0) return undefined;
+  const match = ayah.match(/^(\d+)\s*[:\-]/);
+  if (!match) return undefined;
+  const n = Number(match[1]);
+  return Number.isNaN(n) ? undefined : n;
 }
 
 export default function VariationList({
@@ -44,21 +59,76 @@ export default function VariationList({
       if (!idSet.has(nk)) continue;
       const wk = wordKey(v);
       if (!wk) continue;
+      const surahFromApi =
+        v.surah_number != null && v.surah_number !== ""
+          ? Number(v.surah_number)
+          : undefined;
+      const surahFromAyah = parseSurahNumberFromAyah(v.word?.ayah);
       if (!byWord.has(wk)) {
         byWord.set(wk, {
           word: v.word,
           wordId: v.word?.id ?? v.word_id,
           hafsText: v.word?.content ?? "",
           byNarrator: {},
+          surahNumber:
+            surahFromApi != null && !Number.isNaN(surahFromApi)
+              ? surahFromApi
+              : surahFromAyah != null && !Number.isNaN(surahFromAyah)
+                ? surahFromAyah
+              : undefined,
         });
       }
       const row = byWord.get(wk);
       if (v.word?.content) row.hafsText = v.word.content;
+      if (
+        (row.surahNumber == null || Number.isNaN(row.surahNumber)) &&
+        surahFromApi != null &&
+        !Number.isNaN(surahFromApi)
+      ) {
+        row.surahNumber = surahFromApi;
+      } else if (
+        (row.surahNumber == null || Number.isNaN(row.surahNumber)) &&
+        surahFromAyah != null &&
+        !Number.isNaN(surahFromAyah)
+      ) {
+        row.surahNumber = surahFromAyah;
+      }
       row.byNarrator[nk] = v;
     }
 
-    return Array.from(byWord.values()).sort((a, b) => rowSortKey(a.word) - rowSortKey(b.word));
+    const sorted = Array.from(byWord.values()).sort(
+      (a, b) => rowSortKey(a.word) - rowSortKey(b.word)
+    );
+
+    let carriedSurah = 1;
+    for (const row of sorted) {
+      const api = row.surahNumber;
+      const h = Number(row.word?.line?.surah_header_position ?? 0);
+      if (api != null && !Number.isNaN(api)) {
+        carriedSurah = api;
+      } else if (h > 0) {
+        carriedSurah = h;
+      }
+      row.surahNumber = carriedSurah;
+    }
+    return sorted;
   }, [variations, narratorIds]);
+
+  const sections = useMemo(() => {
+    if (!tableRows?.length) return [];
+    const out = [];
+    for (const row of tableRows) {
+      const n = row.surahNumber ?? 1;
+      const title = surahNamesByNumber[String(n)] ?? `سورة ${n}`;
+      const prev = out[out.length - 1];
+      if (prev && prev.surahNumber === n) {
+        prev.data.push(row);
+      } else {
+        out.push({ surahNumber: n, title, data: [row] });
+      }
+    }
+    return out;
+  }, [tableRows]);
 
   if (!variations || variations.length === 0) {
     return (
@@ -115,13 +185,25 @@ export default function VariationList({
         </View>
       </View>
 
-      <ScrollView
+      <SectionList
         style={styles.tableBody}
         contentContainerStyle={styles.tableBodyContent}
-        showsVerticalScrollIndicator={true}
+        sections={sections}
+        keyExtractor={(row) => String(row.wordId)}
+        stickySectionHeadersEnabled
+        showsVerticalScrollIndicator
         keyboardShouldPersistTaps="handled"
-      >
-        {tableRows.map((row) => {
+        renderSectionHeader={({ section: { title } }) => (
+          <View style={styles.surahSectionHeader}>
+            <Text
+              style={[styles.surahSectionTitle, { fontFamily: getQuranFontFamily(mushafId) }]}
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+          </View>
+        )}
+        renderItem={({ item: row }) => {
           const wordId = row.wordId;
           const pageNum = row.word?.line?.page?.position ?? 0;
           const isActiveRow =
@@ -137,7 +219,6 @@ export default function VariationList({
 
           return (
             <TouchableOpacity
-              key={String(row.wordId)}
               style={[styles.dataRowOuter, isActiveRow && styles.dataRowOuterActive]}
               onPress={onPressRow}
               activeOpacity={0.7}
@@ -194,8 +275,8 @@ export default function VariationList({
               </View>
             </TouchableOpacity>
           );
-        })}
-      </ScrollView>
+        }}
+      />
     </View>
   );
 }
@@ -263,6 +344,19 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     paddingBottom: 18,
     paddingHorizontal: 10,
+  },
+  surahSectionHeader: {
+    backgroundColor: "#3a3b45",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 4,
+    borderRadius: 8,
+  },
+  surahSectionTitle: {
+    fontSize: 17,
+    color: "#e8eaef",
+    textAlign: "center",
+    includeFontPadding: false,
   },
   dataRowOuter: {
     borderRadius: 8,
