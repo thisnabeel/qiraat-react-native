@@ -2436,121 +2436,141 @@ const NarratorPopup = ({
 
                 {/* Custom Arabic Keyboard */}
                 <View style={styles.customKeyboard}>
-                  {/* Control row: Toggle, Arrows, Delete, Undo */}
-                  <View style={styles.keyboardControlRow}>
-                    <TouchableOpacity
-                      style={styles.keyboardToggle}
-                      onPress={() => setKeyboardMode(keyboardMode === "harakat" ? "letters" : "harakat")}
-                    >
-                      <Text style={styles.keyboardToggleText}>
-                        {keyboardMode === "harakat" ? "حروف" : "حركات"}
-                      </Text>
-                    </TouchableOpacity>
-                    
-                    <View style={styles.keyboardArrowsRow}>
+                  {/* Controls: two rows so letter arrows + actions never overlap on narrow popups */}
+                  <View style={styles.keyboardControlWrap}>
+                    <View style={styles.keyboardControlRowPrimary}>
                       <TouchableOpacity
-                        style={[
-                          styles.keyboardArrowKey,
-                          !canMoveLeft() && styles.keyboardArrowKeyDisabled,
-                        ]}
-                        onPress={() => handleArrowPress("left")}
-                        disabled={!canMoveLeft()}
+                        style={styles.keyboardToggle}
+                        onPress={() => setKeyboardMode(keyboardMode === "harakat" ? "letters" : "harakat")}
                       >
-                        <Text style={[
-                          styles.keyboardKeyText,
-                          !canMoveLeft() && styles.keyboardKeyTextDisabled,
-                        ]}>←</Text>
+                        <Text style={styles.keyboardToggleText}>
+                          {keyboardMode === "harakat" ? "حروف" : "حركات"}
+                        </Text>
                       </TouchableOpacity>
+
+                      <View style={styles.keyboardArrowsRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.keyboardArrowKey,
+                            !canMoveLeft() && styles.keyboardArrowKeyDisabled,
+                          ]}
+                          onPress={() => handleArrowPress("left")}
+                          disabled={!canMoveLeft()}
+                        >
+                          <Text
+                            style={[
+                              styles.keyboardKeyText,
+                              !canMoveLeft() && styles.keyboardKeyTextDisabled,
+                            ]}
+                          >
+                            ←
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.keyboardArrowKey,
+                            !canMoveRight() && styles.keyboardArrowKeyDisabled,
+                          ]}
+                          onPress={() => handleArrowPress("right")}
+                          disabled={!canMoveRight()}
+                        >
+                          <Text
+                            style={[
+                              styles.keyboardKeyText,
+                              !canMoveRight() && styles.keyboardKeyTextDisabled,
+                            ]}
+                          >
+                            →
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      <TouchableOpacity
+                        style={styles.keyboardDeleteKey}
+                        onPress={() => {
+                          if (inputValue.length > 0 && selection.start > 0) {
+                            const newValue =
+                              inputValue.slice(0, selection.start - 1) +
+                              inputValue.slice(selection.start);
+                            addToHistory(newValue);
+                            onInputChange(newValue);
+                            const newPos = selection.start - 1;
+                            setSelection({ start: newPos, end: newPos });
+                            setTimeout(() => {
+                              if (inputRef.current) {
+                                inputRef.current.setNativeProps({
+                                  selection: { start: newPos, end: newPos },
+                                });
+                              }
+                            }, 0);
+                          }
+                        }}
+                      >
+                        <Text style={styles.keyboardKeyText}>⌫</Text>
+                      </TouchableOpacity>
+
                       <TouchableOpacity
                         style={[
-                          styles.keyboardArrowKey,
-                          !canMoveRight() && styles.keyboardArrowKeyDisabled,
+                          styles.keyboardUndoKey,
+                          historyIndex <= 0 && styles.keyboardUndoKeyDisabled,
                         ]}
-                        onPress={() => handleArrowPress("right")}
-                        disabled={!canMoveRight()}
+                        onPress={handleUndo}
+                        disabled={historyIndex <= 0}
                       >
-                        <Text style={[
-                          styles.keyboardKeyText,
-                          !canMoveRight() && styles.keyboardKeyTextDisabled,
-                        ]}>→</Text>
+                        <Text
+                          style={[
+                            styles.keyboardKeyText,
+                            historyIndex <= 0 && styles.keyboardKeyTextDisabled,
+                          ]}
+                        >
+                          ↶
+                        </Text>
+                        {historyIndex > 0 && (
+                          <Text style={styles.keyboardUndoCount}>{historyIndex}</Text>
+                        )}
                       </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity
-                      style={styles.keyboardDeleteKey}
-                      onPress={() => {
-                        if (inputValue.length > 0 && selection.start > 0) {
-                          const newValue =
-                            inputValue.slice(0, selection.start - 1) +
-                            inputValue.slice(selection.start);
-                          addToHistory(newValue);
-                          onInputChange(newValue);
-                          const newPos = selection.start - 1;
-                          setSelection({ start: newPos, end: newPos });
-                          setTimeout(() => {
-                            if (inputRef.current) {
-                              inputRef.current.setNativeProps({
-                                selection: { start: newPos, end: newPos },
-                              });
-                            }
-                          }, 0);
-                        }
-                      }}
-                    >
-                      <Text style={styles.keyboardKeyText}>⌫</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.keyboardUndoKey,
-                        historyIndex <= 0 && styles.keyboardUndoKeyDisabled,
-                      ]}
-                      onPress={handleUndo}
-                      disabled={historyIndex <= 0}
-                    >
-                      <Text style={[
-                        styles.keyboardKeyText,
-                        historyIndex <= 0 && styles.keyboardKeyTextDisabled,
-                      ]}>
-                        ↶
-                      </Text>
-                      {historyIndex > 0 && (
-                        <Text style={styles.keyboardUndoCount}>
-                          {historyIndex}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.keyboardImalahKey,
-                        (() => {
-                          const letterPositions = getLetterPositions(inputValue);
-                          const hasLetter = letterPositions.length > 0 && currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length;
-                          const isActive = hasLetter && imalahOverlayIndices.has(currentLetterIndex);
-                          return isActive && styles.keyboardImalahKeyActive;
-                        })(),
-                      ]}
-                      onPress={openImalahPlacement}
-                      disabled={!inputValue || getLetterPositions(inputValue).length === 0}
-                    >
-                      <Text style={styles.keyboardImalahKeyText}>Imalah</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.keyboardDiamondKey,
-                        (() => {
-                          const letterPositions = getLetterPositions(inputValue);
-                          const hasLetter = letterPositions.length > 0 && currentLetterIndex >= 0 && currentLetterIndex < letterPositions.length;
-                          const isActive = hasLetter && diamondOverlayIndices.has(currentLetterIndex);
-                          return isActive && styles.keyboardDiamondKeyActive;
-                        })(),
-                      ]}
-                      onPress={openDiamondPlacement}
-                      disabled={!inputValue || getLetterPositions(inputValue).length === 0}
-                    >
-                      <Text style={styles.keyboardDiamondKeyText}>Diamond</Text>
-                    </TouchableOpacity>
+                    {mushafId === 3 && (
+                      <View style={styles.keyboardControlRowSecondary}>
+                        <TouchableOpacity
+                          style={[
+                            styles.keyboardImalahKey,
+                            (() => {
+                              const letterPositions = getLetterPositions(inputValue);
+                              const hasLetter =
+                                letterPositions.length > 0 &&
+                                currentLetterIndex >= 0 &&
+                                currentLetterIndex < letterPositions.length;
+                              const isActive = hasLetter && imalahOverlayIndices.has(currentLetterIndex);
+                              return isActive && styles.keyboardImalahKeyActive;
+                            })(),
+                          ]}
+                          onPress={openImalahPlacement}
+                          disabled={!inputValue || getLetterPositions(inputValue).length === 0}
+                        >
+                          <Text style={styles.keyboardImalahKeyText}>Imalah</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.keyboardDiamondKey,
+                            (() => {
+                              const letterPositions = getLetterPositions(inputValue);
+                              const hasLetter =
+                                letterPositions.length > 0 &&
+                                currentLetterIndex >= 0 &&
+                                currentLetterIndex < letterPositions.length;
+                              const isActive = hasLetter && diamondOverlayIndices.has(currentLetterIndex);
+                              return isActive && styles.keyboardDiamondKeyActive;
+                            })(),
+                          ]}
+                          onPress={openDiamondPlacement}
+                          disabled={!inputValue || getLetterPositions(inputValue).length === 0}
+                        >
+                          <Text style={styles.keyboardDiamondKeyText}>Diamond</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
                   </View>
 
                   {/* Insert mode buttons (only in letters mode) */}
@@ -8700,12 +8720,27 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#e5e7eb",
   },
-  keyboardControlRow: {
+  keyboardControlWrap: {
+    marginBottom: 10,
+    width: "100%",
+  },
+  keyboardControlRowPrimary: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-    gap: 8,
+    flexWrap: "wrap",
+    rowGap: 8,
+    columnGap: 8,
+    width: "100%",
+  },
+  keyboardControlRowSecondary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    rowGap: 8,
+    columnGap: 10,
+    width: "100%",
+    marginTop: 8,
   },
   keyboardToggle: {
     paddingHorizontal: 14,
@@ -8723,8 +8758,7 @@ const styles = StyleSheet.create({
   keyboardArrowsRow: {
     flexDirection: "row",
     gap: 6,
-    flex: 1,
-    justifyContent: "center",
+    flexShrink: 0,
   },
   keyboardArrowKey: {
     width: 44,
