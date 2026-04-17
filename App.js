@@ -25,7 +25,7 @@ import {
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
-import PagerView from "react-native-pager-view";
+import PagerView from "./components/PagerViewAdapter";
 import { Slider } from "@miblanchard/react-native-slider";
 import ComparisonTable from "./ComparisonTable";
 import InlineComparison from "./InlineComparison";
