@@ -18,6 +18,7 @@ import {
   Animated,
   Easing,
   PanResponder,
+  Keyboard,
 } from "react-native";
 import {
   SafeAreaProvider,
@@ -4074,6 +4075,8 @@ export default function App() {
   const [pageInput, setPageInput] = useState("5");
   const [showPageSlider, setShowPageSlider] = useState(false);
   const [sliderValue, setSliderValue] = useState(5); // Temporary value for slider (doesn't trigger page load)
+  /** "Go to Page" modal number field — string so users can clear/retype; synced from currentPage while modal open */
+  const [goPageField, setGoPageField] = useState("");
   const TOTAL_PAGES = 604; // Total pages in the Quran
   const juzSegments = useMemo(
     () =>
@@ -4095,7 +4098,10 @@ export default function App() {
   const surahScrollViewRef = useRef(null);
   const juzCarouselWidthRef = useRef(0);
   const surahCarouselWidthRef = useRef(0);
-  const CAROUSEL_ITEM_WIDTH = 84; // width 76 + marginRight 8
+  /** Per-index measured chip width for centering variable-width carousel rows */
+  const juzItemWidthsRef = useRef({});
+  const surahItemWidthsRef = useRef({});
+  const carouselCenterDebounceRef = useRef(null);
   const [selectedNarrators, setSelectedNarrators] = useState([]);
   const [savedVariations, setSavedVariations] = useState([]);
   const [allVariations, setAllVariations] = useState({});
@@ -5395,32 +5401,62 @@ export default function App() {
     setCurrentSurahIndex(surahIndex);
   }, [currentPage, juzSegments, surahSegments]);
 
-  // Scroll carousels to center the selected item
   const scrollCarouselsToCenter = useCallback(() => {
     if (!showPageSlider) return;
-    const itemWidth = CAROUSEL_ITEM_WIDTH;
-    // Juz carousel
-    const juzWidth = juzCarouselWidthRef.current || Dimensions.get('window').width * 0.7;
-    if (juzScrollViewRef.current && currentJuzIndex < juzSegments.length) {
-      const scrollX = Math.max(0, (currentJuzIndex * itemWidth) - (juzWidth / 2) + (itemWidth / 2));
+    const winW = Dimensions.get("window").width * 0.7;
+    const gap = 8;
+    const fallbackChip = 88;
+
+    const centerScrollXFromWidths = (widthsMap, index, viewportW) => {
+      let x = 0;
+      for (let j = 0; j < index; j++) {
+        x += (widthsMap[j]?.width ?? fallbackChip) + gap;
+      }
+      const w = widthsMap[index]?.width ?? fallbackChip;
+      return Math.max(0, x + w / 2 - viewportW / 2);
+    };
+
+    const juzWidth = juzCarouselWidthRef.current || winW;
+    if (juzScrollViewRef.current && currentJuzIndex >= 0 && currentJuzIndex < juzSegments.length) {
+      const scrollX = centerScrollXFromWidths(juzItemWidthsRef.current, currentJuzIndex, juzWidth);
       juzScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
     }
-    // Surah carousel
-    const surahWidth = surahCarouselWidthRef.current || Dimensions.get('window').width * 0.7;
-    if (surahScrollViewRef.current && currentSurahIndex < surahSegments.length) {
-      const scrollX = Math.max(0, (currentSurahIndex * itemWidth) - (surahWidth / 2) + (itemWidth / 2));
+
+    const surahWidth = surahCarouselWidthRef.current || winW;
+    if (surahScrollViewRef.current && currentSurahIndex >= 0 && currentSurahIndex < surahSegments.length) {
+      const scrollX = centerScrollXFromWidths(surahItemWidthsRef.current, currentSurahIndex, surahWidth);
       surahScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
     }
   }, [showPageSlider, currentJuzIndex, currentSurahIndex, juzSegments.length, surahSegments.length]);
+
+  const scheduleCarouselScrollToCenter = useCallback(() => {
+    if (carouselCenterDebounceRef.current) clearTimeout(carouselCenterDebounceRef.current);
+    carouselCenterDebounceRef.current = setTimeout(() => {
+      carouselCenterDebounceRef.current = null;
+      scrollCarouselsToCenter();
+    }, 48);
+  }, [scrollCarouselsToCenter]);
 
   // Scroll carousels when modal opens or selection changes
   useEffect(() => {
     if (showPageSlider) {
       setSliderValue(currentPage);
+      setGoPageField(String(currentPage));
       const timer = setTimeout(scrollCarouselsToCenter, 150);
       return () => clearTimeout(timer);
     }
   }, [showPageSlider, currentPage, currentJuzIndex, currentSurahIndex, scrollCarouselsToCenter]);
+
+  useEffect(() => {
+    if (!showPageSlider) {
+      juzItemWidthsRef.current = {};
+      surahItemWidthsRef.current = {};
+      if (carouselCenterDebounceRef.current) {
+        clearTimeout(carouselCenterDebounceRef.current);
+        carouselCenterDebounceRef.current = null;
+      }
+    }
+  }, [showPageSlider]);
 
   // Expose a reusable refresher for variations (used after save/delete)
   const refreshVariations = async () => {
@@ -5701,13 +5737,13 @@ if (response.ok) {
   };
 
   const handlePageChange = (newPage) => {
-    const pageNum = parseInt(newPage);
-    if (pageNum > 0) {
-      setCurrentPage(pageNum);
-      setPageInput(newPage);
-      syncPagerToPage(pageNum);
-      // Loading state is handled by useEffect based on cache
-    }
+    const pageNum = parseInt(newPage, 10);
+    if (Number.isNaN(pageNum) || pageNum < 1) return;
+    const clamped = Math.min(pageNum, TOTAL_PAGES);
+    setCurrentPage(clamped);
+    setPageInput(String(clamped));
+    syncPagerToPage(clamped);
+    // Loading state is handled by useEffect based on cache
   };
 
   /** When the traversal bar shows a variation from another page, tap Hafs / narrator word to jump there. */
@@ -5753,10 +5789,6 @@ if (response.ok) {
     handlePreviousPageRef.current = handlePreviousPage;
     handleNextPageRef.current = handleNextPage;
   });
-
-  const handlePageInputChange = (text) => {
-    setPageInput(text);
-  };
 
   // Helper function to find which parent a child narrator belongs to
   const findParentForChild = (childId) => {
@@ -7227,8 +7259,17 @@ if (response.ok) {
         animationType="fade"
         onRequestClose={() => setShowPageSlider(false)}
       >
-        <Pressable style={styles.pageSliderModalOverlay} onPress={() => setShowPageSlider(false)}>
-          <Pressable style={styles.pageSliderModalContent} onPress={() => {}}>
+        <Pressable
+          style={styles.pageSliderModalOverlay}
+          onPress={() => {
+            Keyboard.dismiss();
+            setShowPageSlider(false);
+          }}
+        >
+          <Pressable
+            style={styles.pageSliderModalContent}
+            onPress={() => Keyboard.dismiss()}
+          >
             <View style={styles.pageSliderHeader}>
               <Text style={styles.pageSliderTitle}>Go to Page</Text>
               <TouchableOpacity
@@ -7244,7 +7285,7 @@ if (response.ok) {
               style={styles.carouselContainer}
               onLayout={(e) => {
                 juzCarouselWidthRef.current = e.nativeEvent.layout.width;
-                if (showPageSlider) scrollCarouselsToCenter();
+                if (showPageSlider) scheduleCarouselScrollToCenter();
               }}
             >
               <Text style={styles.carouselLabel}>Juz</Text>
@@ -7252,6 +7293,8 @@ if (response.ok) {
                 ref={juzScrollViewRef}
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
                 contentContainerStyle={styles.carouselContent}
                 style={styles.carouselScrollView}
               >
@@ -7259,14 +7302,17 @@ if (response.ok) {
                   <TouchableOpacity
                     key={juz.pk}
                     style={[
-                      styles.carouselItem,
+                      styles.carouselItemBase,
+                      styles.carouselItemJuz,
                       index === currentJuzIndex && styles.carouselItemActive,
                     ]}
+                    onLayout={(e) => {
+                      const { width } = e.nativeEvent.layout;
+                      juzItemWidthsRef.current[index] = { width };
+                      if (showPageSlider) scheduleCarouselScrollToCenter();
+                    }}
                     onPress={() => {
                       const pageNum = juz.fields.first_page;
-                      setCurrentPage(pageNum);
-                      setSliderValue(pageNum);
-                      setPageInput(pageNum.toString());
                       handlePageChange(pageNum.toString());
                     }}
                   >
@@ -7275,6 +7321,7 @@ if (response.ok) {
                         styles.carouselItemText,
                         index === currentJuzIndex && styles.carouselItemTextActive,
                       ]}
+                      numberOfLines={1}
                     >
                       {juz.fields.title}
                     </Text>
@@ -7288,7 +7335,7 @@ if (response.ok) {
               style={styles.carouselContainer}
               onLayout={(e) => {
                 surahCarouselWidthRef.current = e.nativeEvent.layout.width;
-                if (showPageSlider) scrollCarouselsToCenter();
+                if (showPageSlider) scheduleCarouselScrollToCenter();
               }}
             >
               <Text style={styles.carouselLabel}>Surah</Text>
@@ -7296,30 +7343,35 @@ if (response.ok) {
                 ref={surahScrollViewRef}
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
                 contentContainerStyle={styles.carouselContent}
-                style={styles.carouselScrollView}
+                style={styles.carouselSurahScrollView}
               >
                 {surahSegments.map((surah, index) => (
                   <TouchableOpacity
                     key={surah.pk}
                     style={[
-                      styles.carouselItem,
+                      styles.carouselItemBase,
+                      styles.carouselItemSurah,
                       index === currentSurahIndex && styles.carouselItemActive,
                     ]}
+                    onLayout={(e) => {
+                      const { width } = e.nativeEvent.layout;
+                      surahItemWidthsRef.current[index] = { width };
+                      if (showPageSlider) scheduleCarouselScrollToCenter();
+                    }}
                     onPress={() => {
                       const pageNum = surah.fields.first_page;
-                      setCurrentPage(pageNum);
-                      setSliderValue(pageNum);
-                      setPageInput(pageNum.toString());
                       handlePageChange(pageNum.toString());
                     }}
                   >
                     <Text
                       style={[
                         styles.carouselItemText,
+                        styles.carouselItemSurahTitle,
                         index === currentSurahIndex && styles.carouselItemTextActive,
                       ]}
-                      numberOfLines={1}
                     >
                       {surah.fields.title}
                     </Text>
@@ -7331,23 +7383,23 @@ if (response.ok) {
             <View style={styles.pageSliderContainer}>
               <TextInput
                 style={styles.pageSliderPageNumberInput}
-                value={sliderValue.toString()}
+                value={goPageField}
                 onChangeText={(text) => {
-                  const num = parseInt(text);
-                  if (!isNaN(num) && num >= 1 && num <= TOTAL_PAGES) {
-                    setSliderValue(num);
+                  const digits = text.replace(/[^\d]/g, "");
+                  setGoPageField(digits);
+                  if (digits === "") return;
+                  const num = parseInt(digits, 10);
+                  if (Number.isNaN(num) || num < 1) return;
+                  if (num <= TOTAL_PAGES) {
+                    handlePageChange(String(num));
                   }
                 }}
-                onSubmitEditing={(e) => {
-                  const num = parseInt(e.nativeEvent.text);
-                  if (!isNaN(num) && num >= 1 && num <= TOTAL_PAGES) {
-                    setCurrentPage(num);
-                    setSliderValue(num);
-                    setPageInput(num.toString());
-                    handlePageChange(num.toString());
-                  }
+                onSubmitEditing={() => {
+                  Keyboard.dismiss();
                 }}
-                keyboardType="numeric"
+                keyboardType="number-pad"
+                returnKeyType="done"
+                blurOnSubmit
                 selectTextOnFocus
                 textAlign="center"
               />
@@ -9460,15 +9512,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   carouselScrollView: {
-    maxHeight: 50,
+    maxHeight: 52,
+  },
+  carouselSurahScrollView: {
+    maxHeight: 88,
   },
   carouselContent: {
     paddingRight: 10,
+    flexDirection: "row",
+    alignItems: "center",
   },
-  carouselItem: {
-    width: 76,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  carouselItemBase: {
+    paddingHorizontal: 14,
     marginRight: 8,
     borderRadius: 8,
     backgroundColor: "#f5f5f5",
@@ -9476,6 +9531,15 @@ const styles = StyleSheet.create({
     borderColor: "#e0e0e0",
     alignItems: "center",
     justifyContent: "center",
+    alignSelf: "flex-start",
+    flexShrink: 0,
+  },
+  carouselItemJuz: {
+    height: 44,
+  },
+  carouselItemSurah: {
+    minHeight: 44,
+    paddingVertical: 8,
   },
   carouselItemActive: {
     backgroundColor: "#027778",
@@ -9485,6 +9549,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     fontWeight: "500",
+    flexShrink: 0,
+  },
+  carouselItemSurahTitle: {
+    textAlign: "center",
   },
   carouselItemTextActive: {
     color: "#fff",
