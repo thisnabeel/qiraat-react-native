@@ -767,6 +767,15 @@ const NarratorPopup = ({
       }
     });
   };
+  const SHADDA_CHAR = "\u0651";
+  /** Dropdown / special handlers: prepend shadda when orange mode is on; clears orange. */
+  const prefixDiacriticsWithOrangeShaddaIfActive = (diacriticsString) => {
+    if (!isShaddaSelectedRef.current) return diacriticsString;
+    scheduleClearSkipMainHarakatKeyPress();
+    const stripped = diacriticsString.replace(new RegExp(SHADDA_CHAR, "g"), "");
+    setShaddaSelected(false);
+    return SHADDA_CHAR + stripped;
+  };
   const [longPressButton, setLongPressButton] = useState(null); // { char, tanweenChar, buttonIndex, position }
   const [longPressPosition, setLongPressPosition] = useState(null); // { x, y }
   const [dragStartY, setDragStartY] = useState(null);
@@ -1112,8 +1121,9 @@ const NarratorPopup = ({
     // Using U+25C6 (◆) as marker, but we'll render it specially
     const diamondMarker = "\u25C6"; // Black diamond, we'll style it red in rendering
     
+    scheduleClearSkipMainHarakatKeyPress();
     // Replace all diacritics with only the diamond marker
-    const newDiacritics = diamondMarker;
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(diamondMarker);
     
     // Replace the letter with base letter + diamond marker
     const newValue =
@@ -1171,11 +1181,14 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     
-    // Insert alif after the letter (after diacritics)
-    const newValue = 
-      inputValue.slice(0, letterEnd) + 
-      alifChar + 
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      alifChar +
       inputValue.slice(letterEnd);
     
     onInputChange(newValue);
@@ -1225,11 +1238,14 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     
-    // Insert waw after the letter (after diacritics)
-    const newValue = 
-      inputValue.slice(0, letterEnd) + 
-      wawChar + 
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      wawChar +
       inputValue.slice(letterEnd);
     
     onInputChange(newValue);
@@ -1283,6 +1299,9 @@ const NarratorPopup = ({
       // Add inverted dammah if not already present and no dammah to replace
       newDiacritics = newDiacritics + invertedDammahChar;
     }
+    
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     
     // Replace diacritics
     const newValue = 
@@ -1341,6 +1360,9 @@ const NarratorPopup = ({
       newDiacritics = newDiacritics + dammaChar;
     }
     
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
+    
     // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
@@ -1397,6 +1419,9 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(kasraChar)) {
       newDiacritics = newDiacritics + kasraChar;
     }
+    
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     
     // Replace diacritics
     const newValue = 
@@ -1455,6 +1480,9 @@ const NarratorPopup = ({
       newDiacritics = newDiacritics + fathaChar;
     }
     
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
+    
     // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
@@ -1507,6 +1535,9 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(maddRoundedZeroChar)) {
       newDiacritics = newDiacritics + maddRoundedZeroChar;
     }
+    
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     
     // Replace diacritics
     const newValue = 
@@ -1561,6 +1592,9 @@ const NarratorPopup = ({
       newDiacritics = newDiacritics + maddahChar;
     }
     
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
+    
     // Replace diacritics
     const newValue = 
       inputValue.slice(0, letterStart + 1) + 
@@ -1614,11 +1648,14 @@ const NarratorPopup = ({
     if (!newDiacritics.includes(fathaChar)) {
       newDiacritics = fathaChar + newDiacritics;
     }
+    scheduleClearSkipMainHarakatKeyPress();
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     
-    // Insert ya after the letter (after diacritics)
-    const newValue = 
-      inputValue.slice(0, letterEnd) + 
-      yaChar + 
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      yaChar +
       inputValue.slice(letterEnd);
     
     onInputChange(newValue);
@@ -1658,16 +1695,9 @@ const NarratorPopup = ({
     }
     
     const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
-    const shaddaChar = "\u0651";
     
-    // Replace all diacritics with dagger alif (optionally with shadda when orange shadda was active)
-    let newDiacritics = daggerAlifChar;
-    if (isShaddaSelectedRef.current) {
-      newDiacritics = shaddaChar + daggerAlifChar;
-      setShaddaSelected(false);
-    }
-
     scheduleClearSkipMainHarakatKeyPress();
+    let newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(daggerAlifChar);
     
     // Replace the letter with base letter + only dagger alif
     const newValue =
@@ -1716,8 +1746,9 @@ const NarratorPopup = ({
     
     // Get existing harakat (kasrah in this case)
     const kasraChar = "\u0650"; // Kasrah
+    scheduleClearSkipMainHarakatKeyPress();
     // Replace diacritics with kasrah + helper character
-    const newDiacritics = kasraChar + helperChar;
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(kasraChar + helperChar);
     
     // Replace the letter with base letter + kasrah + helper character
     const newValue =
@@ -1813,7 +1844,8 @@ const NarratorPopup = ({
     
     // Using U+0658 for imalah dot - only add the helper character, no kasrah
     const imalahDotChar = "\u0658"; // ARABIC SMALL HIGH NOON
-    const newDiacritics = imalahDotChar;
+    scheduleClearSkipMainHarakatKeyPress();
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(imalahDotChar);
     
     // Replace the letter with base letter + only imalah dot
     const newValue =
@@ -1862,7 +1894,8 @@ const NarratorPopup = ({
     
     // Using U+0659 for helper diamond dot - only add the helper character, no kasrah
     const helperDiamondDotChar = "\u0659"; // ARABIC PLACE OF SAJDAH
-    const newDiacritics = helperDiamondDotChar;
+    scheduleClearSkipMainHarakatKeyPress();
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(helperDiamondDotChar);
     
     // Replace the letter with base letter + only helper diamond dot
     const newValue =
@@ -1911,7 +1944,8 @@ const NarratorPopup = ({
     
     // Using U+0656 for subscript alef - only add the helper character, no kasrah
     const subscriptAlefChar = "\u0656"; // ARABIC SUBSCRIPT ALEF
-    const newDiacritics = subscriptAlefChar;
+    scheduleClearSkipMainHarakatKeyPress();
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(subscriptAlefChar);
     
     // Replace the letter with base letter + only subscript alef
     const newValue =
@@ -1982,13 +2016,7 @@ const NarratorPopup = ({
       }
     }
 
-    const shaddaChar = "\u0651";
-    if (isShaddaSelectedRef.current) {
-      newDiacritics = newDiacritics.replace(new RegExp(shaddaChar, "g"), "");
-      newDiacritics = shaddaChar + newDiacritics;
-      setShaddaSelected(false);
-    }
-
+    newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(newDiacritics);
     scheduleClearSkipMainHarakatKeyPress();
     
     // Replace the letter with base letter + new diacritics
@@ -2037,9 +2065,13 @@ const NarratorPopup = ({
                      harakatFromVariation === kasraChar || 
                      harakatFromVariation === dammaChar;
     
-    // If shadda is selected and a vowel is pressed, combine them
-    if (isShaddaSelectedRef.current && isVowel) {
-      const combinedHarakat = shaddaChar + harakatFromVariation;
+    // Orange shadda + chosen harakat (any length), or bare letter (e.g. sukoon menu → letter + shadda only)
+    if (isShaddaSelectedRef.current && !isShadda) {
+      scheduleClearSkipMainHarakatKeyPress();
+      const combinedHarakat =
+        harakatFromVariation.length > 0
+          ? shaddaChar + harakatFromVariation.replace(new RegExp(shaddaChar, "g"), "")
+          : shaddaChar;
       
       const letterPos = letterPositions[currentLetterIndex];
       let letterStart = letterPos.start;
@@ -2048,7 +2080,7 @@ const NarratorPopup = ({
       let letterEnd = letterStart + 1;
       while (letterEnd < inputValue.length) {
         const char = inputValue[letterEnd];
-        if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+        if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
           letterEnd++;
         } else {
           break;
@@ -2098,7 +2130,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
