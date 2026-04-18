@@ -19,6 +19,7 @@ import {
   Easing,
   PanResponder,
   Keyboard,
+  Alert,
 } from "react-native";
 import {
   SafeAreaProvider,
@@ -72,6 +73,10 @@ const MUSHAF_3_FONT_SIZE = 18;   // 15 Liner Uthmani — tuned for Bayaan-like s
 const MUSHAF_3_LINE_HEIGHT = 39; // 15 Liner Uthmani — slightly tighter than before to mimic Qul/Bayaan layout
 const getMushafFontSize = (mushafId) => (mushafId === 2 ? MUSHAF_2_FONT_SIZE : MUSHAF_3_FONT_SIZE);
 const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT : MUSHAF_3_LINE_HEIGHT);
+
+/** Mushaf 2: temporary surah header insert UI; set false to hide Header / Save in the top bar */
+const SHOW_MUSHAF2_HEADER_INSERT_TOOL = true;
+const MUSHAF_2_MAX_PAGE_LINES = 13;
 
 /** Indo-Pak mushaf (2): surah-name-v2.ttf maps surah banners to U+E001, U+E002, … (U+E000 + position). */
 const SURAH_HEADER_V2_FONT_FAMILY = "SurahNameV2";
@@ -191,6 +196,8 @@ const Line = ({
   suppressLine = false,
   // Kept for compatibility: older bundles or merges referenced this; always false now (single-line header).
   forceHeaderRender = false,
+  /** When true (header insert mode), words are not long-pressable so the line tap target receives touches */
+  disableWordLongPress = false,
 }) => {
   if (suppressLine) return null;
 
@@ -357,6 +364,27 @@ const Line = ({
           );
         }
 
+        const wordContainerStyle = disableWordLongPress
+          ? [
+              styles.wordPressable,
+              selectedWordId === word.id && styles.wordSelected,
+              hasOverlay && (isDarkMode ? styles.wordBlockWithOverlayDark : styles.wordBlockWithOverlay),
+            ]
+          : ({ pressed }) => [
+              styles.wordPressable,
+              pressed && styles.wordPressed,
+              selectedWordId === word.id && styles.wordSelected,
+              hasOverlay && (isDarkMode ? styles.wordBlockWithOverlayDark : styles.wordBlockWithOverlay),
+            ];
+
+        if (disableWordLongPress) {
+          return (
+            <View key={`${word.id}-${index}`} style={wordContainerStyle}>
+              {contentToRender}
+            </View>
+          );
+        }
+
         return (
           <Pressable
             key={`${word.id}-${index}`}
@@ -378,12 +406,7 @@ const Line = ({
             }}
             delayLongPress={500}
             cancelable={true}
-            style={({ pressed }) => [
-              styles.wordPressable,
-              pressed && styles.wordPressed,
-              selectedWordId === word.id && styles.wordSelected,
-              hasOverlay && (isDarkMode ? styles.wordBlockWithOverlayDark : styles.wordBlockWithOverlay),
-            ]}
+            style={wordContainerStyle}
           >
             {contentToRender}
           </Pressable>
@@ -392,6 +415,51 @@ const Line = ({
     </View>
   );
 };
+
+function mergeSurahHeaderPreview(basePage, preview, opIndex = 0) {
+  if (!basePage?.lines || !preview) return basePage;
+  const { insertAtPosition, surahNumber, useBasmala } = preview;
+  const sorted = [...basePage.lines].sort((a, b) => a.position - b.position);
+  const shift = useBasmala ? 2 : 1;
+  const left = sorted.filter((l) => l.position < insertAtPosition);
+  const right = sorted
+    .filter((l) => l.position >= insertAtPosition)
+    .map((l) => ({ ...l, position: l.position + shift }));
+  const idKey = `${opIndex}-${insertAtPosition}-${surahNumber}-${useBasmala ? 2 : 1}`;
+  const inserted = useBasmala
+    ? [
+        {
+          id: `preview-b-${idKey}`,
+          position: insertAtPosition,
+          surah_header_position: -1,
+          words: [],
+        },
+        {
+          id: `preview-s-${idKey}`,
+          position: insertAtPosition + 1,
+          surah_header_position: surahNumber,
+          words: [],
+        },
+      ]
+    : [
+        {
+          id: `preview-s-${idKey}`,
+          position: insertAtPosition,
+          surah_header_position: surahNumber,
+          words: [],
+        },
+      ];
+  return { ...basePage, lines: [...left, ...inserted, ...right] };
+}
+
+function mergeSurahHeaderPreviewChain(basePage, operations) {
+  if (!basePage?.lines || !operations?.length) return basePage;
+  let page = basePage;
+  operations.forEach((op, i) => {
+    page = mergeSurahHeaderPreview(page, op, i);
+  });
+  return page;
+}
 
 const PageView = ({
   page,
@@ -405,6 +473,8 @@ const PageView = ({
   highlightFirstLine = false,
   isDarkMode = false,
   mushafId = 3,
+  headerInsertMode = false,
+  onHeaderInsertLinePress,
 }) => {
 
   if (loading) {
@@ -494,24 +564,45 @@ const PageView = ({
   return (
     <View style={containerStyle}>
       <View style={pageContentStyle}>
-        {linesWithHeaderRenderMeta.map(({ line, isSpareHeaderCompanionLine, currentHeaderPos }, lineIndex) => (
-          <Line
-            key={line.id}
-            words={line.words}
-            onWordPress={onWordPress}
-            selectedWordId={selectedWordId}
-            savedVariations={savedVariations}
-            selectedNarrators={selectedNarrators}
-            allVariations={allVariations}
-            narratorHighlightColorById={narratorHighlightColorById}
-            isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
-            isDarkMode={isDarkMode}
-            mushafId={mushafId}
-            linePosition={line.position}
-            surahHeaderPosition={currentHeaderPos}
-            suppressLine={isSpareHeaderCompanionLine}
-          />
-        ))}
+        {linesWithHeaderRenderMeta.map(({ line, isSpareHeaderCompanionLine, currentHeaderPos }, lineIndex) => {
+          const insertBeforeThisLine = line.position;
+          const lineEl = (
+            <Line
+              words={line.words}
+              onWordPress={onWordPress}
+              selectedWordId={selectedWordId}
+              savedVariations={savedVariations}
+              selectedNarrators={selectedNarrators}
+              allVariations={allVariations}
+              narratorHighlightColorById={narratorHighlightColorById}
+              isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
+              isDarkMode={isDarkMode}
+              mushafId={mushafId}
+              linePosition={line.position}
+              surahHeaderPosition={currentHeaderPos}
+              suppressLine={isSpareHeaderCompanionLine}
+              disableWordLongPress={headerInsertMode && mushafId === 2}
+            />
+          );
+          if (isSpareHeaderCompanionLine) {
+            return <React.Fragment key={line.id}>{lineEl}</React.Fragment>;
+          }
+          if (!headerInsertMode || mushafId !== 2) {
+            return <React.Fragment key={line.id}>{lineEl}</React.Fragment>;
+          }
+          return (
+            <Pressable
+              key={line.id}
+              onPress={() => onHeaderInsertLinePress?.(insertBeforeThisLine)}
+              style={({ pressed }) => [
+                styles.lineHeaderInsertTarget,
+                pressed && styles.lineHeaderInsertTargetPressed,
+              ]}
+            >
+              {lineEl}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -660,6 +751,22 @@ const NarratorPopup = ({
   const historyRef = useRef([]);
   const historyIndexRef = useRef(-1);
   const [isShaddaSelected, setIsShaddaSelected] = useState(false);
+  // Ref mirrors shadda "orange" mode synchronously so dropdown handlers see true before the next render.
+  const isShaddaSelectedRef = useRef(false);
+  const setShaddaSelected = (value) => {
+    isShaddaSelectedRef.current = value;
+    setIsShaddaSelected(value);
+  };
+  // Nested Pressable can fire the main harakat key onPress after a dropdown choice; skip that duplicate.
+  const skipNextMainHarakatKeyPressRef = useRef(false);
+  const scheduleClearSkipMainHarakatKeyPress = () => {
+    skipNextMainHarakatKeyPressRef.current = true;
+    queueMicrotask(() => {
+      if (skipNextMainHarakatKeyPressRef.current) {
+        skipNextMainHarakatKeyPressRef.current = false;
+      }
+    });
+  };
   const [longPressButton, setLongPressButton] = useState(null); // { char, tanweenChar, buttonIndex, position }
   const [longPressPosition, setLongPressPosition] = useState(null); // { x, y }
   const [dragStartY, setDragStartY] = useState(null);
@@ -771,7 +878,7 @@ const NarratorPopup = ({
       if (currentLetterIndex !== 0) {
         setCurrentLetterIndex(0);
       }
-      setIsShaddaSelected(false); // Deselect shadda when input changes
+      setShaddaSelected(false); // Deselect shadda when input changes
       return;
     }
     
@@ -780,13 +887,13 @@ const NarratorPopup = ({
       if (currentLetterIndex !== 0) {
         setCurrentLetterIndex(0);
       }
-      setIsShaddaSelected(false); // Deselect shadda when no letters
+      setShaddaSelected(false); // Deselect shadda when no letters
     } else {
       // Ensure index is within bounds
       const validIndex = Math.max(0, Math.min(currentLetterIndex, letterPositions.length - 1));
       if (validIndex !== currentLetterIndex) {
         setCurrentLetterIndex(validIndex);
-        setIsShaddaSelected(false); // Deselect shadda when index changes
+        setShaddaSelected(false); // Deselect shadda when index changes
       }
     }
   }, [inputValue]); // Only depend on inputValue, not currentLetterIndex to avoid loops
@@ -1551,9 +1658,16 @@ const NarratorPopup = ({
     }
     
     const daggerAlifChar = "\u0670"; // Dagger alif (ألف خنجرية)
+    const shaddaChar = "\u0651";
     
-    // Replace all diacritics with only the dagger alif
-    const newDiacritics = daggerAlifChar;
+    // Replace all diacritics with dagger alif (optionally with shadda when orange shadda was active)
+    let newDiacritics = daggerAlifChar;
+    if (isShaddaSelectedRef.current) {
+      newDiacritics = shaddaChar + daggerAlifChar;
+      setShaddaSelected(false);
+    }
+
+    scheduleClearSkipMainHarakatKeyPress();
     
     // Replace the letter with base letter + only dagger alif
     const newValue =
@@ -1867,6 +1981,15 @@ const NarratorPopup = ({
         newDiacritics = newDiacritics + daggerAlifChar;
       }
     }
+
+    const shaddaChar = "\u0651";
+    if (isShaddaSelectedRef.current) {
+      newDiacritics = newDiacritics.replace(new RegExp(shaddaChar, "g"), "");
+      newDiacritics = shaddaChar + newDiacritics;
+      setShaddaSelected(false);
+    }
+
+    scheduleClearSkipMainHarakatKeyPress();
     
     // Replace the letter with base letter + new diacritics
     const newValue =
@@ -1915,7 +2038,7 @@ const NarratorPopup = ({
                      harakatFromVariation === dammaChar;
     
     // If shadda is selected and a vowel is pressed, combine them
-    if (isShaddaSelected && isVowel) {
+    if (isShaddaSelectedRef.current && isVowel) {
       const combinedHarakat = shaddaChar + harakatFromVariation;
       
       const letterPos = letterPositions[currentLetterIndex];
@@ -1944,7 +2067,7 @@ const NarratorPopup = ({
       onInputChange(newValue);
       
       // Deselect shadda
-      setIsShaddaSelected(false);
+      setShaddaSelected(false);
       
       // After updating, ensure currentLetterIndex is still valid
       setTimeout(() => {
@@ -1959,13 +2082,13 @@ const NarratorPopup = ({
     
     // If shadda button is pressed, toggle selection
     if (isShadda) {
-      setIsShaddaSelected(!isShaddaSelected);
+      setShaddaSelected(!isShaddaSelectedRef.current);
       return; // Don't apply shadda yet, just toggle selection
     }
     
     // If shadda is selected and another button is pressed (not a vowel), deselect shadda
-    if (isShaddaSelected && !isVowel) {
-      setIsShaddaSelected(false);
+    if (isShaddaSelectedRef.current && !isVowel) {
+      setShaddaSelected(false);
     }
     
     const letterPos = letterPositions[currentLetterIndex];
@@ -2168,7 +2291,7 @@ const NarratorPopup = ({
     const letterPositions = getLetterPositions(inputValue);
     if (letterPositions.length === 0) {
       setCurrentLetterIndex(0);
-      setIsShaddaSelected(false); // Deselect shadda when moving
+      setShaddaSelected(false); // Deselect shadda when moving
       return;
     }
 
@@ -2182,7 +2305,7 @@ const NarratorPopup = ({
     
     // If moving to a different letter, deselect shadda
     if (newIndex !== currentLetterIndex) {
-      setIsShaddaSelected(false);
+      setShaddaSelected(false);
     }
     
     setCurrentLetterIndex(newIndex);
@@ -2948,6 +3071,10 @@ const NarratorPopup = ({
                                   isLongPressed && styles.keyboardKeyLongPressed,
                                 ]}
                                 onPress={() => {
+                                  if (skipNextMainHarakatKeyPressRef.current) {
+                                    skipNextMainHarakatKeyPressRef.current = false;
+                                    return;
+                                  }
                                   if (!isLongPressed) {
                                     keyboardMode === "harakat" 
                                       ? handleHarakatPress(char)
@@ -4119,6 +4246,17 @@ export default function App() {
         .sort((a, b) => b.fields.first_page - a.fields.first_page), // RTL: highest page first
     []
   );
+  /** Same titles as the Go to Page surah carousel (`segments.json` surah segments) */
+  const surahTitleByNumber = useMemo(() => {
+    const m = new Map();
+    surahSegments.forEach((s) => {
+      const n = s.fields.category_position;
+      if (typeof n === "number" && n >= 1 && n <= 114) {
+        m.set(n, s.fields.title);
+      }
+    });
+    return m;
+  }, [surahSegments]);
   const [currentJuzIndex, setCurrentJuzIndex] = useState(0);
   const [currentSurahIndex, setCurrentSurahIndex] = useState(0);
   const juzScrollViewRef = useRef(null);
@@ -4183,6 +4321,15 @@ export default function App() {
   const [variationCache, setVariationCache] = useState({}); // Cache for variations per page (for React re-renders)
   const pageCacheRef = useRef({}); // Ref cache for synchronous access
   const variationCacheRef = useRef({}); // Ref cache for variations
+  /** Surah picker: first new row index (= tapped line.position, i.e. insert before that line) */
+  const pendingHeaderInsertAtRef = useRef(null);
+  /** Page number for which the picker was opened (freeze if user swipes before confirming) */
+  const pendingHeaderPickPageRef = useRef(null);
+  const [headerInsertMode, setHeaderInsertMode] = useState(false);
+  /** null | { pageNum, operations: { insertAtPosition, surahNumber, useBasmala }[] } */
+  const [headerPreview, setHeaderPreview] = useState(null);
+  const headerPreviewRef = useRef(null);
+  const [surahPickerVisible, setSurahPickerVisible] = useState(false);
   const DRAWER_WIDTH = 260;
   const TAB_SLIDE_DURATION = 320;
   // Bottom tab bar slides down off-screen in sync with drawer closing (translateY when drawer closed)
@@ -4399,6 +4546,10 @@ export default function App() {
   useEffect(() => {
     currentPageRef.current = currentPage;
   }, [currentPage]);
+
+  useEffect(() => {
+    headerPreviewRef.current = headerPreview;
+  }, [headerPreview]);
 
   useEffect(() => {
     // Listen UX toggle: if no recitation player is visible, force-hide the left sidebar.
@@ -5031,14 +5182,14 @@ export default function App() {
   };
 
   // Function to fetch a single page and cache it
-  const fetchAndCachePage = async (pageNum, showLoading = false) => {
+  const fetchAndCachePage = async (pageNum, showLoading = false, force = false) => {
     // Skip if already fetching
     if (fetchingPagesRef.current.has(pageNum)) {
       return null;
     }
-    
+
     // Check ref cache first (synchronous access)
-    if (pageCacheRef.current[pageNum]) {
+    if (!force && pageCacheRef.current[pageNum]) {
       return pageCacheRef.current[pageNum];
     }
 
@@ -5094,6 +5245,147 @@ export default function App() {
       return null;
     } finally {
       fetchingPagesRef.current.delete(pageNum);
+    }
+  };
+
+  const openHeaderInsertLine = (insertAtPosition) => {
+    if (mushafId !== 2 || !SHOW_MUSHAF2_HEADER_INSERT_TOOL) return;
+    const pageNum = currentPageRef.current;
+    const base = pageCacheRef.current[pageNum];
+    if (!base?.lines?.length) return;
+    const hp = headerPreviewRef.current;
+    const prevOps =
+      hp?.pageNum === pageNum && Array.isArray(hp.operations) ? hp.operations : [];
+    const effectivePage =
+      prevOps.length > 0 ? mergeSurahHeaderPreviewChain(base, prevOps) : base;
+    const sorted = [...effectivePage.lines].sort((a, b) => a.position - b.position);
+    const room = MUSHAF_2_MAX_PAGE_LINES - sorted.length;
+    if (room < 1) {
+      Alert.alert(
+        "Cannot insert",
+        "Adding another header would exceed 13 lines on this page (or the page is already full)."
+      );
+      return;
+    }
+    pendingHeaderInsertAtRef.current = insertAtPosition;
+    pendingHeaderPickPageRef.current = pageNum;
+    setSurahPickerVisible(true);
+  };
+
+  const confirmSurahForHeaderInsert = (surahNumber) => {
+    setSurahPickerVisible(false);
+    const insertAt = pendingHeaderInsertAtRef.current;
+    const pageNum = pendingHeaderPickPageRef.current;
+    pendingHeaderInsertAtRef.current = null;
+    pendingHeaderPickPageRef.current = null;
+    if (insertAt == null || pageNum == null) return;
+    const base = pageCacheRef.current[pageNum];
+    if (!base?.lines?.length) return;
+
+    setHeaderPreview((prev) => {
+      const prevOps =
+        prev?.pageNum === pageNum && Array.isArray(prev.operations)
+          ? prev.operations
+          : [];
+      const mergedSoFar =
+        prevOps.length > 0 ? mergeSurahHeaderPreviewChain(base, prevOps) : base;
+      const count = mergedSoFar.lines.length;
+      const room = MUSHAF_2_MAX_PAGE_LINES - count;
+      if (room < 1) {
+        setTimeout(() =>
+          Alert.alert(
+            "Cannot insert",
+            "Adding this header would exceed 13 lines on the page."
+          ),
+          0
+        );
+        return prev;
+      }
+      const useBasmala = room >= 2;
+      return {
+        pageNum,
+        operations: [
+          ...prevOps,
+          { insertAtPosition: insertAt, surahNumber, useBasmala },
+        ],
+      };
+    });
+  };
+
+  const toggleHeaderInsertMode = () => {
+    if (headerInsertMode) {
+      setHeaderInsertMode(false);
+      setHeaderPreview(null);
+      setSurahPickerVisible(false);
+      pendingHeaderInsertAtRef.current = null;
+      pendingHeaderPickPageRef.current = null;
+      return;
+    }
+    setHeaderInsertMode(true);
+  };
+
+  const saveHeaderInsert = async () => {
+    const ops = headerPreview?.operations;
+    if (!ops?.length || mushafId !== 2) return;
+    const { pageNum } = headerPreview;
+    try {
+      for (let i = 0; i < ops.length; i++) {
+        const { insertAtPosition, surahNumber } = ops[i];
+        const res = await fetch(
+          `${getApiBase()}/api/mushafs/${mushafId}/pages/${pageNum}/insert_surah_header`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              insert_at_position: insertAtPosition,
+              surah_number: surahNumber,
+            }),
+          }
+        );
+        let body = {};
+        try {
+          body = await res.json();
+        } catch (_) {
+          /* ignore */
+        }
+        if (!res.ok) {
+          Alert.alert(
+            "Save failed",
+            body.error || `HTTP ${res.status} (after ${i} header(s) saved)`
+          );
+          delete pageCacheRef.current[pageNum];
+          setPageCache((p) => {
+            const next = { ...p };
+            delete next[pageNum];
+            return next;
+          });
+          await fetchAndCachePage(pageNum, false, true);
+          setHeaderPreview(null);
+          return;
+        }
+        delete pageCacheRef.current[pageNum];
+        setPageCache((prev) => {
+          const next = { ...prev };
+          delete next[pageNum];
+          return next;
+        });
+        await fetchAndCachePage(pageNum, false, true);
+      }
+      setHeaderPreview(null);
+    } catch (e) {
+      Alert.alert("Save failed", e.message);
+      try {
+        delete pageCacheRef.current[pageNum];
+        setPageCache((p) => {
+          const next = { ...p };
+          delete next[pageNum];
+          return next;
+        });
+        await fetchAndCachePage(pageNum, false, true);
+      } catch (_) {
+        /* ignore */
+      }
+      setHeaderPreview(null);
     }
   };
 
@@ -6316,6 +6608,7 @@ if (response.ok) {
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
+                  style={styles.mushafNarratorPillsScroll}
                   contentContainerStyle={styles.mushafNarratorPills}
                   onScrollBeginDrag={() => {
                     if (isDrawerVisibleRef.current) closeDrawer();
@@ -6364,6 +6657,32 @@ if (response.ok) {
                 </ScrollView>
                 
                 <View style={styles.mushafRightIcons}>
+                  {mushafId === 2 && SHOW_MUSHAF2_HEADER_INSERT_TOOL ? (
+                    <>
+                      <TouchableOpacity
+                        style={styles.mushafHeaderToolButton}
+                        onPress={() => {
+                          if (isDrawerVisibleRef.current) closeDrawer();
+                          toggleHeaderInsertMode();
+                        }}
+                      >
+                        <Text style={styles.mushafHeaderToolButtonText}>
+                          {headerInsertMode ? "Header ✓" : "Header"}
+                        </Text>
+                      </TouchableOpacity>
+                      {headerInsertMode && headerPreview?.operations?.length ? (
+                        <TouchableOpacity
+                          style={styles.mushafHeaderToolButton}
+                          onPress={() => {
+                            if (isDrawerVisibleRef.current) closeDrawer();
+                            saveHeaderInsert();
+                          }}
+                        >
+                          <Text style={styles.mushafHeaderToolButtonText}>Save</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </>
+                  ) : null}
                   <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
                   <TouchableOpacity
                     style={styles.mushafIconButton}
@@ -6409,7 +6728,19 @@ if (response.ok) {
                     const pageNum = totalPages - idx;
                     const cachedPage = pageCacheRef.current[pageNum];
                     const isCurrent = pageNum === currentPage;
-                    const pageData = cachedPage;
+                    let pageData = cachedPage;
+                    if (
+                      SHOW_MUSHAF2_HEADER_INSERT_TOOL &&
+                      mushafId === 2 &&
+                      headerPreview?.operations?.length &&
+                      headerPreview.pageNum === pageNum &&
+                      cachedPage
+                    ) {
+                      pageData = mergeSurahHeaderPreviewChain(
+                        cachedPage,
+                        headerPreview.operations
+                      );
+                    }
                     const isLoading = isCurrent && (!pageData || loading);
 
                     return (
@@ -6434,6 +6765,20 @@ if (response.ok) {
                           )}
                           isDarkMode={isMushafDarkMode}
                           mushafId={mushafId}
+                          headerInsertMode={
+                            isCurrent &&
+                            headerInsertMode &&
+                            SHOW_MUSHAF2_HEADER_INSERT_TOOL &&
+                            mushafId === 2
+                          }
+                          onHeaderInsertLinePress={
+                            isCurrent &&
+                            headerInsertMode &&
+                            SHOW_MUSHAF2_HEADER_INSERT_TOOL &&
+                            mushafId === 2
+                              ? openHeaderInsertLine
+                              : undefined
+                          }
                         />
                       </View>
                     );
@@ -7362,6 +7707,58 @@ if (response.ok) {
         onMushafChange={setMushafId}
       />
 
+      <Modal
+        visible={surahPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setSurahPickerVisible(false);
+          pendingHeaderInsertAtRef.current = null;
+          pendingHeaderPickPageRef.current = null;
+        }}
+      >
+        <Pressable
+          style={styles.surahPickerOverlay}
+          onPress={() => {
+            setSurahPickerVisible(false);
+            pendingHeaderInsertAtRef.current = null;
+            pendingHeaderPickPageRef.current = null;
+          }}
+        >
+          <Pressable style={styles.surahPickerSheet} onPress={() => {}}>
+            <Text style={styles.surahPickerTitle}>Select surah</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.surahPickerScroll}
+            >
+              {Array.from({ length: 114 }, (_, i) => i + 1).map((n) => {
+                const surahName = surahTitleByNumber.get(n) ?? "";
+                return (
+                  <TouchableOpacity
+                    key={n}
+                    style={styles.surahPickerChip}
+                    onPress={() => confirmSurahForHeaderInsert(n)}
+                  >
+                    <Text style={styles.surahPickerChipNumber}>{n}</Text>
+                    {surahName ? (
+                      <Text
+                        style={styles.surahPickerChipName}
+                        numberOfLines={2}
+                        allowFontScaling={false}
+                      >
+                        {surahName}
+                      </Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Page Slider Modal */}
       <Modal
         visible={showPageSlider}
@@ -7682,10 +8079,14 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: "#ffffff",
   },
+  /** Fills space between menu and page/search so pills scroll instead of pushing the right cluster off-screen */
+  mushafNarratorPillsScroll: {
+    flex: 1,
+    minWidth: 0,
+  },
   mushafNarratorPills: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
     paddingRight: 12,
   },
   mushafNarratorPill: {
@@ -7703,6 +8104,80 @@ const styles = StyleSheet.create({
   mushafRightIcons: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
+  },
+  mushafHeaderToolButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginRight: 6,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.14)",
+  },
+  mushafHeaderToolButtonText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#ffffff",
+  },
+  lineHeaderInsertTarget: {
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: "#B84700",
+    borderBottomColor: "#B84700",
+    borderStyle: "dashed",
+  },
+  lineHeaderInsertTargetPressed: {
+    backgroundColor: "rgba(184, 71, 0, 0.1)",
+  },
+  surahPickerOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  surahPickerSheet: {
+    backgroundColor: "#2a2a2e",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 12,
+    maxHeight: "52%",
+  },
+  surahPickerTitle: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  surahPickerScroll: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    paddingVertical: 8,
+    flexWrap: "nowrap",
+  },
+  surahPickerChip: {
+    width: 92,
+    maxWidth: 92,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    marginRight: 8,
+    borderRadius: 8,
+    backgroundColor: "#44454a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  surahPickerChipNumber: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  surahPickerChipName: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "500",
+    textAlign: "center",
+    width: "100%",
   },
   mushafPageIndicator: {
     fontSize: 12,
