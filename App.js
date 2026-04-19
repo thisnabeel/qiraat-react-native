@@ -85,9 +85,24 @@ const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT
 /**
  * Feature flags — flip booleans here for releases without hunting through App.js.
  * @property {boolean} mushaf2HeaderInsert — Mushaf 2: Header/Save bar, line targets, surah picker, stacked preview, save-to-API.
+ * @property {boolean} mushafLineAutoFitFont — Shrink font only until words fit row; row minHeight / Text lineHeight stay fixed; words vertically centered in the row (debug overflow).
  */
 const FEATURE_FLAGS = {
   mushaf2HeaderInsert: true,
+  mushafLineAutoFitFont: true,
+};
+
+/**
+ * Tuning for `FEATURE_FLAGS.mushafLineAutoFitFont` only.
+ * Scale is computed as (rowWidth − widthSlackPx) / sumWordWidths × fitFudge, then clamped to [minFontScale, maxFontScale].
+ */
+const MUSHAF_LINE_AUTO_FIT = {
+  widthSlackPx: 2,
+  fitFudge: 0.985,
+  minFontScale: 0.48,
+  maxFontScale: 1,
+  /** Ignore tiny scale updates (reduces churn). */
+  scaleEpsilon: 0.006,
 };
 
 /** Go to Page → Surah chips: segment `first_page` is one ahead of the printed mushaf page; subtract this when navigating. */
@@ -219,9 +234,89 @@ const Line = ({
   /** When true (header insert mode), words are not long-pressable so the line tap target receives touches */
   disableWordLongPress = false,
 }) => {
-  if (suppressLine) return null;
+  const normalizedWords = Array.isArray(words) ? words : [];
+  const hasRenderableWords = normalizedWords.some((word) => {
+    if (!word) return false;
+    if (typeof word.content === "string") return word.content.trim().length > 0;
+    return !!word.content;
+  });
+  const isMushaf2GlyphLine =
+    mushafId === 2 && (forceHeaderRender || !hasRenderableWords);
 
   const wordRefs = useRef({});
+  const lineRowWidthRef = useRef(0);
+  const wordWidthsRef = useRef([]);
+  const fitRafRef = useRef(null);
+  const [lineFontScale, setLineFontScale] = useState(1);
+  const wordsKey = useMemo(
+    () =>
+      (Array.isArray(words) ? words : [])
+        .map((w) => `${w?.id}:${w?.content ?? ""}`)
+        .join("|"),
+    [words]
+  );
+
+  const autoFitLine =
+    FEATURE_FLAGS.mushafLineAutoFitFont &&
+    !suppressLine &&
+    !isMushaf2GlyphLine &&
+    hasRenderableWords &&
+    normalizedWords.length > 0;
+
+  useEffect(() => {
+    setLineFontScale(1);
+    lineRowWidthRef.current = 0;
+    wordWidthsRef.current = [];
+  }, [wordsKey]);
+
+  const scheduleLineFitMeasure = useCallback(() => {
+    if (!autoFitLine) return;
+    if (fitRafRef.current != null) cancelAnimationFrame(fitRafRef.current);
+    fitRafRef.current = requestAnimationFrame(() => {
+      fitRafRef.current = null;
+      const W = lineRowWidthRef.current;
+      const n = normalizedWords.length;
+      const widths = wordWidthsRef.current;
+      const { widthSlackPx, fitFudge, minFontScale, maxFontScale, scaleEpsilon } = MUSHAF_LINE_AUTO_FIT;
+      if (!W || n === 0) return;
+      let sum = 0;
+      for (let i = 0; i < n; i++) {
+        const wi = widths[i];
+        if (wi == null || wi <= 0) return;
+        sum += wi;
+      }
+      if (sum <= W - 1) return;
+      const raw = ((W - widthSlackPx) / sum) * fitFudge;
+      const next = Math.min(maxFontScale, Math.max(minFontScale, raw));
+      setLineFontScale((prev) => (Math.abs(prev - next) < scaleEpsilon ? prev : next));
+    });
+  }, [autoFitLine, normalizedWords.length]);
+
+  // Re-measure after line content changes. Do not clear word widths on font-scale-only updates:
+  // some platforms skip child onLayout after a font change, which left the ref sparse and broke fitting until remount (e.g. hot reload).
+  useLayoutEffect(() => {
+    if (!autoFitLine) return;
+    let raf2;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        scheduleLineFitMeasure();
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2 != null) cancelAnimationFrame(raf2);
+    };
+  }, [autoFitLine, wordsKey, scheduleLineFitMeasure]);
+
+  useEffect(
+    () => () => {
+      if (fitRafRef.current != null) cancelAnimationFrame(fitRafRef.current);
+    },
+    []
+  );
+
+  if (suppressLine) return null;
+
   const lineStyle = [styles.line];
   const wordStyle = [styles.word];
   let inlineTextStyle = undefined;
@@ -253,20 +348,28 @@ const Line = ({
 
   const fontSize = getMushafFontSize(mushafId);
   const lineHeight = getMushafLineHeight(mushafId);
-  if (fontSize != null) wordStyle.push({ fontSize });
-  if (lineHeight != null) {
+  const fitScale = autoFitLine ? lineFontScale : 1;
+  const fixedLineHeight = lineHeight ?? styles.word.lineHeight;
+
+  if (fontSize != null) wordStyle.push({ fontSize: fontSize * fitScale });
+  else if (autoFitLine) wordStyle.push({ fontSize: styles.word.fontSize * fitScale });
+
+  if (autoFitLine) {
+    wordStyle.push({
+      lineHeight: fixedLineHeight,
+      ...(Platform.OS === "android" && {
+        includeFontPadding: false,
+        textAlignVertical: "center",
+      }),
+    });
+    lineStyle.push({ minHeight: fixedLineHeight });
+  } else if (lineHeight != null) {
     wordStyle.push({ lineHeight });
     lineStyle.push({ minHeight: lineHeight });
   }
 
   const effectiveWordLineHeight =
     getMushafLineHeight(mushafId) ?? styles.word.lineHeight;
-  const normalizedWords = Array.isArray(words) ? words : [];
-  const hasRenderableWords = normalizedWords.some((word) => {
-    if (!word) return false;
-    if (typeof word.content === "string") return word.content.trim().length > 0;
-    return !!word.content;
-  });
 
   // 13-line Indo-Pak (mushaf 2): placeholder lines (e.g. basmalah) have no words from the API
   if (mushafId === 2 && (forceHeaderRender || !hasRenderableWords)) {
@@ -329,7 +432,14 @@ const Line = ({
   }
 
   return (
-    <View style={lineStyle}>
+    <View
+      style={lineStyle}
+      onLayout={(e) => {
+        if (!autoFitLine) return;
+        lineRowWidthRef.current = e.nativeEvent.layout.width;
+        scheduleLineFitMeasure();
+      }}
+    >
       {normalizedWords.map((word, index) => {
         let contentToRender = <Text style={wordStyle}>{word.content}</Text>;
 
@@ -371,12 +481,27 @@ const Line = ({
             : undefined;
 
         if (matchingVariation && variation) {
+          const comparisonStyleParts = [
+            inlineTextStyle,
+            autoFitLine
+              ? {
+                  fontSize: (getMushafFontSize(mushafId) ?? styles.word.fontSize) * lineFontScale,
+                  lineHeight: getMushafLineHeight(mushafId) ?? styles.word.lineHeight,
+                  ...(Platform.OS === "android" && {
+                    includeFontPadding: false,
+                    textAlignVertical: "center",
+                  }),
+                }
+              : null,
+          ].filter(Boolean);
+          const comparisonTextStyle =
+            comparisonStyleParts.length > 0 ? StyleSheet.flatten(comparisonStyleParts) : undefined;
           contentToRender = (
             <InlineComparison
               originalText={word.content}
               inputText={variationContent}
               fontFamily={getQuranFontFamily(mushafId)}
-              textStyle={inlineTextStyle}
+              textStyle={comparisonTextStyle}
               imalahData={variationImalah}
               diamondData={variationDiamond}
               comparisonHighlightColor={comparisonHighlightColor}
@@ -399,7 +524,15 @@ const Line = ({
 
         if (disableWordLongPress) {
           return (
-            <View key={`${word.id}-${index}`} style={wordContainerStyle}>
+            <View
+              key={`${word.id}-${index}`}
+              style={wordContainerStyle}
+              onLayout={(ev) => {
+                if (!autoFitLine) return;
+                wordWidthsRef.current[index] = ev.nativeEvent.layout.width;
+                scheduleLineFitMeasure();
+              }}
+            >
               {contentToRender}
             </View>
           );
@@ -409,6 +542,11 @@ const Line = ({
           <Pressable
             key={`${word.id}-${index}`}
             ref={(ref) => (wordRefs.current[word.id] = ref)}
+            onLayout={(ev) => {
+              if (!autoFitLine) return;
+              wordWidthsRef.current[index] = ev.nativeEvent.layout.width;
+              scheduleLineFitMeasure();
+            }}
             onLongPress={() => {
               // Measure the word's absolute position
               const ref = wordRefs.current[word.id];
@@ -449,15 +587,15 @@ function mergeSurahHeaderPreview(basePage, preview, opIndex = 0) {
   const inserted = useBasmala
     ? [
         {
-          id: `preview-b-${idKey}`,
+          id: `preview-s-${idKey}`,
           position: insertAtPosition,
-          surah_header_position: -1,
+          surah_header_position: surahNumber,
           words: [],
         },
         {
-          id: `preview-s-${idKey}`,
+          id: `preview-b-${idKey}`,
           position: insertAtPosition + 1,
-          surah_header_position: surahNumber,
+          surah_header_position: -1,
           words: [],
         },
       ]
@@ -568,11 +706,13 @@ const PageView = ({
     const prevHeaderPos = Number(prevLine?.surah_header_position || 0);
     // API often emits two consecutive wordless rows for one surah banner; hide the spare row.
     // Same for basmalah (-1): two consecutive empty -1 rows → hide the second.
+    // Do not treat a basmala row (-1) after a surah banner as spare (surah-then-basmalah insert order).
     const isSpareHeaderCompanionLine =
       mushafId === 2 &&
       !currentHasText &&
       !prevHasText &&
-      (prevHeaderPos > 0 || (prevHeaderPos === -1 && currentHeaderPos === -1));
+      ((prevHeaderPos > 0 && currentHeaderPos !== -1) ||
+        (prevHeaderPos === -1 && currentHeaderPos === -1));
 
     return {
       line,
@@ -580,6 +720,18 @@ const PageView = ({
       currentHeaderPos,
     };
   });
+
+  const lineHasRenderableWords = (line) => {
+    const words = Array.isArray(line?.words) ? line.words : [];
+    return words.some((word) =>
+      typeof word?.content === "string" ? word.content.trim().length > 0 : !!word?.content
+    );
+  };
+  const firstLineWithWordsIndex = linesWithHeaderRenderMeta.findIndex(({ line }) =>
+    lineHasRenderableWords(line)
+  );
+  const juzHighlightLineIndex =
+    firstLineWithWordsIndex === -1 ? 0 : firstLineWithWordsIndex;
 
   return (
     <View style={containerStyle}>
@@ -595,7 +747,7 @@ const PageView = ({
               selectedNarrators={selectedNarrators}
               allVariations={allVariations}
               narratorHighlightColorById={narratorHighlightColorById}
-              isFirstLineOfJuz={highlightFirstLine && lineIndex === 0}
+              isFirstLineOfJuz={highlightFirstLine && lineIndex === juzHighlightLineIndex}
               isDarkMode={isDarkMode}
               mushafId={mushafId}
               linePosition={line.position}
@@ -604,15 +756,16 @@ const PageView = ({
               disableWordLongPress={headerInsertMode && mushafId === 2}
             />
           );
+          const lineInstanceKey = `${page.position}-${line.id}`;
           if (isSpareHeaderCompanionLine) {
-            return <React.Fragment key={line.id}>{lineEl}</React.Fragment>;
+            return <React.Fragment key={lineInstanceKey}>{lineEl}</React.Fragment>;
           }
           if (!headerInsertMode || mushafId !== 2) {
-            return <React.Fragment key={line.id}>{lineEl}</React.Fragment>;
+            return <React.Fragment key={lineInstanceKey}>{lineEl}</React.Fragment>;
           }
           return (
             <Pressable
-              key={line.id}
+              key={lineInstanceKey}
               onPress={() => onHeaderInsertLinePress?.(insertBeforeThisLine)}
               style={({ pressed }) => [
                 styles.lineHeaderInsertTarget,
@@ -5472,7 +5625,10 @@ export default function App() {
       if (!data || typeof data !== "object" || !data.id) {
         throw new Error(`Invalid page payload for mushaf ${mushafId} page ${pageNum}`);
       }
-      
+      if (Array.isArray(data.lines)) {
+        data.lines.sort((a, b) => Number(a.position) - Number(b.position));
+      }
+
       // Cache the page in both ref and state
       pageCacheRef.current[pageNum] = data;
       setPageCache((prev) => ({
@@ -5668,6 +5824,10 @@ export default function App() {
       }
       setHeaderPreview(null);
       setSurahHeaderMarkersTick((t) => t + 1);
+      setHeaderInsertMode(false);
+      setSurahPickerVisible(false);
+      pendingHeaderInsertAtRef.current = null;
+      pendingHeaderPickPageRef.current = null;
     } catch (e) {
       Alert.alert("Save failed", e.message);
       try {
