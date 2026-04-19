@@ -1938,6 +1938,98 @@ const NarratorPopup = ({
     }, 0);
   };
 
+  // Sukoon long-press menu: letter + sukoon + imalah marker (U+0658)
+  const handleImalahDotWithSukoonPress = () => {
+    if (inputValue.length === 0) return;
+
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const ch = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(ch)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+
+    const sukoonChar = "\u0652";
+    const imalahDotChar = "\u0658";
+    scheduleClearSkipMainHarakatKeyPress();
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(sukoonChar + imalahDotChar);
+
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+
+    addToHistory(newValue);
+    onInputChange(newValue);
+
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
+  // Sukoon long-press menu: letter + sukoon + helper diamond (U+0659)
+  const handleHelperDiamondDotWithSukoonPress = () => {
+    if (inputValue.length === 0) return;
+
+    const letterPositions = getLetterPositions(inputValue);
+    if (currentLetterIndex < 0 || currentLetterIndex >= letterPositions.length) return;
+
+    const baseLetter = getBaseLetterAtCurrentLetter();
+    if (!baseLetter) return;
+
+    const letterPos = letterPositions[currentLetterIndex];
+    const letterStart = letterPos.start;
+
+    let letterEnd = letterStart + 1;
+    while (letterEnd < inputValue.length) {
+      const ch = inputValue[letterEnd];
+      if (/[\u064B-\u065F\u0670\u25C6]/.test(ch)) {
+        letterEnd++;
+      } else {
+        break;
+      }
+    }
+
+    const sukoonChar = "\u0652";
+    const helperDiamondDotChar = "\u0659";
+    scheduleClearSkipMainHarakatKeyPress();
+    const newDiacritics = prefixDiacriticsWithOrangeShaddaIfActive(sukoonChar + helperDiamondDotChar);
+
+    const newValue =
+      inputValue.slice(0, letterStart) +
+      baseLetter +
+      newDiacritics +
+      inputValue.slice(letterEnd);
+
+    addToHistory(newValue);
+    onInputChange(newValue);
+
+    setTimeout(() => {
+      const newLetterPositions = getLetterPositions(newValue);
+      if (currentLetterIndex >= 0 && currentLetterIndex < newLetterPositions.length) {
+        const newPos = newLetterPositions[currentLetterIndex].start;
+        setSelection({ start: newPos, end: newPos });
+      }
+    }, 0);
+  };
+
   // Handle subscript alef press - adds only subscript alef from helper font (no other diacritics)
   const handleSubscriptAlefPress = () => {
     if (inputValue.length === 0) return;
@@ -2862,7 +2954,11 @@ const NarratorPopup = ({
                           return (
                             <View 
                               key={index} 
-                              style={{ position: 'relative', zIndex: isLongPressed ? 100 : 1 }}
+                              style={{
+                                position: "relative",
+                                zIndex: isLongPressed ? 100 : 1,
+                                overflow: "visible",
+                              }}
                               onStartShouldSetResponder={() => isLongPressed}
                               onMoveShouldSetResponder={() => isLongPressed}
                               onResponderMove={(e) => {
@@ -3020,15 +3116,30 @@ const NarratorPopup = ({
                                       }
                                     }, 0);
                                   } else if (isSukoonButton && keyboardMode === "harakat" && plainLetter) {
-                                    // Check if touch is over plain letter button (for sukoon button)
                                     setTimeout(() => {
                                       sukoonRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
-                                        const isOverSukoon = 
-                                          touchX >= pageX && 
+                                        const isOverSukoon =
+                                          touchX >= pageX &&
                                           touchX <= pageX + width &&
-                                          touchY >= pageY && 
+                                          touchY >= pageY &&
                                           touchY <= pageY + height;
                                         setIsHoveringSukoon(isOverSukoon);
+                                      });
+                                      imalahDotRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                        const isOverImalahDot =
+                                          touchX >= pageX &&
+                                          touchX <= pageX + width &&
+                                          touchY >= pageY &&
+                                          touchY <= pageY + height;
+                                        setIsHoveringImalahDot(isOverImalahDot);
+                                      });
+                                      helperDiamondDotRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                        const isOverHelperDiamondDot =
+                                          touchX >= pageX &&
+                                          touchX <= pageX + width &&
+                                          touchY >= pageY &&
+                                          touchY <= pageY + height;
+                                        setIsHoveringHelperDiamondDot(isOverHelperDiamondDot);
                                       });
                                     }, 0);
                                   }
@@ -3073,6 +3184,10 @@ const NarratorPopup = ({
                                     } else if (isHoveringExtenderHamzaDammah && isDammahButton && baseLetter === "\u0640") {
                                       // Released over extender hamza + dammah button
                                       handleExtenderHamzaDammahPress();
+                                    } else if (isHoveringImalahDot && isSukoonButton && plainLetter) {
+                                      handleImalahDotWithSukoonPress();
+                                    } else if (isHoveringHelperDiamondDot && isSukoonButton && plainLetter) {
+                                      handleHelperDiamondDotWithSukoonPress();
                                     } else if (isHoveringImalahDot && isKasrahButton) {
                                       // Released over imalah dot button (for kasrah button)
                                       handleImalahDotPress();
@@ -3802,32 +3917,128 @@ const NarratorPopup = ({
                                 </>
                               )}
                               
-                              {/* Plain letter popup - only shows when long-pressing sukoon button in harakat mode */}
+                              {/* Sukoon long-press: two rows (narrow width) so nothing clips; diamond row uses indigo when U+0659 is invisible in mushaf font */}
                               {isLongPressed && isSukoonButton && plainLetter && keyboardMode === "harakat" && (
-                                <Pressable
-                                  ref={(ref) => {
-                                    if (ref) sukoonRefs.current[index] = ref;
-                                  }}
+                                <View
                                   style={[
-                                    styles.keyboardKeyTanween,
+                                    styles.sukoonDropdownContainer,
                                     {
                                       top: (isSmallButtonSet ? 50 : 36) + 8,
-                                      left: 0,
                                     },
-                                    isHoveringSukoon && styles.keyboardKeyTanweenHovered,
                                   ]}
-                                  onPress={() => {
-                                    handleHarakatPress(plainLetter);
-                                    setLongPressButton(null);
-                                    setDragStartY(null);
-                                    setIsHoveringSukoon(false);
-                                  }}
                                 >
-                                  <Text style={[
-                                    styles.keyboardKeyText,
-                                    isSmallButtonSet && styles.keyboardKeyTextLarge,
-                                  ]}>{plainLetter}</Text>
-                                </Pressable>
+                                  <View style={styles.sukoonDropdownRow}>
+                                    <Pressable
+                                      ref={(ref) => {
+                                        if (ref) sukoonRefs.current[index] = ref;
+                                      }}
+                                      style={[
+                                        styles.keyboardKeyTanween,
+                                        styles.dropdownGridButton,
+                                        isHoveringSukoon && styles.keyboardKeyTanweenHovered,
+                                      ]}
+                                      onPress={() => {
+                                        handleHarakatPress(plainLetter);
+                                        setLongPressButton(null);
+                                        setDragStartY(null);
+                                        setIsHoveringSukoon(false);
+                                        setIsHoveringImalahDot(false);
+                                        setIsHoveringHelperDiamondDot(false);
+                                      }}
+                                    >
+                                      <Text
+                                        style={[
+                                          styles.keyboardKeyText,
+                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        ]}
+                                      >
+                                        {plainLetter}
+                                      </Text>
+                                    </Pressable>
+
+                                    <Pressable
+                                      ref={(ref) => {
+                                        if (ref) imalahDotRefs.current[index] = ref;
+                                      }}
+                                      style={[
+                                        styles.keyboardKeyTanween,
+                                        styles.keyboardKeyHelperDot,
+                                        styles.dropdownGridButton,
+                                        isHoveringImalahDot && styles.keyboardKeyTanweenHovered,
+                                      ]}
+                                      onPress={() => {
+                                        handleImalahDotWithSukoonPress();
+                                        setLongPressButton(null);
+                                        setDragStartY(null);
+                                        setIsHoveringSukoon(false);
+                                        setIsHoveringImalahDot(false);
+                                        setIsHoveringHelperDiamondDot(false);
+                                      }}
+                                    >
+                                      <View style={styles.helperDotContainer}>
+                                        <Text
+                                          style={[
+                                            styles.keyboardKeyText,
+                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          ]}
+                                        >
+                                          {baseLetter + sukoonChar}
+                                        </Text>
+                                        <Text
+                                          style={[
+                                            styles.helperDotText,
+                                            isSmallButtonSet && styles.helperDotTextLarge,
+                                            { fontFamily: quranFont },
+                                          ]}
+                                        >
+                                          {"\u0658"}
+                                        </Text>
+                                      </View>
+                                    </Pressable>
+                                  </View>
+
+                                  <View style={styles.sukoonDropdownRow}>
+                                    <Pressable
+                                      ref={(ref) => {
+                                        if (ref) helperDiamondDotRefs.current[index] = ref;
+                                      }}
+                                      style={[
+                                        styles.keyboardKeyTanween,
+                                        styles.keyboardKeyHelperDiamondSukoon,
+                                        styles.dropdownGridButton,
+                                        isHoveringHelperDiamondDot && styles.keyboardKeyTanweenHovered,
+                                      ]}
+                                      onPress={() => {
+                                        handleHelperDiamondDotWithSukoonPress();
+                                        setLongPressButton(null);
+                                        setDragStartY(null);
+                                        setIsHoveringSukoon(false);
+                                        setIsHoveringImalahDot(false);
+                                        setIsHoveringHelperDiamondDot(false);
+                                      }}
+                                    >
+                                      <View style={styles.helperDotContainer}>
+                                        <Text
+                                          style={[
+                                            styles.keyboardKeyText,
+                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          ]}
+                                        >
+                                          {baseLetter + sukoonChar}
+                                        </Text>
+                                        <Text
+                                          style={[
+                                            styles.helperDotText,
+                                            isSmallButtonSet && styles.helperDotTextLarge,
+                                            { fontFamily: quranFont },
+                                          ]}
+                                        >
+                                          {"\u0659"}
+                                        </Text>
+                                      </View>
+                                    </Pressable>
+                                  </View>
+                                </View>
                               )}
                               
                               {/* Kasrah button dropdown (no tanween) - shows helper dot buttons in a grid */}
@@ -9929,6 +10140,27 @@ const styles = StyleSheet.create({
     width: 142, // 2 columns * 66px width + 10px gap
     gap: 10,
     zIndex: 1000,
+  },
+  sukoonDropdownContainer: {
+    position: "absolute",
+    left: "50%",
+    marginLeft: -71, // half of row width 142 — centers strip under the key, avoids ScrollView clipping a 3rd column
+    zIndex: 1000,
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+  },
+  sukoonDropdownRow: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    gap: 10,
+    justifyContent: "center",
+    width: 142,
+  },
+  keyboardKeyHelperDiamondSukoon: {
+    backgroundColor: "#eef2ff",
+    borderColor: "#6366f1",
+    borderWidth: 3,
   },
   keyboardEmptyState: {
     width: "100%",
