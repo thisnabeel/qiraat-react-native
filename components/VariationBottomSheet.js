@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from "react";
+import React, { useRef, useEffect, useMemo, useState } from "react";
 import {
   Animated,
   PanResponder,
@@ -35,6 +35,7 @@ export default function VariationBottomSheet({
   backgroundColor = "#313237",
 }) {
   const translateYAnim = useRef(new Animated.Value(TRANSLATE_MINIMIZED)).current;
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (registerTranslateY) {
@@ -48,6 +49,7 @@ export default function VariationBottomSheet({
   const snapTo = (targetHeight) => {
     const toValue = targetHeight === MAX_HEIGHT ? 0 : TRANSLATE_MINIMIZED;
     const expanded = targetHeight === MAX_HEIGHT;
+    setIsExpanded(expanded);
     if (onExpandedChange) {
       onExpandedChange(expanded);
     }
@@ -67,6 +69,7 @@ export default function VariationBottomSheet({
     if (isVisible) {
       translateYAnim.setValue(TRANSLATE_MINIMIZED);
       currentHeightRef.current = MIN_HEIGHT;
+      setIsExpanded(false);
     }
   }, [isVisible]);
 
@@ -127,6 +130,7 @@ export default function VariationBottomSheet({
           comparisonNarrators={comparisonNarrators}
           currentPage={currentPage}
           lastSelectedVariationHighlight={lastSelectedVariationHighlight}
+          isExpanded={isExpanded}
           mushafId={mushafId}
           getQuranFontFamily={getQuranFontFamily}
           onSelectVariation={(variation, meta) => {

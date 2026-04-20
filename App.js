@@ -85,6 +85,15 @@ const getRecitationsUrl = (reciterSlug) =>
 const getVerseSegmentsUrl = (recitationId) =>
   `${getApiBase()}/api/recitations/${encodeURIComponent(String(recitationId))}/verse_segments`;
 
+/** Resolve segment + audio URL by verse when the Listen catalog is empty or lacks recitation_id. */
+const buildVerseSegmentLookupUrl = (verse, { reciterSlug, narratorSlug } = {}) => {
+  const p = new URLSearchParams();
+  p.set("verse", verse);
+  if (reciterSlug) p.set("reciter_slug", reciterSlug);
+  if (narratorSlug) p.set("narrator_slug", narratorSlug);
+  return `${getApiBase()}/api/recitation_verse_segments/lookup?${p.toString()}`;
+};
+
 /** Trimmed surah:ayah for comparing API `word.ayah` to `RecitationVerseSegment#verse`. */
 const normalizeAyahLabelForListen = (s) => (s == null ? "" : String(s)).trim();
 
@@ -194,6 +203,23 @@ const listenLibraryIdForRiwayah = (riwayahId) => {
   return riwayahId;
 };
 
+/** Map mushaf `/api/narrators` child id → `RecitationNarrator#slug` for verse-segment lookup. */
+const recitationNarratorSlugForMushafNarratorId = (narratorId, parentNarrators) => {
+  if (narratorId == null) return null;
+  if (narratorId === "hafs-an-asim" || narratorId === "hafs") return "hafs-an-asim";
+  const idStr = String(narratorId);
+  for (const parent of parentNarrators || []) {
+    for (const child of parent.children || []) {
+      if (String(child.id) !== idStr) continue;
+      const t = (child.title || "").toLowerCase();
+      if (t.includes("shubah") || (t.includes("shu") && t.includes("bah"))) return "shubah-an-asim";
+      if (t.includes("hafs")) return "hafs-an-asim";
+      return null;
+    }
+  }
+  return null;
+};
+
 // Helper function to render highlighted text (extracted from ComparisonTable logic)
 const renderHighlightedText = (text1, text2, wordStyle, differentCharStyle) => {
   const diacritics = ["َ", "ِ", "ُ", "ْ"];
@@ -297,6 +323,10 @@ const Line = ({
   onVerserWordTap,
   /** `surah:ayah` matching current listen segment from `RecitationVerseSegment` */
   recitationListenHighlightVerse = null,
+  /** Mushaf page number for this line — used with `onVariationTraversalWordTap` */
+  pageNum = null,
+  /** Short tap: jump bottom traversal bar to this word if it is a narration-change for the selected narrator */
+  onVariationTraversalWordTap = null,
 }) => {
   const normalizedWords = Array.isArray(words) ? words : [];
   const hasRenderableWords = normalizedWords.some((word) => {
@@ -642,11 +672,22 @@ const Line = ({
           });
         };
 
+        const fireVariationTraversalTap = () => {
+          if (!onVariationTraversalWordTap || pageNum == null || !word?.id) return;
+          onVariationTraversalWordTap(word, pageNum);
+        };
+
         return (
           <Pressable
             key={`${word.id}-${index}`}
             ref={(ref) => (wordRefs.current[word.id] = ref)}
-            onPress={verserActive && onVerserWordTap ? fireVerserTap : undefined}
+            onPress={() => {
+              if (verserActive && onVerserWordTap) {
+                fireVerserTap();
+                return;
+              }
+              fireVariationTraversalTap();
+            }}
             onLayout={(ev) => {
               if (!autoFitLine) return;
               wordWidthsRef.current[index] = ev.nativeEvent.layout.width;
@@ -743,6 +784,7 @@ const PageView = ({
   verserAnchorWordId = null,
   onVerserWordTap,
   recitationListenHighlightVerse = null,
+  onVariationTraversalWordTap = null,
 }) => {
 
   if (loading) {
@@ -875,6 +917,8 @@ const PageView = ({
               verserAnchorWordId={verserAnchorWordId}
               onVerserWordTap={onVerserWordTap}
               recitationListenHighlightVerse={recitationListenHighlightVerse}
+              pageNum={page.position}
+              onVariationTraversalWordTap={onVariationTraversalWordTap}
             />
           );
           const lineInstanceKey = `${page.position}-${line.id}`;
@@ -4854,6 +4898,8 @@ export default function App() {
   /** Segments for `RecitationVerseSegment` — keyed to current `activeListenTrack` recitation id */
   const [listenVerseSegments, setListenVerseSegments] = useState(/** @type {object[] | null} */ (null));
   const [listenVerseSegmentsRecitationId, setListenVerseSegmentsRecitationId] = useState(null);
+  /** When set (traversal chip clip), mushaf highlights this verse only — not playback-driven segment changes */
+  const [listenTraversalClipHighlightVerse, setListenTraversalClipHighlightVerse] = useState(null);
   const [listenPlayerVisible, setListenPlayerVisible] = useState(false);
   const [selectedListenReciter, setSelectedListenReciter] = useState(DEFAULT_LISTEN_RECITER_SLUG);
   const [selectedListenNarrator, setSelectedListenNarrator] = useState("all");
@@ -4917,6 +4963,11 @@ export default function App() {
   const isAnimatingDrawerRef = useRef(false);
   const pagerRef = useRef(null);
   const listenSoundRef = useRef(null);
+  const listenClipEndMsRef = useRef(null);
+  const listenClipStartMsRef = useRef(null);
+  /** Prevents overlapping chip-segment fetch/play while a prior chip request is in flight */
+  const chipClipSegmentRequestInFlightRef = useRef(false);
+  const listenVerseSegmentsByRecitationRef = useRef({});
   const listenPlayerDrag = useRef(
     new Animated.ValueXY({
       x: LISTEN_PLAYER_MARGIN,
@@ -5040,7 +5091,16 @@ export default function App() {
           const tracks = await r2.json();
           if (cancelled) return;
           const arr = Array.isArray(tracks) ? tracks : [];
-          bySlug[rec.slug] = arr.map((t) => ({ ...t, reciterSlug: rec.slug }));
+          bySlug[rec.slug] = arr.map((t) => ({
+            ...t,
+            reciterSlug: rec.slug,
+            recitationId:
+              t?.recitation_id != null
+                ? Number(t.recitation_id)
+                : t?.recitationId != null
+                  ? Number(t.recitationId)
+                  : null,
+          }));
         }
         setListenRecitationsByReciter(bySlug);
       } catch (e) {
@@ -5086,6 +5146,33 @@ export default function App() {
     [listenReciters, activeListenTrack?.reciterSlug]
   );
 
+  const getListenVerseSegmentsForRecitation = useCallback(async (recitationId) => {
+    const idNum = Number(recitationId);
+    if (!Number.isFinite(idNum) || idNum <= 0) return [];
+    const cache = listenVerseSegmentsByRecitationRef.current;
+    if (cache[idNum]) return cache[idNum];
+    const res = await fetch(getVerseSegmentsUrl(idNum));
+    if (!res.ok) throw new Error(`Verse segments HTTP ${res.status}`);
+    const rows = await res.json();
+    const arr = (Array.isArray(rows) ? rows : [])
+      .map((row) => ({
+        ...row,
+        start_time: Number(row.start_time),
+        end_time: Number(row.end_time),
+        verse: normalizeAyahLabelForListen(row.verse),
+      }))
+      .filter(
+        (row) =>
+          row.verse &&
+          Number.isFinite(row.start_time) &&
+          Number.isFinite(row.end_time) &&
+          row.end_time >= row.start_time
+      )
+      .sort((a, b) => a.start_time - b.start_time);
+    cache[idNum] = arr;
+    return arr;
+  }, []);
+
   useEffect(() => {
     const rid = activeListenTrack?.recitation_id ?? activeListenTrack?.recitationId;
     if (!rid) {
@@ -5117,6 +5204,16 @@ export default function App() {
   }, [activeListenTrack?.trackKey, activeListenTrack?.recitation_id, activeListenTrack?.recitationId]);
 
   const listenRecitationHighlightVerse = useMemo(() => {
+    const chipClip = !!activeListenTrack?.chipClipPlayback;
+    if (listenTraversalClipHighlightVerse) {
+      if (chipClip && !listenIsPlaying) {
+        return null;
+      }
+      return listenTraversalClipHighlightVerse;
+    }
+    if (chipClip) {
+      return null;
+    }
     const rid = activeListenTrack?.recitation_id ?? activeListenTrack?.recitationId;
     if (
       !rid ||
@@ -5141,6 +5238,23 @@ export default function App() {
     listenPositionMs,
     listenVerseSegments,
     listenVerseSegmentsRecitationId,
+    listenTraversalClipHighlightVerse,
+    listenIsPlaying,
+  ]);
+
+  /** 0–1 progress within the active chip audio clip (for subtle traversal bar indicator) */
+  const chipClipTraversalProgress = useMemo(() => {
+    if (!activeListenTrack?.chipClipPlayback || !listenIsPlaying) return null;
+    const start = listenClipStartMsRef.current;
+    const end = listenClipEndMsRef.current;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+    const t = (listenPositionMs - start) / (end - start);
+    return Math.max(0, Math.min(1, t));
+  }, [
+    activeListenTrack?.chipClipPlayback,
+    activeListenTrack?.trackKey,
+    listenIsPlaying,
+    listenPositionMs,
   ]);
 
   useEffect(() => {
@@ -6986,6 +7100,23 @@ if (response.ok) {
     }
   }, [mushafId, verserAyahPreviewByPage]);
 
+  /** Short tap on a word that has a narration change for the selected narrator — sync bottom traversal bar */
+  const handleVariationTraversalWordTap = useCallback(
+    (word, pageNum) => {
+      if (!firstSelectedNarratorId || !word?.id || pageNum == null) return;
+      const pn = Number(pageNum);
+      if (!Number.isFinite(pn)) return;
+      const hit = narratorVariations.some(
+        (v) =>
+          String(v.word?.id) === String(word.id) &&
+          (v.word?.line?.page?.position ?? 0) === pn
+      );
+      if (!hit) return;
+      setLastSelectedVariationHighlight({ wordId: word.id, pageNum: pn });
+    },
+    [firstSelectedNarratorId, narratorVariations]
+  );
+
   const handleWordPress = (word) => {
     if (isDrawerVisibleRef.current) {
       closeDrawer();
@@ -7057,10 +7188,31 @@ if (response.ok) {
   };
 
   /** When the traversal bar shows a variation from another page, tap Hafs / narrator word to jump there. */
-  const goToActiveTraversalVariationPage = () => {
+  const goToActiveTraversalVariationPage = (riwayahChip) => {
+    const isHafsChip = riwayahChip?.type === "hafs";
+    const isComparisonChip = riwayahChip?.type === "comparison";
+    console.log("traversal-chip:press", {
+      chip: isHafsChip ? "hafs" : isComparisonChip ? "comparison" : "unspecified",
+      mushafNarratorId: isComparisonChip ? riwayahChip.narratorId ?? null : null,
+      narratorLabel: isHafsChip ? "Hafs" : isComparisonChip ? riwayahChip.narratorTitle ?? null : null,
+      hafsHasNoMushafNarratorId: isHafsChip,
+      narratorVariationsCount: narratorVariations.length,
+      currentVariationIndex,
+      hasActiveVariation: !!activeTraversalVariation,
+      activeWordId: activeTraversalVariation?.word?.id ?? null,
+      activeAyah: activeTraversalVariation?.word?.ayah ?? null,
+    });
     const v = activeTraversalVariation;
     const word = v?.word;
-    if (!word?.id) return;
+    if (!word?.id) {
+      console.log("traversal-chip:missing-word-id");
+      return;
+    }
+    const ayahLabel = normalizeAyahLabelForListen(word?.ayah);
+    if (ayahLabel) {
+      console.log(`ayah: ${ayahLabel}`);
+      void handlePlayFirstRecitationSegmentForAyah(ayahLabel, { traversalChip: riwayahChip });
+    }
     const pageNum = word.line?.page?.position;
     if (pageNum == null) return;
     if (Number(pageNum) === Number(currentPage)) return;
@@ -7310,13 +7462,40 @@ if (response.ok) {
   const handleListenPlaybackStatusUpdate = useCallback((status) => {
     if (!status?.isLoaded) {
       setListenIsPlaying(false);
+      listenClipEndMsRef.current = null;
+      listenClipStartMsRef.current = null;
       return;
     }
-    setListenPositionMs(status.positionMillis ?? 0);
+    const positionMs = status.positionMillis ?? 0;
+    setListenPositionMs(positionMs);
     setListenDurationMs(status.durationMillis ?? 0);
     setListenIsPlaying(status.isPlaying ?? false);
+    const clipEndMs = listenClipEndMsRef.current;
+    if (
+      clipEndMs != null &&
+      status.isPlaying &&
+      Number.isFinite(positionMs) &&
+      positionMs >= clipEndMs - 40 &&
+      listenSoundRef.current
+    ) {
+      listenSoundRef.current
+        .pauseAsync()
+        .then(() => listenSoundRef.current?.setPositionAsync(clipEndMs))
+        .catch(() => {})
+        .finally(() => {
+          listenClipEndMsRef.current = null;
+          listenClipStartMsRef.current = null;
+          setListenIsPlaying(false);
+          setListenPositionMs(clipEndMs);
+          setListenTraversalClipHighlightVerse(null);
+        });
+      return;
+    }
     if (status.didJustFinish) {
+      listenClipEndMsRef.current = null;
+      listenClipStartMsRef.current = null;
       setListenIsPlaying(false);
+      setListenTraversalClipHighlightVerse(null);
     }
   }, []);
 
@@ -7348,9 +7527,14 @@ if (response.ok) {
   }, [unloadListenSound]);
 
   const handlePlayListenTrack = useCallback(
-    async (track) => {
+    async (track, playOptions = {}) => {
       if (!track?.url) return;
       try {
+        listenClipEndMsRef.current = null;
+        listenClipStartMsRef.current = null;
+        if (!playOptions.suppressPlayer) {
+          setListenTraversalClipHighlightVerse(null);
+        }
         if (activeListenTrack?.trackKey === track.trackKey && listenSoundRef.current) {
           const status = await listenSoundRef.current.getStatusAsync();
           if (status?.isLoaded) {
@@ -7365,6 +7549,10 @@ if (response.ok) {
 
         await unloadListenSound();
 
+        if (playOptions.suppressPlayer) {
+          setListenPlayerVisible(false);
+        }
+
         const { sound } = await Audio.Sound.createAsync(
           { uri: track.url },
           { shouldPlay: true, progressUpdateIntervalMillis: 120 },
@@ -7372,7 +7560,9 @@ if (response.ok) {
         );
         listenSoundRef.current = sound;
         setActiveListenTrack(track);
-        setListenPlayerVisible(true);
+        if (!playOptions.suppressPlayer) {
+          setListenPlayerVisible(true);
+        }
         setListenPositionMs(0);
       } catch (e) {
         console.error("Error playing surah recitation:", e);
@@ -7382,16 +7572,21 @@ if (response.ok) {
   );
 
   const handleCloseListenPlayer = useCallback(async () => {
+    listenClipEndMsRef.current = null;
+    listenClipStartMsRef.current = null;
     await unloadListenSound();
     setActiveListenTrack(null);
     setListenIsPlaying(false);
     setListenPositionMs(0);
     setListenDurationMs(0);
     setListenPlayerVisible(false);
+    setListenTraversalClipHighlightVerse(null);
   }, [unloadListenSound]);
 
   const handleSeekListenTrack = useCallback(async (value) => {
     if (!listenSoundRef.current) return;
+    listenClipEndMsRef.current = null;
+    listenClipStartMsRef.current = null;
     const nextPosition = Array.isArray(value) ? value[0] : value;
     if (typeof nextPosition !== "number") return;
     try {
@@ -7409,6 +7604,141 @@ if (response.ok) {
     const secs = totalSeconds % 60;
     return `${mins}:${String(secs).padStart(2, "0")}`;
   }, []);
+
+  /**
+   * `RecitationVerseSegment` for the word's ayah; when `traversalChip` is set, scopes lookup by riwayah
+   * (Hafs → hafs-an-asim; comparison narrator e.g. Shu'bah → shubah-an-asim).
+   */
+  const handlePlayFirstRecitationSegmentForAyah = useCallback(
+    async (ayahLabel, options = {}) => {
+      const normalizedAyah = normalizeAyahLabelForListen(ayahLabel);
+      if (!normalizedAyah || !normalizedAyah.includes(":")) return;
+
+      const chip = options.traversalChip;
+
+      if (chip && activeListenTrack?.chipClipPlayback && listenIsPlaying) {
+        const cur = activeListenTrack.chipClipSource;
+        const playingAyah = normalizeAyahLabelForListen(
+          activeListenTrack.chipClipAyah ?? ""
+        );
+        const sameAyah = playingAyah && playingAyah === normalizedAyah;
+        if (cur && sameAyah) {
+          const sameChip =
+            cur.type === chip.type &&
+            (chip.type !== "comparison" ||
+              String(cur.narratorId) === String(chip.narratorId));
+          if (sameChip) return;
+        }
+      }
+
+      if (chip) {
+        if (chipClipSegmentRequestInFlightRef.current) return;
+        chipClipSegmentRequestInFlightRef.current = true;
+      }
+
+      const narratorSlug =
+        chip?.type === "hafs"
+          ? "hafs-an-asim"
+          : chip?.type === "comparison"
+            ? recitationNarratorSlugForMushafNarratorId(chip.narratorId, parentNarrators)
+            : null;
+
+      try {
+        const lookupUrl = buildVerseSegmentLookupUrl(
+          normalizedAyah,
+          narratorSlug ? { narratorSlug } : {}
+        );
+        console.log("recitation-verse-segment:lookup", {
+          ayah: normalizedAyah,
+          narrator_slug: narratorSlug,
+          traversal_chip: chip ?? null,
+          unmapped_comparison_narrator:
+            chip?.type === "comparison" && narratorSlug == null ? true : false,
+        });
+
+        const res = await fetch(lookupUrl);
+        if (!res.ok) {
+          console.warn("recitation-verse-segment:not-found-or-error", {
+            ayah: normalizedAyah,
+            narrator_slug: narratorSlug,
+            httpStatus: res.status,
+            api_base: getApiBase(),
+            hint:
+              res.status === 404
+                ? "No row on this API host (e.g. production DB empty for this ayah+riwayah). For local segments set USE_LOCALHOST_API and LOCAL_API_BASE (LAN IP on device)."
+                : undefined,
+          });
+          return;
+        }
+        const payload = await res.json();
+        if (!payload?.audio_url || payload.recitation_id == null) {
+          console.warn("recitation-verse-segment:invalid-payload", {
+            ayah: normalizedAyah,
+            narrator_slug: narratorSlug,
+          });
+          return;
+        }
+
+        console.log("recitation-verse-segment:found", {
+          ayah: normalizedAyah,
+          narrator_slug_requested: narratorSlug,
+          segment: {
+            verse: payload.verse,
+            start_time: payload.start_time,
+            end_time: payload.end_time,
+            recitation_id: payload.recitation_id,
+          },
+          riwayah_slug: payload.riwayah_slug,
+          riwayah_title: payload.riwayah_title,
+          reciter_slug: payload.reciter_slug,
+        });
+
+        const chipClipSource =
+          chip?.type === "hafs"
+            ? { type: "hafs" }
+            : chip?.type === "comparison"
+              ? { type: "comparison", narratorId: chip.narratorId }
+              : null;
+        const track = {
+          url: payload.audio_url,
+          index: payload.surah_position,
+          name: payload.verse || normalizedAyah,
+          recitationId: Number(payload.recitation_id),
+          reciterSlug: payload.reciter_slug,
+          riwayahId: payload.riwayah_slug,
+          riwayahLabel: payload.riwayah_title || payload.riwayah_slug,
+          trackKey: `lookup-${payload.recitation_id}-${normalizedAyah}-${payload.riwayah_slug || "x"}`,
+          chipClipPlayback: !!chip,
+          chipClipSource,
+          chipClipAyah: chip ? normalizedAyah : undefined,
+        };
+        const startMs = Math.max(0, Math.round(Number(payload.start_time) * 1000));
+        const endMs = Math.max(startMs + 120, Math.round(Number(payload.end_time) * 1000));
+        const suppressPlayer = !!chip;
+        if (suppressPlayer) {
+          setListenTraversalClipHighlightVerse(normalizedAyah);
+        }
+        await handlePlayListenTrack(track, { suppressPlayer });
+        if (listenSoundRef.current) {
+          await listenSoundRef.current.setPositionAsync(startMs);
+          listenClipStartMsRef.current = startMs;
+          listenClipEndMsRef.current = endMs;
+          await listenSoundRef.current.playAsync();
+          setListenPositionMs(startMs);
+        }
+      } catch (e) {
+        setListenTraversalClipHighlightVerse(null);
+        console.warn("recitation-verse-segment:fetch-error", {
+          ayah: normalizedAyah,
+          narrator_slug: narratorSlug,
+          message: e?.message,
+        });
+      } finally {
+        if (chip) chipClipSegmentRequestInFlightRef.current = false;
+      }
+    },
+    [handlePlayListenTrack, parentNarrators, activeListenTrack, listenIsPlaying]
+  );
 
   if (error) {
     return (
@@ -7709,6 +8039,11 @@ if (response.ok) {
                           )}
                           isDarkMode={isMushafDarkMode}
                           mushafId={mushafId}
+                          onVariationTraversalWordTap={
+                            isCurrent && firstSelectedNarratorId
+                              ? handleVariationTraversalWordTap
+                              : undefined
+                          }
                           headerInsertMode={
                             isCurrent &&
                             headerInsertMode &&
@@ -7859,10 +8194,11 @@ if (response.ok) {
                     <TouchableOpacity
                       style={styles.variationTraversalCard}
                       activeOpacity={0.72}
-                      disabled={
-                        narratorVariations.length === 0 || !activeTraversalVariation?.word?.id
-                      }
-                      onPress={goToActiveTraversalVariationPage}
+                      disabled={narratorVariations.length === 0}
+                      onPress={() => {
+                        console.log("traversal-chip:hafs-card-press");
+                        goToActiveTraversalVariationPage({ type: "hafs" });
+                      }}
                     >
                       <Text style={styles.variationTraversalCardLabel}>Hafs</Text>
                       <View style={styles.variationTraversalCardWordWrap}>
@@ -7875,6 +8211,23 @@ if (response.ok) {
                         >
                           {activeHafsTraversalText}
                         </Text>
+                        {chipClipTraversalProgress != null &&
+                        activeListenTrack?.chipClipSource?.type === "hafs" ? (
+                          <View
+                            style={styles.variationTraversalChipClipOverlay}
+                            pointerEvents="none"
+                          >
+                            <View style={styles.variationTraversalChipClipOverlayTrack} />
+                            <View
+                              style={[
+                                styles.variationTraversalChipClipOverlayFill,
+                                {
+                                  width: `${Math.round(chipClipTraversalProgress * 1000) / 10}%`,
+                                },
+                              ]}
+                            />
+                          </View>
+                        ) : null}
                       </View>
                     </TouchableOpacity>
                     <Text style={styles.variationTraversalSwapIcon}>↔</Text>
@@ -7886,10 +8239,15 @@ if (response.ok) {
                           styles.variationTraversalCardNarrator,
                         ]}
                         activeOpacity={0.72}
-                        disabled={
-                          narratorVariations.length === 0 || !activeTraversalVariation?.word?.id
-                        }
-                        onPress={goToActiveTraversalVariationPage}
+                        disabled={narratorVariations.length === 0}
+                        onPress={() => {
+                          console.log(`traversal-chip:narrator-card-press:${card.id}`);
+                          goToActiveTraversalVariationPage({
+                            type: "comparison",
+                            narratorId: card.id,
+                            narratorTitle: card.title,
+                          });
+                        }}
                       >
                         <Text style={styles.variationTraversalCardLabel}>{card.title}</Text>
                         <View
@@ -7909,6 +8267,25 @@ if (response.ok) {
                           >
                             {card.content}
                           </Text>
+                          {chipClipTraversalProgress != null &&
+                          activeListenTrack?.chipClipSource?.type === "comparison" &&
+                          String(activeListenTrack.chipClipSource.narratorId) ===
+                            String(card.id) ? (
+                            <View
+                              style={styles.variationTraversalChipClipOverlay}
+                              pointerEvents="none"
+                            >
+                              <View style={styles.variationTraversalChipClipOverlayTrack} />
+                              <View
+                                style={[
+                                  styles.variationTraversalChipClipOverlayFill,
+                                  {
+                                    width: `${Math.round(chipClipTraversalProgress * 1000) / 10}%`,
+                                  },
+                                ]}
+                              />
+                            </View>
+                          ) : null}
                         </View>
                       </TouchableOpacity>
                     ))}
@@ -9323,6 +9700,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     minHeight: 82,
   },
+  /** Clip progress inside word box only: base + warm fill left → right */
+  variationTraversalChipClipOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 10,
+    overflow: "hidden",
+    zIndex: 2,
+  },
+  variationTraversalChipClipOverlayTrack: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(255,255,255,0.05)",
+  },
+  variationTraversalChipClipOverlayFill: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    borderRadius: 10,
+    backgroundColor: "rgba(232, 212, 168, 0.22)",
+  },
   variationTraversalCard: {
     flex: 1,
     alignItems: "center",
@@ -9349,6 +9749,8 @@ const styles = StyleSheet.create({
     minHeight: 46,
     minWidth: 92,
     paddingHorizontal: 16,
+    position: "relative",
+    overflow: "hidden",
   },
   variationTraversalCardWordWrapNarrator: {
     borderWidth: 1.8,

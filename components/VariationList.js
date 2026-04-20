@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -40,10 +40,12 @@ export default function VariationList({
   comparisonNarrators = [],
   currentPage,
   lastSelectedVariationHighlight,
+  isExpanded = false,
   mushafId,
   getQuranFontFamily,
   onSelectVariation,
 }) {
+  const sectionListRef = useRef(null);
   const narratorIds = useMemo(
     () => comparisonNarrators.map((n) => n.id).filter((id) => id != null),
     [comparisonNarrators]
@@ -130,6 +132,56 @@ export default function VariationList({
     return out;
   }, [tableRows]);
 
+  const findScrollTarget = useCallback(() => {
+    if (!sections.length) return null;
+    const targetWordId = lastSelectedVariationHighlight?.wordId;
+    const targetPageNum = lastSelectedVariationHighlight?.pageNum;
+
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      const rows = sections[sectionIndex].data || [];
+      for (let itemIndex = 0; itemIndex < rows.length; itemIndex++) {
+        const row = rows[itemIndex];
+        const rowWordId = row?.wordId;
+        const rowPageNum = row?.word?.line?.page?.position ?? 0;
+        if (
+          targetWordId != null &&
+          rowWordId != null &&
+          String(rowWordId) === String(targetWordId) &&
+          (targetPageNum == null || Number(rowPageNum) === Number(targetPageNum))
+        ) {
+          return { sectionIndex, itemIndex };
+        }
+      }
+    }
+
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      const rows = sections[sectionIndex].data || [];
+      const itemIndex = rows.findIndex(
+        (row) => Number(row?.word?.line?.page?.position ?? 0) === Number(currentPage)
+      );
+      if (itemIndex >= 0) return { sectionIndex, itemIndex };
+    }
+
+    return { sectionIndex: 0, itemIndex: 0 };
+  }, [sections, lastSelectedVariationHighlight, currentPage]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const target = findScrollTarget();
+    if (!target) return;
+
+    const timer = setTimeout(() => {
+      sectionListRef.current?.scrollToLocation({
+        sectionIndex: target.sectionIndex,
+        itemIndex: target.itemIndex,
+        viewPosition: 0.4,
+        animated: false,
+      });
+    }, 40);
+
+    return () => clearTimeout(timer);
+  }, [isExpanded, findScrollTarget]);
+
   if (!variations || variations.length === 0) {
     return (
       <View style={styles.empty}>
@@ -186,6 +238,7 @@ export default function VariationList({
       </View>
 
       <SectionList
+        ref={sectionListRef}
         style={styles.tableBody}
         contentContainerStyle={styles.tableBodyContent}
         sections={sections}
@@ -193,6 +246,16 @@ export default function VariationList({
         stickySectionHeadersEnabled
         showsVerticalScrollIndicator
         keyboardShouldPersistTaps="handled"
+        onScrollToIndexFailed={({ sectionIndex = 0, index = 0 }) => {
+          setTimeout(() => {
+            sectionListRef.current?.scrollToLocation({
+              sectionIndex,
+              itemIndex: index,
+              viewPosition: 0.4,
+              animated: false,
+            });
+          }, 60);
+        }}
         renderSectionHeader={({ section: { title } }) => (
           <View style={styles.surahSectionHeader}>
             <Text
