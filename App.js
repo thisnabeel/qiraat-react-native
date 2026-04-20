@@ -36,12 +36,22 @@ import segmentsData from "./segments.json";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
 import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/VariationBottomSheet";
+import {
+  VerserWordBody,
+  VerserToolbarButton,
+  VerserSaveAyahButton,
+  VerserAyahRangeModal,
+  useVerserMode,
+  wordIdsInInclusiveRange,
+  wordIdsFromNextPreviewThroughClick,
+  incrementSurahAyah,
+  rangeSegmentIndexByWordId,
+  suggestVerserLabelFromRange,
+} from "./verser";
 import { getWordSegmentForText } from "./components/shubahTimestamps";
 import { Search } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
-import hafsAnAsimAbdulRashidAliSufiRecitations from "./recitations/hafs_an_asim/abdul-rashid-ali-sufi.json";
-import shubahAnAsimAbdulRashidAliSufiRecitations from "./recitations/shubah_an_asim/abdul-rashid-ali-sufi.json";
 
 /**
  * Set `true` to point all API calls at a local Rails app (overrides Railway / Vercel same-origin rules).
@@ -69,6 +79,31 @@ const getApiBase = () => {
 
 const getNarratorsUrl = () => `${getApiBase()}/api/narrators`;
 const getVariationsUrl = () => `${getApiBase()}/api/variations`;
+const getRecitersUrl = () => `${getApiBase()}/api/reciters`;
+const getRecitationsUrl = (reciterSlug) =>
+  `${getApiBase()}/api/reciters/${encodeURIComponent(reciterSlug)}/recitations`;
+const getVerseSegmentsUrl = (recitationId) =>
+  `${getApiBase()}/api/recitations/${encodeURIComponent(String(recitationId))}/verse_segments`;
+
+/** Trimmed surah:ayah for comparing API `word.ayah` to `RecitationVerseSegment#verse`. */
+const normalizeAyahLabelForListen = (s) => (s == null ? "" : String(s)).trim();
+
+/**
+ * @param {{ start_time: number, end_time: number }[]} segments sorted by start_time
+ * @param {number} sec
+ */
+function recitationSegmentAtSeconds(segments, sec) {
+  if (!Array.isArray(segments) || segments.length === 0) return null;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    const st = Number(seg.start_time);
+    const en = Number(seg.end_time);
+    if (!Number.isFinite(st) || !Number.isFinite(en)) continue;
+    const last = i === segments.length - 1;
+    if (sec >= st && (sec < en || (last && sec <= en))) return seg;
+  }
+  return null;
+}
 
 // Font by mushaf: 2 = 13 Liner IndoPak (AswaatOne), 3 = 15 Liner Uthmani (DigitalKhattV3)
 const getQuranFontFamily = (mushafId) => (mushafId === 3 ? "DigitalKhatt" : "AswaatOne");
@@ -86,10 +121,12 @@ const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT
  * Feature flags — flip booleans here for releases without hunting through App.js.
  * @property {boolean} mushaf2HeaderInsert — Mushaf 2: Header/Save bar, line targets, surah picker, stacked preview, save-to-API.
  * @property {boolean} mushafLineAutoFitFont — Shrink font only until words fit row; row minHeight / Text lineHeight stay fixed; words vertically centered in the row (debug overflow).
+ * @property {boolean} verser — Mushaf 2 top bar: Verser tool (no behavior until wired).
  */
 const FEATURE_FLAGS = {
   mushaf2HeaderInsert: true,
   mushafLineAutoFitFont: true,
+  verser: true,
 };
 
 /**
@@ -132,10 +169,30 @@ const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -28;
 const MUSHAF_DRAWER_CONTENT_TOP_OFFSET = 56 + 10;
 
 const HELPER_FONT_FAMILY = "AswaatHelpers";
-const LISTEN_RECITER_TITLE = "Abdul Rashid Ali Sufi";
-const LISTEN_RECITER_FILE_SLUG = "abdul-rashid-ali-sufi";
-const LISTEN_RECITER_AVATAR = require("./reciters/avatars/abdul-rashid-ali-sufi.png");
+const DEFAULT_LISTEN_RECITER_SLUG = "abdul-rashid-ali-sufi";
+const LISTEN_AVATAR_FALLBACK_BY_SLUG = {
+  "abdul-rashid-ali-sufi": require("./reciters/avatars/abdul-rashid-ali-sufi.png"),
+};
 const LISTEN_PLAYER_MARGIN = 10;
+
+const listenReciterAvatarSource = (reciter) => {
+  const u = (reciter?.avatar_url || "").trim();
+  if (u) return { uri: u };
+  const fb = reciter?.slug && LISTEN_AVATAR_FALLBACK_BY_SLUG[reciter.slug];
+  return fb || LISTEN_AVATAR_FALLBACK_BY_SLUG[DEFAULT_LISTEN_RECITER_SLUG];
+};
+
+const listenReciterDisplayName = (reciters, slug) => {
+  if (slug === "all") return "All";
+  const row = reciters.find((r) => r.slug === slug);
+  return row?.name || slug;
+};
+
+const listenLibraryIdForRiwayah = (riwayahId) => {
+  if (riwayahId === "hafs-an-asim") return "hafs";
+  if (riwayahId === "shubah-an-asim") return "shubah";
+  return riwayahId;
+};
 
 // Helper function to render highlighted text (extracted from ComparisonTable logic)
 const renderHighlightedText = (text1, text2, wordStyle, differentCharStyle) => {
@@ -233,6 +290,13 @@ const Line = ({
   forceHeaderRender = false,
   /** When true (header insert mode), words are not long-pressable so the line tap target receives touches */
   disableWordLongPress = false,
+  verserActive = false,
+  verserAyahPreview = {},
+  verserRangeSegmentByWordId = {},
+  verserAnchorWordId = null,
+  onVerserWordTap,
+  /** `surah:ayah` matching current listen segment from `RecitationVerseSegment` */
+  recitationListenHighlightVerse = null,
 }) => {
   const normalizedWords = Array.isArray(words) ? words : [];
   const hasRenderableWords = normalizedWords.some((word) => {
@@ -509,16 +573,48 @@ const Line = ({
           );
         }
 
+        const verserWordBody = (
+          <VerserWordBody
+            active={verserActive}
+            isDarkMode={isDarkMode}
+            word={word}
+            ayahPreview={verserAyahPreview[String(word.id)]}
+            rangeSegmentIndex={verserRangeSegmentByWordId[String(word.id)]}
+          >
+            {contentToRender}
+          </VerserWordBody>
+        );
+
+        const verserAnchorHighlight =
+          verserActive &&
+          verserAnchorWordId != null &&
+          String(word.id) === String(verserAnchorWordId);
+
+        const ayahForListenHighlight =
+          verserAyahPreview[String(word.id)] !== undefined
+            ? verserAyahPreview[String(word.id)]
+            : word?.ayah;
+        const recitationListenHighlight =
+          !!recitationListenHighlightVerse &&
+          normalizeAyahLabelForListen(ayahForListenHighlight) ===
+            normalizeAyahLabelForListen(recitationListenHighlightVerse);
+
         const wordContainerStyle = disableWordLongPress
           ? [
               styles.wordPressable,
               selectedWordId === word.id && styles.wordSelected,
+              verserAnchorHighlight && styles.verserRangeAnchor,
+              recitationListenHighlight &&
+                (isDarkMode ? styles.wordRecitationListenHighlightDark : styles.wordRecitationListenHighlight),
               hasOverlay && (isDarkMode ? styles.wordBlockWithOverlayDark : styles.wordBlockWithOverlay),
             ]
           : ({ pressed }) => [
               styles.wordPressable,
               pressed && styles.wordPressed,
               selectedWordId === word.id && styles.wordSelected,
+              verserAnchorHighlight && styles.verserRangeAnchor,
+              recitationListenHighlight &&
+                (isDarkMode ? styles.wordRecitationListenHighlightDark : styles.wordRecitationListenHighlight),
               hasOverlay && (isDarkMode ? styles.wordBlockWithOverlayDark : styles.wordBlockWithOverlay),
             ];
 
@@ -533,15 +629,24 @@ const Line = ({
                 scheduleLineFitMeasure();
               }}
             >
-              {contentToRender}
+              {verserWordBody}
             </View>
           );
         }
+
+        const fireVerserTap = () => {
+          if (!verserActive || !onVerserWordTap) return;
+          onVerserWordTap({
+            ...word,
+            lineWords: words,
+          });
+        };
 
         return (
           <Pressable
             key={`${word.id}-${index}`}
             ref={(ref) => (wordRefs.current[word.id] = ref)}
+            onPress={verserActive && onVerserWordTap ? fireVerserTap : undefined}
             onLayout={(ev) => {
               if (!autoFitLine) return;
               wordWidthsRef.current[index] = ev.nativeEvent.layout.width;
@@ -566,7 +671,7 @@ const Line = ({
             cancelable={true}
             style={wordContainerStyle}
           >
-            {contentToRender}
+            {verserWordBody}
           </Pressable>
         );
       })}
@@ -633,6 +738,11 @@ const PageView = ({
   mushafId = 3,
   headerInsertMode = false,
   onHeaderInsertLinePress,
+  verserActive = false,
+  verserAyahPreview = {},
+  verserAnchorWordId = null,
+  onVerserWordTap,
+  recitationListenHighlightVerse = null,
 }) => {
 
   if (loading) {
@@ -733,6 +843,11 @@ const PageView = ({
   const juzHighlightLineIndex =
     firstLineWithWordsIndex === -1 ? 0 : firstLineWithWordsIndex;
 
+  const verserRangeSegmentByWordId = useMemo(() => {
+    if (!verserActive || !page?.lines) return {};
+    return rangeSegmentIndexByWordId(page, verserAyahPreview || {});
+  }, [verserActive, page, verserAyahPreview]);
+
   return (
     <View style={containerStyle}>
       <View style={pageContentStyle}>
@@ -754,6 +869,12 @@ const PageView = ({
               surahHeaderPosition={currentHeaderPos}
               suppressLine={isSpareHeaderCompanionLine}
               disableWordLongPress={headerInsertMode && mushafId === 2}
+              verserActive={verserActive}
+              verserAyahPreview={verserAyahPreview}
+              verserRangeSegmentByWordId={verserRangeSegmentByWordId}
+              verserAnchorWordId={verserAnchorWordId}
+              onVerserWordTap={onVerserWordTap}
+              recitationListenHighlightVerse={recitationListenHighlightVerse}
             />
           );
           const lineInstanceKey = `${page.position}-${line.id}`;
@@ -4730,10 +4851,17 @@ export default function App() {
   const [listenIsPlaying, setListenIsPlaying] = useState(false);
   const [listenPositionMs, setListenPositionMs] = useState(0);
   const [listenDurationMs, setListenDurationMs] = useState(0);
+  /** Segments for `RecitationVerseSegment` — keyed to current `activeListenTrack` recitation id */
+  const [listenVerseSegments, setListenVerseSegments] = useState(/** @type {object[] | null} */ (null));
+  const [listenVerseSegmentsRecitationId, setListenVerseSegmentsRecitationId] = useState(null);
   const [listenPlayerVisible, setListenPlayerVisible] = useState(false);
-  const [selectedListenReciter, setSelectedListenReciter] = useState(LISTEN_RECITER_FILE_SLUG);
+  const [selectedListenReciter, setSelectedListenReciter] = useState(DEFAULT_LISTEN_RECITER_SLUG);
   const [selectedListenNarrator, setSelectedListenNarrator] = useState("all");
   const [listenSurahQuery, setListenSurahQuery] = useState("");
+  const [listenReciters, setListenReciters] = useState([]);
+  const [listenRecitationsByReciter, setListenRecitationsByReciter] = useState({});
+  const [listenCatalogLoading, setListenCatalogLoading] = useState(false);
+  const [listenCatalogError, setListenCatalogError] = useState(null);
   const [listenPlayerLayout, setListenPlayerLayout] = useState({ width: 0, height: 0 });
   const [pageCache, setPageCache] = useState({}); // Cache for pre-fetched pages (for React re-renders)
   const [variationCache, setVariationCache] = useState({}); // Cache for variations per page (for React re-renders)
@@ -4747,6 +4875,20 @@ export default function App() {
   /** Page number for which the picker was opened (freeze if user swipes before confirming) */
   const pendingHeaderPickPageRef = useRef(null);
   const [headerInsertMode, setHeaderInsertMode] = useState(false);
+  const [verserMode, setVerserMode] = useVerserMode({
+    mushafId,
+    selectedNarrators,
+  });
+  const [verserAnchorWordId, setVerserAnchorWordId] = useState(null);
+  const verserAnchorWordIdRef = useRef(null);
+  const [verserAyahPreviewByPage, setVerserAyahPreviewByPage] = useState({});
+  const [verserAyahModalVisible, setVerserAyahModalVisible] = useState(false);
+  const [verserAyahModalWordIds, setVerserAyahModalWordIds] = useState([]);
+  const [verserAyahModalSuggestedLabel, setVerserAyahModalSuggestedLabel] =
+    useState("");
+  const verserAyahModalWordIdsRef = useRef([]);
+  /** After the first modal-applied label on a page, further two-tap ranges auto-use ayah+1 (surah unchanged). */
+  const [verserLastAyahByPage, setVerserLastAyahByPage] = useState({});
   /** null | { pageNum, operations: { insertAtPosition, surahNumber, useBasmala }[] } */
   const [headerPreview, setHeaderPreview] = useState(null);
   const headerPreviewRef = useRef(null);
@@ -4790,7 +4932,7 @@ export default function App() {
         .sort((a, b) => Number(a.index) - Number(b.index))
         .map((item) => ({
           ...item,
-          trackKey: `${riwayahId}-${item.index}`,
+          trackKey: `${item.reciterSlug || "x"}-${riwayahId}-${item.index}`,
           riwayahId,
           riwayahLabel,
         }));
@@ -4804,22 +4946,30 @@ export default function App() {
       return rows;
     };
 
-    const hafsTracks = normalizeTracks(
-      hafsAnAsimAbdulRashidAliSufiRecitations,
-      "hafs-an-asim",
-      "Hafs an Asim"
-    );
-    const shubahTracks = normalizeTracks(
-      shubahAnAsimAbdulRashidAliSufiRecitations,
-      "shubah-an-asim",
-      "Shu'bah an Asim"
-    );
+    const allApiTracks = Object.values(listenRecitationsByReciter).flat();
+    if (allApiTracks.length === 0) return [];
 
-    return [
-      { id: "hafs", title: "Hafs an Asim", tracks: hafsTracks, rows: toRows(hafsTracks) },
-      { id: "shubah", title: "Shu'bah an Asim", tracks: shubahTracks, rows: toRows(shubahTracks) },
-    ];
-  }, []);
+    const byRiwayah = new Map();
+    allApiTracks.forEach((t) => {
+      const rid = t.riwayahId || "unknown";
+      if (!byRiwayah.has(rid)) {
+        byRiwayah.set(rid, { title: t.riwayahLabel || rid, items: [] });
+      }
+      byRiwayah.get(rid).items.push(t);
+    });
+
+    return Array.from(byRiwayah.entries())
+      .map(([riwayahId, { title, items }]) => {
+        const tracks = normalizeTracks(items, riwayahId, title);
+        return {
+          id: listenLibraryIdForRiwayah(riwayahId),
+          title,
+          tracks,
+          rows: toRows(tracks),
+        };
+      })
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [listenRecitationsByReciter]);
 
   const listenNarratorOptions = useMemo(
     () => [
@@ -4839,12 +4989,7 @@ export default function App() {
       ? listenLibraries
       : listenLibraries.filter((library) => library.id === selectedListenNarrator);
 
-    const allTracks = selectedNarratorLibrary.flatMap((library) =>
-      (library.tracks || []).map((track) => ({
-        ...track,
-        reciterSlug: LISTEN_RECITER_FILE_SLUG,
-      }))
-    );
+    const allTracks = selectedNarratorLibrary.flatMap((library) => library.tracks || []);
 
     const byReciter = allTracks.filter(
       (track) => track.reciterSlug === selectedListenReciter
@@ -4864,6 +5009,53 @@ export default function App() {
     }
     return rows;
   }, [listenLibraries, listenSurahQuery, selectedListenNarrator, selectedListenReciter]);
+
+  useEffect(() => {
+    if (listenReciters.length === 0) return;
+    setSelectedListenReciter((prev) => {
+      if (prev === "all") return prev;
+      if (listenReciters.some((r) => r.slug === prev)) return prev;
+      return listenReciters[0].slug;
+    });
+  }, [listenReciters]);
+
+  useEffect(() => {
+    if (!listenColumnMounted) return undefined;
+    let cancelled = false;
+    (async () => {
+      setListenCatalogLoading(true);
+      setListenCatalogError(null);
+      try {
+        const r1 = await fetch(getRecitersUrl());
+        if (!r1.ok) throw new Error(`Reciters HTTP ${r1.status}`);
+        const reciters = await r1.json();
+        if (cancelled) return;
+        const list = Array.isArray(reciters) ? reciters : [];
+        setListenReciters(list);
+        const bySlug = {};
+        for (const rec of list) {
+          if (!rec?.slug) continue;
+          const r2 = await fetch(getRecitationsUrl(rec.slug));
+          if (!r2.ok) throw new Error(`Recitations ${rec.slug} HTTP ${r2.status}`);
+          const tracks = await r2.json();
+          if (cancelled) return;
+          const arr = Array.isArray(tracks) ? tracks : [];
+          bySlug[rec.slug] = arr.map((t) => ({ ...t, reciterSlug: rec.slug }));
+        }
+        setListenRecitationsByReciter(bySlug);
+      } catch (e) {
+        if (!cancelled) {
+          setListenCatalogError(e?.message || "Failed to load recitation catalog");
+          setListenRecitationsByReciter({});
+        }
+      } finally {
+        if (!cancelled) setListenCatalogLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [listenColumnMounted]);
 
   const listenNarratorMetaById = useMemo(() => {
     const map = {};
@@ -4888,6 +5080,68 @@ export default function App() {
 
     return map;
   }, [parentNarrators]);
+
+  const activeListenReciterForPlayer = useMemo(
+    () => listenReciters.find((r) => r.slug === activeListenTrack?.reciterSlug),
+    [listenReciters, activeListenTrack?.reciterSlug]
+  );
+
+  useEffect(() => {
+    const rid = activeListenTrack?.recitation_id ?? activeListenTrack?.recitationId;
+    if (!rid) {
+      setListenVerseSegments(null);
+      setListenVerseSegmentsRecitationId(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(getVerseSegmentsUrl(rid));
+        if (!res.ok) throw new Error(String(res.status));
+        const data = await res.json();
+        if (cancelled) return;
+        const arr = Array.isArray(data) ? data : [];
+        arr.sort((a, b) => Number(a.start_time) - Number(b.start_time));
+        setListenVerseSegments(arr);
+        setListenVerseSegmentsRecitationId(rid);
+      } catch (e) {
+        if (!cancelled) {
+          setListenVerseSegments([]);
+          setListenVerseSegmentsRecitationId(rid);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeListenTrack?.trackKey, activeListenTrack?.recitation_id, activeListenTrack?.recitationId]);
+
+  const listenRecitationHighlightVerse = useMemo(() => {
+    const rid = activeListenTrack?.recitation_id ?? activeListenTrack?.recitationId;
+    if (
+      !rid ||
+      listenVerseSegmentsRecitationId !== rid ||
+      !Array.isArray(listenVerseSegments) ||
+      listenVerseSegments.length === 0
+    ) {
+      return null;
+    }
+    const surahNum = Number(activeListenTrack?.index);
+    if (!Number.isFinite(surahNum)) return null;
+    const sec = listenPositionMs / 1000;
+    const seg = recitationSegmentAtSeconds(listenVerseSegments, sec);
+    if (!seg?.verse) return null;
+    const v = normalizeAyahLabelForListen(seg.verse);
+    if (!v) return null;
+    const parts = v.split(":");
+    if (parts.length >= 2 && Number(parts[0]) !== surahNum) return null;
+    return v;
+  }, [
+    activeListenTrack,
+    listenPositionMs,
+    listenVerseSegments,
+    listenVerseSegmentsRecitationId,
+  ]);
 
   useEffect(() => {
     if (!listenPlayerVisible || isDrawerVisible) return;
@@ -6561,6 +6815,177 @@ if (response.ok) {
     persist();
   }, [selectedNarrators]);
 
+  useEffect(() => {
+    verserAyahModalWordIdsRef.current = verserAyahModalWordIds;
+  }, [verserAyahModalWordIds]);
+
+  useEffect(() => {
+    if (!verserMode) {
+      verserAnchorWordIdRef.current = null;
+      setVerserAnchorWordId(null);
+      setVerserAyahPreviewByPage({});
+      setVerserLastAyahByPage({});
+      setVerserAyahModalVisible(false);
+      setVerserAyahModalWordIds([]);
+      setVerserAyahModalSuggestedLabel("");
+    }
+  }, [verserMode]);
+
+  useEffect(() => {
+    verserAnchorWordIdRef.current = null;
+    setVerserAnchorWordId(null);
+  }, [currentPage]);
+
+  const handleVerserWordTap = useCallback(
+    (word) => {
+      if (!FEATURE_FLAGS.verser || !verserMode || mushafId !== 2) return;
+      const pageNum = currentPageRef.current;
+      const page = pageCacheRef.current[pageNum];
+      if (!page?.lines) return;
+      const wid = word.id;
+
+      const previewMap = verserAyahPreviewByPage[pageNum] || {};
+      const lastLabel = verserLastAyahByPage[pageNum];
+      const trimmedLast =
+        lastLabel != null && String(lastLabel).trim() !== ""
+          ? String(lastLabel).trim()
+          : null;
+
+      // After first range is settled: one tap tags from next word through this tap (ayah +1).
+      if (trimmedLast && Object.keys(previewMap).length > 0) {
+        const ids = wordIdsFromNextPreviewThroughClick(page, previewMap, wid);
+        if (!ids.length) return;
+        const nextLabel = incrementSurahAyah(trimmedLast);
+        if (!nextLabel) return;
+        setVerserAyahPreviewByPage((prev) => {
+          const pageMap = { ...(prev[pageNum] || {}) };
+          for (const id of ids) {
+            pageMap[String(id)] = nextLabel;
+          }
+          return { ...prev, [pageNum]: pageMap };
+        });
+        setVerserLastAyahByPage((prev) => ({
+          ...prev,
+          [pageNum]: nextLabel,
+        }));
+        verserAnchorWordIdRef.current = null;
+        setVerserAnchorWordId(null);
+        return;
+      }
+
+      // First range on page: two taps, then modal.
+      const anchor = verserAnchorWordIdRef.current;
+      if (anchor == null) {
+        verserAnchorWordIdRef.current = wid;
+        setVerserAnchorWordId(wid);
+        return;
+      }
+      verserAnchorWordIdRef.current = null;
+      setVerserAnchorWordId(null);
+      const ids = wordIdsInInclusiveRange(page, anchor, wid);
+      if (!ids.length) return;
+      void (async () => {
+        let incomingApi = null;
+        try {
+          const res = await fetch(
+            `${getApiBase()}/api/mushafs/${mushafId}/preceding_surah_carry?page_position=${pageNum}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const s = Number(data?.surah);
+            if (Number.isFinite(s) && s > 0) incomingApi = s;
+          }
+        } catch (_) {
+          /* fall back to cache-only carry in suggestVerserLabelFromRange */
+        }
+        const suggested =
+          mushafId === 2
+            ? suggestVerserLabelFromRange(page, ids, {
+                incomingSurah: incomingApi,
+                pageByPosition: pageCacheRef.current,
+                pageNumber: pageNum,
+              })
+            : "";
+        setVerserAyahModalSuggestedLabel(suggested);
+        setVerserAyahModalWordIds(ids);
+        setVerserAyahModalVisible(true);
+      })();
+    },
+    [verserMode, mushafId, verserLastAyahByPage, verserAyahPreviewByPage]
+  );
+
+  const cancelVerserAyahModal = useCallback(() => {
+    setVerserAyahModalVisible(false);
+    setVerserAyahModalWordIds([]);
+    setVerserAyahModalSuggestedLabel("");
+  }, []);
+
+  const confirmVerserAyahModal = useCallback((ayahText) => {
+    const pageNum = currentPageRef.current;
+    const ids = verserAyahModalWordIdsRef.current;
+    const trimmed = String(ayahText ?? "").trim();
+    setVerserAyahPreviewByPage((prev) => {
+      const pageMap = { ...(prev[pageNum] || {}) };
+      for (const id of ids) {
+        pageMap[String(id)] = trimmed;
+      }
+      return { ...prev, [pageNum]: pageMap };
+    });
+    setVerserLastAyahByPage((prev) => ({
+      ...prev,
+      [pageNum]: trimmed,
+    }));
+    setVerserAyahModalVisible(false);
+    setVerserAyahModalWordIds([]);
+    setVerserAyahModalSuggestedLabel("");
+  }, []);
+
+  const saveVerserAyahsForCurrentPage = useCallback(async () => {
+    if (mushafId !== 2) return;
+    const pageNum = currentPageRef.current;
+    const map = verserAyahPreviewByPage[pageNum];
+    if (!map || !Object.keys(map).length) return;
+    const updates = Object.entries(map).map(([word_id, ayah]) => ({
+      word_id: parseInt(word_id, 10),
+      ayah: ayah ?? "",
+    }));
+    try {
+      const res = await fetch(
+        `${getApiBase()}/api/mushafs/${mushafId}/pages/${pageNum}/bulk_update_ayahs`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ updates }),
+        }
+      );
+      let body = {};
+      try {
+        body = await res.json();
+      } catch (_) {
+        /* ignore */
+      }
+      if (!res.ok) {
+        Alert.alert("Save failed", body.error || `HTTP ${res.status}`);
+        return;
+      }
+      pageCacheRef.current[pageNum] = body;
+      setPageCache((p) => ({ ...p, [pageNum]: body }));
+      if (pageNum === currentPageRef.current) setPage(body);
+      setVerserAyahPreviewByPage((p) => {
+        const next = { ...p };
+        delete next[pageNum];
+        return next;
+      });
+      setVerserLastAyahByPage((p) => {
+        const next = { ...p };
+        delete next[pageNum];
+        return next;
+      });
+    } catch (e) {
+      Alert.alert("Save failed", e.message || String(e));
+    }
+  }, [mushafId, verserAyahPreviewByPage]);
+
   const handleWordPress = (word) => {
     if (isDrawerVisibleRef.current) {
       closeDrawer();
@@ -6942,7 +7367,7 @@ if (response.ok) {
 
         const { sound } = await Audio.Sound.createAsync(
           { uri: track.url },
-          { shouldPlay: true, progressUpdateIntervalMillis: 400 },
+          { shouldPlay: true, progressUpdateIntervalMillis: 120 },
           handleListenPlaybackStatusUpdate
         );
         listenSoundRef.current = sound;
@@ -7016,6 +7441,10 @@ if (response.ok) {
   /** Dark notch / status strip like mushaf top bar (#1F1F22), not Learn */
   const mushafStyleTopChrome =
     chromeTab === "Recite" || chromeTab === "Listen";
+  /** Hafs is always selected; "no narrator" means no additional qiraat in the strip. */
+  const mushafTopBarOnlyHafs = !selectedNarrators.some(
+    (id) => id !== "hafs-an-asim"
+  );
 
   return (
     <SafeAreaProvider>
@@ -7142,7 +7571,9 @@ if (response.ok) {
                 </ScrollView>
                 
                 <View style={styles.mushafRightIcons}>
-                  {mushafId === 2 && FEATURE_FLAGS.mushaf2HeaderInsert ? (
+                  {mushafId === 2 &&
+                  mushafTopBarOnlyHafs &&
+                  FEATURE_FLAGS.mushaf2HeaderInsert ? (
                     <>
                       <TouchableOpacity
                         style={styles.mushafHeaderToolButton}
@@ -7167,6 +7598,34 @@ if (response.ok) {
                         </TouchableOpacity>
                       ) : null}
                     </>
+                  ) : null}
+                  {mushafId === 2 &&
+                  mushafTopBarOnlyHafs &&
+                  FEATURE_FLAGS.verser ? (
+                    <VerserToolbarButton
+                      active={verserMode}
+                      style={styles.mushafHeaderToolButton}
+                      textStyle={styles.mushafHeaderToolButtonText}
+                      onPress={() => {
+                        if (isDrawerVisibleRef.current) closeDrawer();
+                        setVerserMode((v) => !v);
+                      }}
+                    />
+                  ) : null}
+                  {mushafId === 2 &&
+                  mushafTopBarOnlyHafs &&
+                  FEATURE_FLAGS.verser &&
+                  verserMode &&
+                  Object.keys(verserAyahPreviewByPage[currentPage] || {}).length >
+                    0 ? (
+                    <VerserSaveAyahButton
+                      style={styles.mushafHeaderToolButton}
+                      textStyle={styles.mushafHeaderToolButtonText}
+                      onPress={() => {
+                        if (isDrawerVisibleRef.current) closeDrawer();
+                        saveVerserAyahsForCurrentPage();
+                      }}
+                    />
                   ) : null}
                   <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
                   <TouchableOpacity
@@ -7264,11 +7723,47 @@ if (response.ok) {
                               ? openHeaderInsertLine
                               : undefined
                           }
+                          verserActive={
+                            isCurrent &&
+                            verserMode &&
+                            FEATURE_FLAGS.verser &&
+                            mushafId === 2
+                          }
+                          verserAyahPreview={
+                            verserMode && FEATURE_FLAGS.verser && mushafId === 2
+                              ? verserAyahPreviewByPage[pageNum] ?? {}
+                              : {}
+                          }
+                          verserAnchorWordId={
+                            isCurrent &&
+                            verserMode &&
+                            FEATURE_FLAGS.verser &&
+                            mushafId === 2
+                              ? verserAnchorWordId
+                              : null
+                          }
+                          onVerserWordTap={
+                            isCurrent &&
+                            verserMode &&
+                            FEATURE_FLAGS.verser &&
+                            mushafId === 2
+                              ? handleVerserWordTap
+                              : undefined
+                          }
+                          recitationListenHighlightVerse={listenRecitationHighlightVerse}
                         />
                       </View>
                     );
                   })}
                 </PagerView>
+                <VerserAyahRangeModal
+                  visible={verserAyahModalVisible}
+                  wordCount={verserAyahModalWordIds.length}
+                  suggestedLabel={verserAyahModalSuggestedLabel}
+                  isDarkMode={isMushafDarkMode}
+                  onCancel={cancelVerserAyahModal}
+                  onConfirm={confirmVerserAyahModal}
+                />
               </View>
 
               {/* Variations bottom sheet - sits under the traversal bar */}
@@ -7491,20 +7986,27 @@ if (response.ok) {
                         >
                           <View style={styles.listenSection}>
                             <Text style={styles.listenSectionTitle}>Quran Library</Text>
-                            <Text style={styles.listenSectionSubtitle}>{LISTEN_RECITER_TITLE}</Text>
+                            <Text style={styles.listenSectionSubtitle}>
+                              {listenReciterDisplayName(listenReciters, selectedListenReciter)}
+                            </Text>
                             <View style={styles.listenFilterRow}>
                               <TouchableOpacity
                                 style={styles.listenFilterChip}
                                 onPress={() =>
-                                  setSelectedListenReciter((prev) =>
-                                    prev === LISTEN_RECITER_FILE_SLUG ? "all" : LISTEN_RECITER_FILE_SLUG
-                                  )
+                                  setSelectedListenReciter((prev) => {
+                                    if (prev === "all") {
+                                      return listenReciters[0]?.slug || DEFAULT_LISTEN_RECITER_SLUG;
+                                    }
+                                    return "all";
+                                  })
                                 }
                                 activeOpacity={0.85}
                               >
                                 <Text style={styles.listenFilterChipLabel}>Reciter</Text>
                                 <Text style={styles.listenFilterChipValue} numberOfLines={1}>
-                                  {selectedListenReciter === "all" ? "All" : LISTEN_RECITER_TITLE}
+                                  {selectedListenReciter === "all"
+                                    ? "All"
+                                    : listenReciterDisplayName(listenReciters, selectedListenReciter)}
                                 </Text>
                               </TouchableOpacity>
 
@@ -7551,7 +8053,11 @@ if (response.ok) {
                             </View>
 
                             <View style={styles.listenGrid}>
-                              {listenFilteredRows.length === 0 ? (
+                              {listenCatalogLoading ? (
+                                <ActivityIndicator size="large" color="#64748b" style={{ marginTop: 24 }} />
+                              ) : listenCatalogError ? (
+                                <Text style={styles.listenEmptyText}>{listenCatalogError}</Text>
+                              ) : listenFilteredRows.length === 0 ? (
                                 <Text style={styles.listenEmptyText}>No surahs match these filters.</Text>
                               ) : (
                                 listenFilteredRows.map((row, rowIndex) => (
@@ -7562,6 +8068,7 @@ if (response.ok) {
                                         label: track.riwayahLabel || "Narrator",
                                         color: "#334155",
                                       };
+                                      const recRow = listenReciters.find((r) => r.slug === track.reciterSlug);
                                       return (
                                         <TouchableOpacity
                                           key={`listen-track-${track.trackKey}`}
@@ -7571,7 +8078,9 @@ if (response.ok) {
                                         >
                                           <View style={styles.listenThumb}>
                                             <Image
-                                              source={LISTEN_RECITER_AVATAR}
+                                              source={listenReciterAvatarSource(
+                                                recRow || { slug: track.reciterSlug, avatar_url: "" }
+                                              )}
                                               style={styles.listenThumbImage}
                                               resizeMode="cover"
                                             />
@@ -7759,13 +8268,21 @@ if (response.ok) {
           <>
             <View style={styles.globalListenPlayerTop} {...listenPlayerPanResponder.panHandlers}>
               <View style={styles.globalListenPlayerMeta}>
-                <Image source={LISTEN_RECITER_AVATAR} style={styles.globalListenPlayerAvatar} />
+                <Image
+                  source={listenReciterAvatarSource(
+                    activeListenReciterForPlayer || {
+                      slug: activeListenTrack.reciterSlug,
+                      avatar_url: "",
+                    }
+                  )}
+                  style={styles.globalListenPlayerAvatar}
+                />
                 <View style={styles.globalListenPlayerMetaText}>
                   <Text style={styles.globalListenPlayerTitle} numberOfLines={1}>
                     {`Surah ${activeListenTrack.index} · ${activeListenTrack.name}`}
                   </Text>
                   <Text style={styles.globalListenPlayerSubtitle} numberOfLines={1}>
-                    {`${LISTEN_RECITER_FILE_SLUG} · ${activeListenTrack.riwayahLabel || ""}`}
+                    {`${activeListenTrack.reciterSlug || ""} · ${activeListenTrack.riwayahLabel || ""}`}
                   </Text>
                 </View>
               </View>
@@ -8010,7 +8527,15 @@ if (response.ok) {
               >
                 <Text style={styles.globalListenPlayerCloseText}>✕</Text>
               </TouchableOpacity>
-              <Image source={LISTEN_RECITER_AVATAR} style={styles.globalListenPlayerCompactAvatar} />
+              <Image
+                source={listenReciterAvatarSource(
+                  activeListenReciterForPlayer || {
+                    slug: activeListenTrack.reciterSlug,
+                    avatar_url: "",
+                  }
+                )}
+                style={styles.globalListenPlayerCompactAvatar}
+              />
               <Slider
                 value={listenPositionMs}
                 minimumValue={0}
@@ -8964,6 +9489,18 @@ const styles = StyleSheet.create({
   },
   wordSelected: {
     backgroundColor: "#e0e0e0",
+    borderRadius: 4,
+  },
+  verserRangeAnchor: {
+    backgroundColor: "rgba(0, 212, 255, 0.22)",
+    borderRadius: 4,
+  },
+  wordRecitationListenHighlight: {
+    backgroundColor: "rgba(255, 193, 7, 0.38)",
+    borderRadius: 4,
+  },
+  wordRecitationListenHighlightDark: {
+    backgroundColor: "rgba(255, 193, 7, 0.28)",
     borderRadius: 4,
   },
   wordBlockWithOverlay: {
