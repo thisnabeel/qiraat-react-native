@@ -13,7 +13,12 @@ const ComparisonTable = ({ originalText, inputText, fontFamily, imalahData, diam
     if (diacritics.includes(char)) return true;
     // Check Unicode range for Arabic diacritics (includes U+0658 and U+0659)
     const code = char.charCodeAt(0);
-    return (code >= 0x064B && code <= 0x065F) || code === 0x0670;
+    return (
+      (code >= 0x064B && code <= 0x065F) ||
+      code === 0x0670 ||
+      code === 0x06E2 || // Arabic small high meem (iqlāb)
+      code === 0x06E8 // Arabic small high noon
+    );
   };
 
   // Group characters into units: base letter + its diacritics

@@ -1135,6 +1135,9 @@ const NarratorPopup = ({
   const [isHoveringExtenderHamzaKasrah, setIsHoveringExtenderHamzaKasrah] = useState(false);
   const [isHoveringExtenderHamzaFathah, setIsHoveringExtenderHamzaFathah] = useState(false);
   const [isHoveringMaddRoundedZero, setIsHoveringMaddRoundedZero] = useState(false);
+  /** Drag-to-select over tajweed permutation grid (synced ref for release; parent keeps responder while long-pressed). */
+  const [hoveringTajweedPermutationIndex, setHoveringTajweedPermutationIndex] = useState(null);
+  const hoveringTajweedPermutationIndexRef = useRef(null);
   const buttonRefs = useRef({});
   const tanweenRefs = useRef({});
   const shaddaTanweenRefs = useRef({});
@@ -1154,6 +1157,7 @@ const NarratorPopup = ({
   const extenderHamzaKasrahRefs = useRef({});
   const extenderHamzaFathahRefs = useRef({});
   const maddRoundedZeroRefs = useRef({});
+  const tajweedPermutationRefs = useRef({});
   
   // Helper to get tanween version of a harakat
   const getTanweenVersion = (harakatChar) => {
@@ -1173,12 +1177,12 @@ const NarratorPopup = ({
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
       // Check if it's a base letter (not a diacritic or diamond marker)
-      if (!/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
+      if (!/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
         // Find the end position (after the base letter and any following diacritics)
         let end = i + 1;
         while (end < text.length) {
           const nextChar = text[end];
-          if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(nextChar)) {
+          if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(nextChar)) {
             end++;
           } else {
             break;
@@ -1326,15 +1330,29 @@ const NarratorPopup = ({
     { char: "\u064F", name: "Damma" },     // ُ
     { char: "\u0652", name: "Sukun" },     // ْ
     { char: "\u0651", name: "Shadda" },    // ّ
+    { char: "\u06E2", name: "Small high meem (iqlāb)" },   // ۢ
+    { char: "\u06E8", name: "Small high noon" },          // ۨ (tajwīd / ghunnah, often with tanween–sukoon notation)
     { char: "\u064B", name: "Fathatan" },   // ً
     { char: "\u064D", name: "Kasratan" },  // ٍ
     { char: "\u064C", name: "Dammatan" },  // ٌ
+  ];
+  /** Shown on a second harakat row (iqlāb / small noon) so the main row stays shorter. */
+  const HARAKAT_TAJWEED_ROW_CHARS = ["\u06E2", "\u06E8"];
+  /** Long-press on ۢ / ۨ: fatha, fathatan, damma, dammatan, kasra, kasratan — each combined with the small letter. */
+  const TAJWEED_VOWEL_PERMUTATION_MARKS = [
+    "\u064E",
+    "\u064B",
+    "\u064F",
+    "\u064C",
+    "\u0650",
+    "\u064D",
   ];
 
   // Arabic letters
   const arabicLetters = [
     "\u0640", // Tatweel (extended character/extender stem)
-    "\u0627", "\u0628", "\u062A", "\u062B", "\u062C", "\u062D", "\u062E",
+    "\u0627", "\u0628", "\u062A", "\u062B", "\u066E", // ٮ dotless beh / empty tooth (same glyph body as ب ت ث)
+    "\u062C", "\u062D", "\u062E",
     "\u062F", "\u0630", "\u0631", "\u0632", "\u0633", "\u0634", "\u0635",
     "\u0636", "\u0637", "\u0638", "\u0639", "\u063A", "\u0641", "\u0642",
     "\u0643", "\u0644", "\u0645", "\u0646", "\u0647", "\u0648", "\u064A",
@@ -1358,9 +1376,9 @@ const NarratorPopup = ({
   // Helper: Remove all diacritics from a string
   const removeDiacritics = (str) => {
     if (!str) return '';
-    // Remove combining diacritics (U+064B to U+065F, U+0670, U+06E4) and diamond marker (U+25C6)
+    // Remove combining diacritics (U+064B to U+065F, U+0670, U+06E2/U+06E8 small letters, U+06E4) and diamond marker (U+25C6)
     // Note: U+0640 (Tatweel) is treated as a base letter, not a diacritic
-    return str.replace(/[\u064B-\u065F\u0670\u06E4\u25C6]/g, '');
+    return str.replace(/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/g, '');
   };
 
   // Helper: Get base letter (without diacritics) at current letter index
@@ -1378,7 +1396,7 @@ const NarratorPopup = ({
       const base = removeDiacritics(char);
       
       // Check if it's an Arabic letter (excluding diacritics)
-      const arabicLetterRegex = /[\u0621-\u063A\u0640\u0641-\u064A\u0671-\u06D3]/;
+      const arabicLetterRegex = /[\u0621-\u063A\u0640\u0641-\u064A\u066E\u0671-\u06D3]/;
       if (base && arabicLetterRegex.test(base)) {
         return base;
       }
@@ -1392,7 +1410,10 @@ const NarratorPopup = ({
     // Tanween is now handled via long-press popup, so we don't include it in the main buttons
     const tanweenChars = ["\u064B", "\u064D", "\u064C"]; // Fathatan, Kasratan, Dammatan
     return harakat
-      .filter((h) => !tanweenChars.includes(h.char))
+      .filter(
+        (h) =>
+          !tanweenChars.includes(h.char) && !HARAKAT_TAJWEED_ROW_CHARS.includes(h.char)
+      )
       .map((h) => baseLetter + h.char);
   };
 
@@ -1448,7 +1469,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1501,7 +1522,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1558,7 +1579,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1615,7 +1636,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1676,7 +1697,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1736,7 +1757,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1796,7 +1817,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1856,7 +1877,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1912,7 +1933,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1968,7 +1989,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2025,7 +2046,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2075,7 +2096,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2173,7 +2194,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2223,7 +2244,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2272,7 +2293,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const ch = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(ch)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(ch)) {
         letterEnd++;
       } else {
         break;
@@ -2318,7 +2339,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const ch = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(ch)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(ch)) {
         letterEnd++;
       } else {
         break;
@@ -2365,7 +2386,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2415,7 +2436,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2510,7 +2531,7 @@ const NarratorPopup = ({
       let letterEnd = letterStart + 1;
       while (letterEnd < inputValue.length) {
         const char = inputValue[letterEnd];
-        if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
+        if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
           letterEnd++;
         } else {
           break;
@@ -2560,7 +2581,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E4\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2736,9 +2757,11 @@ const NarratorPopup = ({
         const char = inputValue[pos];
         if (char) {
           const base = removeDiacritics(char);
-          const arabicLetterRegex = /[\u0621-\u063A\u0640\u0641-\u064A\u0671-\u06D3]/;
+          const arabicLetterRegex = /[\u0621-\u063A\u0640\u0641-\u064A\u066E\u0671-\u06D3]/;
           if (base && arabicLetterRegex.test(base)) {
-            return getHarakatVariations(base);
+            const main = getHarakatVariations(base);
+            const tajweed = HARAKAT_TAJWEED_ROW_CHARS.map((c) => base + c);
+            return [...main, ...tajweed];
           }
         }
       }
@@ -3232,13 +3255,27 @@ const NarratorPopup = ({
                     {(() => {
                       const buttons = getKeyboardButtons();
                       const buttonCount = buttons.length;
-                      const isSmallButtonSet = keyboardMode === "harakat" && buttonCount === 5;
+                      const baseForHarakatRowBreak =
+                        keyboardMode === "harakat" ? getBaseLetterAtCurrentLetter() : null;
+                      const harakatTajweedStartIndex =
+                        baseForHarakatRowBreak && buttonCount > 0
+                          ? buttons.findIndex((btn) =>
+                              HARAKAT_TAJWEED_ROW_CHARS.includes(
+                                btn.slice(baseForHarakatRowBreak.length)
+                              )
+                            )
+                          : -1;
                       const shaddaChar = "\u0651";
                       return buttons.length > 0 ? (
                         <>
                           {buttons.map((char, index) => {
                           // Check if this is the shadda button and if it's selected
                           const baseLetter = getBaseLetterAtCurrentLetter();
+                          const useLargeKeyStyle =
+                            keyboardMode === "harakat" &&
+                            (harakatTajweedStartIndex >= 0
+                              ? index < harakatTajweedStartIndex
+                              : buttonCount <= 5);
                           const isShaddaButton = baseLetter && char === baseLetter + shaddaChar;
                           const isShaddaSelectedForThisButton = isShaddaButton && isShaddaSelected;
                           
@@ -3267,11 +3304,22 @@ const NarratorPopup = ({
                           // Check if this is a dammah button (for inverted dammah)
                           const dammaChar = "\u064F"; // Dammah
                           const isDammahButton = keyboardMode === "harakat" && baseLetter && harakatChar === dammaChar;
+                          const smallHighMeemChar = "\u06E2";
+                          const smallHighNoonChar = "\u06E8";
+                          const isSmallHighMeemButton =
+                            keyboardMode === "harakat" && baseLetter && harakatChar === smallHighMeemChar;
+                          const isSmallHighNoonButton =
+                            keyboardMode === "harakat" && baseLetter && harakatChar === smallHighNoonChar;
                           const diamondMarker = "\u25C6"; // Diamond marker (◆)
                           
                           return (
+                            <React.Fragment key={index}>
+                            {keyboardMode === "harakat" &&
+                              harakatTajweedStartIndex >= 0 &&
+                              index === harakatTajweedStartIndex && (
+                                <View style={styles.keyboardHarakatRowBreak} />
+                              )}
                             <View 
-                              key={index} 
                               style={{
                                 position: "relative",
                                 zIndex: isLongPressed ? 100 : 1,
@@ -3460,6 +3508,39 @@ const NarratorPopup = ({
                                         setIsHoveringHelperDiamondDot(isOverHelperDiamondDot);
                                       });
                                     }, 0);
+                                  } else if (
+                                    (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                    keyboardMode === "harakat" &&
+                                    baseLetter
+                                  ) {
+                                    setTimeout(() => {
+                                      const hit = { idx: null };
+                                      let pending = TAJWEED_VOWEL_PERMUTATION_MARKS.length;
+                                      const doneOne = () => {
+                                        pending -= 1;
+                                        if (pending === 0) {
+                                          hoveringTajweedPermutationIndexRef.current = hit.idx;
+                                          setHoveringTajweedPermutationIndex(hit.idx);
+                                        }
+                                      };
+                                      TAJWEED_VOWEL_PERMUTATION_MARKS.forEach((_, permIdx) => {
+                                        const refKey = `tajweedPerm-${index}-${permIdx}`;
+                                        const cellRef = tajweedPermutationRefs.current[refKey];
+                                        if (!cellRef) {
+                                          doneOne();
+                                          return;
+                                        }
+                                        cellRef.measure((x, y, w, h, pageX, pageY) => {
+                                          const isOver =
+                                            touchX >= pageX &&
+                                            touchX <= pageX + w &&
+                                            touchY >= pageY &&
+                                            touchY <= pageY + h;
+                                          if (isOver) hit.idx = permIdx;
+                                          doneOne();
+                                        });
+                                      });
+                                    }, 0);
                                   }
                                 }
                               }}
@@ -3521,6 +3602,22 @@ const NarratorPopup = ({
                                     } else if (isHoveringSukoon && isSukoonButton && plainLetter) {
                                       // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
+                                    } else if (
+                                      (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                      baseLetter
+                                    ) {
+                                      const permIdx = hoveringTajweedPermutationIndexRef.current;
+                                      if (
+                                        permIdx !== null &&
+                                        permIdx >= 0 &&
+                                        permIdx < TAJWEED_VOWEL_PERMUTATION_MARKS.length
+                                      ) {
+                                        const vowelMark = TAJWEED_VOWEL_PERMUTATION_MARKS[permIdx];
+                                        const tailMark = isSmallHighMeemButton
+                                          ? smallHighMeemChar
+                                          : smallHighNoonChar;
+                                        handleHarakatPress(baseLetter + vowelMark + tailMark);
+                                      }
                                     }
                                   }
                                   setLongPressButton(null);
@@ -3542,6 +3639,8 @@ const NarratorPopup = ({
                                   setIsHoveringHelperDiamondDot(false);
                                   setIsHoveringSubscriptAlef(false);
                                   setIsHoveringExtenderHamzaKasrah(false);
+                                  hoveringTajweedPermutationIndexRef.current = null;
+                                  setHoveringTajweedPermutationIndex(null);
                                 }
                               }}
                             >
@@ -3551,7 +3650,7 @@ const NarratorPopup = ({
                                 }}
                                 style={[
                                   styles.keyboardKey,
-                                  isSmallButtonSet && styles.keyboardKeyLarge,
+                                  useLargeKeyStyle && styles.keyboardKeyLarge,
                                   isShaddaSelectedForThisButton && styles.keyboardKeyShaddaSelected,
                                   isLongPressed && styles.keyboardKeyLongPressed,
                                 ]}
@@ -3600,6 +3699,21 @@ const NarratorPopup = ({
                                       });
                                       setDragStartY(pageY);
                                     });
+                                  } else if (
+                                    (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                    keyboardMode === "harakat" &&
+                                    baseLetter
+                                  ) {
+                                    buttonRefs.current[index]?.measure((x, y, width, height, pageX, pageY) => {
+                                      hoveringTajweedPermutationIndexRef.current = null;
+                                      setHoveringTajweedPermutationIndex(null);
+                                      setLongPressButton({
+                                        char,
+                                        buttonIndex: index,
+                                        position: { x: pageX, y: pageY, width, height },
+                                      });
+                                      setDragStartY(pageY);
+                                    });
                                   }
                                 }}
                                 delayLongPress={300}
@@ -3609,7 +3723,7 @@ const NarratorPopup = ({
                               >
                                 <Text style={[
                                   styles.keyboardKeyText,
-                                  isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                  useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                   isShaddaSelectedForThisButton && styles.keyboardKeyTextShaddaSelected,
                                 ]}>{char}</Text>
                               </Pressable>
@@ -3621,7 +3735,7 @@ const NarratorPopup = ({
                                     <View style={[
                                       styles.kasrahDropdownGrid,
                                       {
-                                        top: (isSmallButtonSet ? 50 : 36) + 8,
+                                        top: (useLargeKeyStyle ? 50 : 36) + 8,
                                       }
                                     ]}>
                                       {/* Row 1: Tanween, Shadda+Tanween, Dagger Alif with fathah */}
@@ -3656,7 +3770,7 @@ const NarratorPopup = ({
                                   >
                                     <Text style={[
                                       styles.keyboardKeyText,
-                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                      useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                     ]}>{baseLetter + tanweenChar}</Text>
                                   </Pressable>
                                   
@@ -3691,7 +3805,7 @@ const NarratorPopup = ({
                                       >
                                         <Text style={[
                                           styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                         ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                       </Pressable>
                                       
@@ -3724,7 +3838,7 @@ const NarratorPopup = ({
                                       >
                                         <Text style={[
                                           styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                         ]}>{baseLetter + fathaChar + daggerAlifChar}</Text>
                                       </Pressable>
                                       </View>
@@ -3761,7 +3875,7 @@ const NarratorPopup = ({
                                       >
                                         <Text style={[
                                           styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                         ]}>{baseLetter + daggerAlifChar}</Text>
                                       </Pressable>
                                         
@@ -3795,7 +3909,7 @@ const NarratorPopup = ({
                                         >
                                           <Text style={[
                                             styles.keyboardKeyText,
-                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                           ]}>{baseLetter + fathaChar + "\u0627"}</Text>
                                         </Pressable>
                                         
@@ -3829,7 +3943,7 @@ const NarratorPopup = ({
                                         >
                                           <Text style={[
                                             styles.keyboardKeyText,
-                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                           ]}>{baseLetter + "\u0653"}</Text>
                                         </Pressable>
                                         
@@ -3862,7 +3976,7 @@ const NarratorPopup = ({
                                         >
                                           <Text style={[
                                             styles.keyboardKeyText,
-                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                           ]}>{baseLetter + "\u06E4"}</Text>
                                         </Pressable>
                                       </View>
@@ -3898,7 +4012,7 @@ const NarratorPopup = ({
                                         >
                                           <Text style={[
                                             styles.keyboardKeyText,
-                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                           ]}>{"\u0640\u0654\u064E"}</Text>
                                         </Pressable>
                                       )}
@@ -3910,7 +4024,7 @@ const NarratorPopup = ({
                                         <View style={[
                                           styles.kasrahDropdownGrid,
                                           {
-                                            top: (isSmallButtonSet ? 50 : 36) + 8,
+                                            top: (useLargeKeyStyle ? 50 : 36) + 8,
                                           }
                                         ]}>
                                           {/* Tanween button */}
@@ -3935,7 +4049,7 @@ const NarratorPopup = ({
                                           >
                                             <Text style={[
                                               styles.keyboardKeyText,
-                                              isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                             ]}>{baseLetter + tanweenChar}</Text>
                                           </Pressable>
                                           
@@ -3962,7 +4076,7 @@ const NarratorPopup = ({
                                           >
                                             <Text style={[
                                               styles.keyboardKeyText,
-                                              isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                              useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                             ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                           </Pressable>
 
@@ -3987,11 +4101,11 @@ const NarratorPopup = ({
                                             <View style={styles.helperDotContainer}>
                                               <Text style={[
                                                 styles.keyboardKeyText,
-                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                                useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                               ]}>{baseLetter}</Text>
                                               <Text style={[
                                                 styles.helperDotText,
-                                                isSmallButtonSet && styles.helperDotTextLarge,
+                                                useLargeKeyStyle && styles.helperDotTextLarge,
                                                 { fontFamily: quranFont }
                                               ]}>{"\u0658"}</Text>
                                             </View>
@@ -4018,11 +4132,11 @@ const NarratorPopup = ({
                                             <View style={styles.helperDotContainer}>
                                               <Text style={[
                                                 styles.keyboardKeyText,
-                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                                useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                               ]}>{baseLetter}</Text>
                                               <Text style={[
                                                 styles.helperDotText,
-                                                isSmallButtonSet && styles.helperDotTextLarge,
+                                                useLargeKeyStyle && styles.helperDotTextLarge,
                                                 { fontFamily: quranFont }
                                               ]}>{"\u0659"}</Text>
                                             </View>
@@ -4049,11 +4163,11 @@ const NarratorPopup = ({
                                             <View style={styles.helperDotContainer}>
                                               <Text style={[
                                                 styles.keyboardKeyText,
-                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                                useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                               ]}>{baseLetter}</Text>
                                               <Text style={[
                                                 styles.helperDotText,
-                                                isSmallButtonSet && styles.helperDotTextLarge,
+                                                useLargeKeyStyle && styles.helperDotTextLarge,
                                                 { fontFamily: quranFont }
                                               ]}>{"\u0656"}</Text>
                                             </View>
@@ -4090,7 +4204,7 @@ const NarratorPopup = ({
                                             >
                                               <Text style={[
                                                 styles.keyboardKeyText,
-                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                                useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                               ]}>{"\u0640\u0654\u0650"}</Text>
                                             </Pressable>
                                           )}
@@ -4099,7 +4213,7 @@ const NarratorPopup = ({
                                         <View style={[
                                           styles.kasrahDropdownGrid,
                                           {
-                                            top: (isSmallButtonSet ? 50 : 36) + 8,
+                                            top: (useLargeKeyStyle ? 50 : 36) + 8,
                                           }
                                         ]}>
                                           {/* Tanween button */}
@@ -4128,7 +4242,7 @@ const NarratorPopup = ({
                                       >
                                         <Text style={[
                                           styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                         ]}>{baseLetter + tanweenChar}</Text>
                                       </Pressable>
                                       
@@ -4159,7 +4273,7 @@ const NarratorPopup = ({
                                   >
                                     <Text style={[
                                       styles.keyboardKeyText,
-                                      isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                      useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                     ]}>{baseLetter + "\u0651" + tanweenChar}</Text>
                                   </Pressable>
                                           
@@ -4191,7 +4305,7 @@ const NarratorPopup = ({
                                             >
                                               <Text style={[
                                                 styles.keyboardKeyText,
-                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                                useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                               ]}>{baseLetter + "\u0657"}</Text>
                                             </Pressable>
                                           )}
@@ -4224,7 +4338,7 @@ const NarratorPopup = ({
                                             >
                                               <Text style={[
                                                 styles.keyboardKeyText,
-                                                isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                                useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                               ]}>{"\u0640\u0654\u064F"}</Text>
                                             </Pressable>
                                           )}
@@ -4241,7 +4355,7 @@ const NarratorPopup = ({
                                   style={[
                                     styles.sukoonDropdownContainer,
                                     {
-                                      top: (isSmallButtonSet ? 50 : 36) + 8,
+                                      top: (useLargeKeyStyle ? 50 : 36) + 8,
                                     },
                                   ]}
                                 >
@@ -4267,7 +4381,7 @@ const NarratorPopup = ({
                                       <Text
                                         style={[
                                           styles.keyboardKeyText,
-                                          isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                          useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                         ]}
                                       >
                                         {plainLetter}
@@ -4297,7 +4411,7 @@ const NarratorPopup = ({
                                         <Text
                                           style={[
                                             styles.keyboardKeyText,
-                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                           ]}
                                         >
                                           {baseLetter + sukoonChar}
@@ -4305,7 +4419,7 @@ const NarratorPopup = ({
                                         <Text
                                           style={[
                                             styles.helperDotText,
-                                            isSmallButtonSet && styles.helperDotTextLarge,
+                                            useLargeKeyStyle && styles.helperDotTextLarge,
                                             { fontFamily: quranFont },
                                           ]}
                                         >
@@ -4339,7 +4453,7 @@ const NarratorPopup = ({
                                         <Text
                                           style={[
                                             styles.keyboardKeyText,
-                                            isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                            useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                           ]}
                                         >
                                           {baseLetter + sukoonChar}
@@ -4347,7 +4461,7 @@ const NarratorPopup = ({
                                         <Text
                                           style={[
                                             styles.helperDotText,
-                                            isSmallButtonSet && styles.helperDotTextLarge,
+                                            useLargeKeyStyle && styles.helperDotTextLarge,
                                             { fontFamily: quranFont },
                                           ]}
                                         >
@@ -4358,13 +4472,74 @@ const NarratorPopup = ({
                                   </View>
                                 </View>
                               )}
+
+                              {/* Small high meem / noon: vowel × tanween permutations (long-press) */}
+                              {isLongPressed &&
+                                (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                keyboardMode === "harakat" &&
+                                baseLetter && (
+                                  <View
+                                    style={[
+                                      styles.tajweedPermDropdownContainer,
+                                      {
+                                        top: (useLargeKeyStyle ? 50 : 36) + 8,
+                                      },
+                                    ]}
+                                  >
+                                    {[0, 4].map((rowStart) => (
+                                      <View key={rowStart} style={styles.tajweedPermDropdownRow}>
+                                        {TAJWEED_VOWEL_PERMUTATION_MARKS.slice(rowStart, rowStart + 4).map(
+                                          (vowelMark, col) => {
+                                            const permIdx = rowStart + col;
+                                            const tailMark = isSmallHighMeemButton
+                                              ? smallHighMeemChar
+                                              : smallHighNoonChar;
+                                            const combo = baseLetter + vowelMark + tailMark;
+                                            return (
+                                              <Pressable
+                                                key={permIdx}
+                                                ref={(r) => {
+                                                  const refKey = `tajweedPerm-${index}-${permIdx}`;
+                                                  if (r) tajweedPermutationRefs.current[refKey] = r;
+                                                  else delete tajweedPermutationRefs.current[refKey];
+                                                }}
+                                                style={[
+                                                  styles.keyboardKeyTanween,
+                                                  styles.dropdownGridButton,
+                                                  hoveringTajweedPermutationIndex === permIdx &&
+                                                    styles.keyboardKeyTanweenHovered,
+                                                ]}
+                                                onPress={() => {
+                                                  handleHarakatPress(combo);
+                                                  setLongPressButton(null);
+                                                  setDragStartY(null);
+                                                  hoveringTajweedPermutationIndexRef.current = null;
+                                                  setHoveringTajweedPermutationIndex(null);
+                                                }}
+                                              >
+                                                <Text
+                                                  style={[
+                                                    styles.keyboardKeyText,
+                                                    useLargeKeyStyle && styles.keyboardKeyTextLarge,
+                                                  ]}
+                                                >
+                                                  {combo}
+                                                </Text>
+                                              </Pressable>
+                                            );
+                                          }
+                                        )}
+                                      </View>
+                                    ))}
+                                  </View>
+                                )}
                               
                               {/* Kasrah button dropdown (no tanween) - shows helper dot buttons in a grid */}
                               {isLongPressed && isKasrahButton && keyboardMode === "harakat" && !hasTanween && (
                                 <View style={[
                                   styles.kasrahDropdownGrid,
                                   {
-                                    top: (isSmallButtonSet ? 50 : 36) + 8,
+                                    top: (useLargeKeyStyle ? 50 : 36) + 8,
                                   }
                                 ]}>
                                   {/* Imalah dot button */}
@@ -4387,11 +4562,11 @@ const NarratorPopup = ({
                                     <View style={styles.helperDotContainer}>
                                       <Text style={[
                                         styles.keyboardKeyText,
-                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                       ]}>{baseLetter}</Text>
                                       <Text style={[
                                         styles.helperDotText,
-                                        isSmallButtonSet && styles.helperDotTextLarge,
+                                        useLargeKeyStyle && styles.helperDotTextLarge,
                                         { fontFamily: quranFont }
                                       ]}>{"\u0658"}</Text>
                                     </View>
@@ -4417,11 +4592,11 @@ const NarratorPopup = ({
                                     <View style={styles.helperDotContainer}>
                                       <Text style={[
                                         styles.keyboardKeyText,
-                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                       ]}>{baseLetter}</Text>
                                       <Text style={[
                                         styles.helperDotText,
-                                        isSmallButtonSet && styles.helperDotTextLarge,
+                                        useLargeKeyStyle && styles.helperDotTextLarge,
                                         { fontFamily: quranFont }
                                       ]}>{"\u0659"}</Text>
                                     </View>
@@ -4447,11 +4622,11 @@ const NarratorPopup = ({
                                     <View style={styles.helperDotContainer}>
                                       <Text style={[
                                         styles.keyboardKeyText,
-                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                       ]}>{baseLetter}</Text>
                                       <Text style={[
                                         styles.helperDotText,
-                                        isSmallButtonSet && styles.helperDotTextLarge,
+                                        useLargeKeyStyle && styles.helperDotTextLarge,
                                         { fontFamily: quranFont }
                                       ]}>{"\u0656"}</Text>
                                     </View>
@@ -4480,13 +4655,14 @@ const NarratorPopup = ({
                                     >
                                       <Text style={[
                                         styles.keyboardKeyText,
-                                        isSmallButtonSet && styles.keyboardKeyTextLarge,
+                                        useLargeKeyStyle && styles.keyboardKeyTextLarge,
                                       ]}>{"\u0640\u0654\u0650"}</Text>
                                     </Pressable>
                                   )}
                                 </View>
                               )}
                             </View>
+                            </React.Fragment>
                           );
                         })}
                         </>
@@ -11017,6 +11193,11 @@ const styles = StyleSheet.create({
     gap: 5,
     justifyContent: "center",
   },
+  /** Forces the next harakat keys onto a new row inside `keyboardGrid` (flex-wrap). */
+  keyboardHarakatRowBreak: {
+    width: "100%",
+    height: 0,
+  },
   keyboardKey: {
     width: 36,
     height: 36,
@@ -11248,6 +11429,23 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     alignItems: "center",
     gap: 8,
+  },
+  /** 4×keyboardKeyTanween (66) + 3×gap (10) — centers under key for tajweed vowel permutations */
+  tajweedPermDropdownContainer: {
+    position: "absolute",
+    left: "50%",
+    marginLeft: -147,
+    zIndex: 1000,
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+  },
+  tajweedPermDropdownRow: {
+    flexDirection: "row",
+    flexWrap: "nowrap",
+    gap: 10,
+    justifyContent: "center",
+    width: 294,
   },
   sukoonDropdownRow: {
     flexDirection: "row",
