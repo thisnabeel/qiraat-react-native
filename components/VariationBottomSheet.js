@@ -26,6 +26,7 @@ export default function VariationBottomSheet({
   variations,
   currentPage,
   lastSelectedVariationHighlight,
+  activeVariationWordId = null,
   mushafId,
   getQuranFontFamily,
   comparisonNarrators,
@@ -130,6 +131,7 @@ export default function VariationBottomSheet({
           comparisonNarrators={comparisonNarrators}
           currentPage={currentPage}
           lastSelectedVariationHighlight={lastSelectedVariationHighlight}
+          activeVariationWordId={activeVariationWordId}
           isExpanded={isExpanded}
           mushafId={mushafId}
           getQuranFontFamily={getQuranFontFamily}

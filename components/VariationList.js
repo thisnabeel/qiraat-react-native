@@ -40,6 +40,7 @@ export default function VariationList({
   comparisonNarrators = [],
   currentPage,
   lastSelectedVariationHighlight,
+  activeVariationWordId = null,
   isExpanded = false,
   mushafId,
   getQuranFontFamily,
@@ -134,6 +135,18 @@ export default function VariationList({
 
   const findScrollTarget = useCallback(() => {
     if (!sections.length) return null;
+    if (activeVariationWordId != null) {
+      for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+        const rows = sections[sectionIndex].data || [];
+        const itemIndex = rows.findIndex(
+          (row) =>
+            row?.wordId != null &&
+            String(row.wordId) === String(activeVariationWordId)
+        );
+        if (itemIndex >= 0) return { sectionIndex, itemIndex };
+      }
+    }
+
     const targetWordId = lastSelectedVariationHighlight?.wordId;
     const targetPageNum = lastSelectedVariationHighlight?.pageNum;
 
@@ -163,7 +176,7 @@ export default function VariationList({
     }
 
     return { sectionIndex: 0, itemIndex: 0 };
-  }, [sections, lastSelectedVariationHighlight, currentPage]);
+  }, [sections, activeVariationWordId, lastSelectedVariationHighlight, currentPage]);
 
   useEffect(() => {
     if (!isExpanded) return;
@@ -270,10 +283,12 @@ export default function VariationList({
           const wordId = row.wordId;
           const pageNum = row.word?.line?.page?.position ?? 0;
           const isActiveRow =
-            lastSelectedVariationHighlight &&
-            currentPage === lastSelectedVariationHighlight.pageNum &&
             wordId != null &&
-            String(wordId) === String(lastSelectedVariationHighlight.wordId);
+            ((activeVariationWordId != null &&
+              String(wordId) === String(activeVariationWordId)) ||
+              (lastSelectedVariationHighlight &&
+                currentPage === lastSelectedVariationHighlight.pageNum &&
+                String(wordId) === String(lastSelectedVariationHighlight.wordId)));
 
           const onPressRow = () => {
             const v = pickVariationForHighlight(row);

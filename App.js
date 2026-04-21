@@ -7689,7 +7689,7 @@ if (response.ok) {
 
   useEffect(() => {
     Audio.setAudioModeAsync({
-      staysActiveInBackground: false,
+      staysActiveInBackground: true,
       shouldDuckAndroid: true,
       playsInSilentModeIOS: true,
       playThroughEarpieceAndroid: false,
@@ -8289,6 +8289,7 @@ if (response.ok) {
                 comparisonNarrators={selectedTraversalNarrators}
                 currentPage={currentPage}
                 lastSelectedVariationHighlight={lastSelectedVariationHighlight}
+                activeVariationWordId={activeTraversalWordId}
                 mushafId={mushafId}
                 getQuranFontFamily={getQuranFontFamily}
                 onExpandedChange={setIsVariationBottomSheetExpanded}
