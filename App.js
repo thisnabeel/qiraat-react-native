@@ -5026,10 +5026,10 @@ export default function App() {
   const [selectedWord, setSelectedWord] = useState(null);
   const [selectedWordId, setSelectedWordId] = useState(null);
   const [wordPosition, setWordPosition] = useState(null);
-  const [currentPage, setCurrentPage] = useState(5);
-  const [pageInput, setPageInput] = useState("5");
+  const [currentPage, setCurrentPage] = useState(9);
+  const [pageInput, setPageInput] = useState("9");
   const [showPageSlider, setShowPageSlider] = useState(false);
-  const [sliderValue, setSliderValue] = useState(5); // Temporary value for slider (doesn't trigger page load)
+  const [sliderValue, setSliderValue] = useState(9); // Temporary value for slider (doesn't trigger page load)
   /** "Go to Page" modal number field — string so users can clear/retype; synced from currentPage while modal open */
   const [goPageField, setGoPageField] = useState("");
   const [totalPages, setTotalPages] = useState(604);
@@ -5241,6 +5241,8 @@ export default function App() {
   const drawerStartValueRef = useRef(-DRAWER_WIDTH);
   const isAnimatingDrawerRef = useRef(false);
   const pagerRef = useRef(null);
+  /** Skip `onPageSelected` while we programmatically `setPage` (avoids bogus page after `totalPages` updates). */
+  const pagerSelectSuppressedRef = useRef(false);
   const listenSoundRef = useRef(null);
   const listenClipEndMsRef = useRef(null);
   const listenClipStartMsRef = useRef(null);
@@ -6234,6 +6236,7 @@ export default function App() {
     const clampedPage = Math.min(Math.max(pageNum, 1), totalPages);
     // RTL: index 0 is last page, index totalPages - 1 is first page
     const index = totalPages - clampedPage;
+    pagerSelectSuppressedRef.current = true;
     try {
       if (animated && typeof pagerRef.current.setPage === "function") {
         pagerRef.current.setPage(index);
@@ -6244,8 +6247,21 @@ export default function App() {
       }
     } catch (e) {
       // Ignore pager sync errors
+    } finally {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          pagerSelectSuppressedRef.current = false;
+        });
+      });
     }
   };
+
+  // When API returns real `totalPages`, the pager child count changes; native view often emits
+  // `onPageSelected` at index 0 (= last mushaf page in RTL) before respecting `initialPage` — re-sync.
+  useLayoutEffect(() => {
+    if (totalPages < 1) return;
+    syncPagerToPage(currentPageRef.current, false);
+  }, [totalPages]);
 
   // Function to fetch a single page and cache it
   const fetchAndCachePage = async (pageNum, showLoading = false, force = false) => {
@@ -8347,6 +8363,7 @@ if (response.ok) {
                   // RTL: initial index is inverted so higher page numbers appear on the left
                   initialPage={Math.max(0, totalPages - currentPage)}
                   onPageSelected={(e) => {
+                    if (pagerSelectSuppressedRef.current) return;
                     if (isDrawerVisibleRef.current) {
                       closeDrawer();
                     }
