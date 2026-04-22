@@ -27,6 +27,8 @@ export default function VariationBottomSheet({
   currentPage,
   lastSelectedVariationHighlight,
   activeVariationWordId = null,
+  /** Prefer this word when scrolling the list (e.g. mushaf selection). */
+  scrollFocusWordId = null,
   mushafId,
   getQuranFontFamily,
   comparisonNarrators,
@@ -37,6 +39,8 @@ export default function VariationBottomSheet({
 }) {
   const translateYAnim = useRef(new Animated.Value(TRANSLATE_MINIMIZED)).current;
   const [isExpanded, setIsExpanded] = useState(false);
+  /** Bumped when expand animation finishes so the list can scroll after layout settles. */
+  const [expandScrollToken, setExpandScrollToken] = useState(0);
 
   useEffect(() => {
     if (registerTranslateY) {
@@ -62,6 +66,9 @@ export default function VariationBottomSheet({
     }).start(({ finished }) => {
       if (finished) {
         currentHeightRef.current = targetHeight;
+        if (expanded) {
+          setExpandScrollToken((t) => t + 1);
+        }
       }
     });
   };
@@ -132,6 +139,8 @@ export default function VariationBottomSheet({
           currentPage={currentPage}
           lastSelectedVariationHighlight={lastSelectedVariationHighlight}
           activeVariationWordId={activeVariationWordId}
+          scrollFocusWordId={scrollFocusWordId}
+          expandScrollToken={expandScrollToken}
           isExpanded={isExpanded}
           mushafId={mushafId}
           getQuranFontFamily={getQuranFontFamily}

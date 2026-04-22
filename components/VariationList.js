@@ -19,12 +19,91 @@ function wordKey(v) {
   return id != null ? String(id) : null;
 }
 
+/** Page index from API `word.line.page.position` (1-based mushaf page). */
+function pagePositionFromWord(word) {
+  const pos = word?.line?.page?.position;
+  const n = Number(pos);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 function rowSortKey(word) {
   if (!word) return 0;
-  const page = word.line?.page?.position ?? 0;
+  const page = pagePositionFromWord(word);
   const linePos = word.line?.position ?? word.line?.id ?? 0;
   const wpos = word.position ?? 0;
   return page * 1e9 + Number(linePos) * 1e6 + Number(wpos);
+}
+
+/** Match `tableBodyContent.paddingTop` + surah header + row blocks in `styles`. */
+const LIST_PAD_TOP = 6;
+const EST_SECTION_HEADER_H = 44;
+const EST_DATA_ROW_H = 56;
+
+/** scrollToLocation fallback: lower viewPosition = scroll farther into the list. */
+const SCROLL_TARGET_VIEW_POSITION = 0.05;
+/** Pixels to subtract from measured row offset so the active row sits below the top edge. */
+const SCROLL_Y_NUDGE = 72;
+
+/** VirtualizedSectionList flat index: header, rows…, footer per section. */
+const EST_SECTION_FOOTER_H = 1;
+
+function layoutForFlatIndex(sections, flatIndex) {
+  let offset = LIST_PAD_TOP;
+  let flat = 0;
+  for (let s = 0; s < sections.length; s++) {
+    if (flat === flatIndex) {
+      return { length: EST_SECTION_HEADER_H, offset, index: flatIndex };
+    }
+    offset += EST_SECTION_HEADER_H;
+    flat++;
+    const rows = sections[s].data || [];
+    for (let i = 0; i < rows.length; i++) {
+      if (flat === flatIndex) {
+        return { length: EST_DATA_ROW_H, offset, index: flatIndex };
+      }
+      offset += EST_DATA_ROW_H;
+      flat++;
+    }
+    if (flat === flatIndex) {
+      return { length: EST_SECTION_FOOTER_H, offset, index: flatIndex };
+    }
+    offset += EST_SECTION_FOOTER_H;
+    flat++;
+  }
+  const last = Math.max(0, flat - 1);
+  return { length: EST_DATA_ROW_H, offset: Math.max(0, offset - EST_DATA_ROW_H), index: last };
+}
+
+/** Map flat list index → `scrollToLocation` params (itemIndex counts header as 0). */
+function scrollLocationParamsForFlatIndex(sections, flatIndex) {
+  let flat = 0;
+  for (let s = 0; s < sections.length; s++) {
+    if (flat === flatIndex) {
+      return { sectionIndex: s, itemIndex: 0 };
+    }
+    flat++;
+    const n = sections[s].data?.length ?? 0;
+    for (let i = 0; i < n; i++) {
+      if (flat === flatIndex) {
+        return { sectionIndex: s, itemIndex: i + 1 };
+      }
+      flat++;
+    }
+    if (flat === flatIndex) {
+      return { sectionIndex: s, itemIndex: n + 1 };
+    }
+    flat++;
+  }
+  return { sectionIndex: 0, itemIndex: 0 };
+}
+
+/** Flat index for `sections[sectionIndex].data[dataIndex]` inside VirtualizedSectionList. */
+function flatIndexForSectionDataRow(sections, sectionIndex, dataIndex) {
+  let flat = 0;
+  for (let s = 0; s < sectionIndex; s++) {
+    flat += 1 + (sections[s].data?.length ?? 0) + 1;
+  }
+  return flat + 1 + dataIndex;
 }
 
 function parseSurahNumberFromAyah(ayah) {
@@ -41,6 +120,11 @@ export default function VariationList({
   currentPage,
   lastSelectedVariationHighlight,
   activeVariationWordId = null,
+  /** Mushaf-focused word id — first try to scroll this row when the sheet opens. */
+  scrollFocusWordId = null,
+  /** Incremented when expand animation completes (re-assert scroll after full expand layout). */
+  expandScrollToken = 0,
+  /** When true, sheet is fully expanded — use longer scroll retries (layout often resets scroll). */
   isExpanded = false,
   mushafId,
   getQuranFontFamily,
@@ -135,16 +219,25 @@ export default function VariationList({
 
   const findScrollTarget = useCallback(() => {
     if (!sections.length) return null;
-    if (activeVariationWordId != null) {
+
+    const findRowByWordId = (wid) => {
+      if (wid == null) return null;
       for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
         const rows = sections[sectionIndex].data || [];
         const itemIndex = rows.findIndex(
-          (row) =>
-            row?.wordId != null &&
-            String(row.wordId) === String(activeVariationWordId)
+          (row) => row?.wordId != null && String(row.wordId) === String(wid)
         );
         if (itemIndex >= 0) return { sectionIndex, itemIndex };
       }
+      return null;
+    };
+
+    const byFocus = findRowByWordId(scrollFocusWordId);
+    if (byFocus) return byFocus;
+
+    if (activeVariationWordId != null) {
+      const byActive = findRowByWordId(activeVariationWordId);
+      if (byActive) return byActive;
     }
 
     const targetWordId = lastSelectedVariationHighlight?.wordId;
@@ -155,7 +248,7 @@ export default function VariationList({
       for (let itemIndex = 0; itemIndex < rows.length; itemIndex++) {
         const row = rows[itemIndex];
         const rowWordId = row?.wordId;
-        const rowPageNum = row?.word?.line?.page?.position ?? 0;
+        const rowPageNum = pagePositionFromWord(row.word);
         if (
           targetWordId != null &&
           rowWordId != null &&
@@ -167,33 +260,142 @@ export default function VariationList({
       }
     }
 
+    const rowsOnCurrentPage = [];
+    for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+      const rows = sections[sectionIndex].data || [];
+      for (let itemIndex = 0; itemIndex < rows.length; itemIndex++) {
+        const row = rows[itemIndex];
+        if (pagePositionFromWord(row.word) === Number(currentPage)) {
+          rowsOnCurrentPage.push({
+            sectionIndex,
+            itemIndex,
+            key: rowSortKey(row.word),
+          });
+        }
+      }
+    }
+
+    if (rowsOnCurrentPage.length === 1) {
+      const { sectionIndex, itemIndex } = rowsOnCurrentPage[0];
+      return { sectionIndex, itemIndex };
+    }
+
+    if (rowsOnCurrentPage.length > 1) {
+      let anchorKey = null;
+      if (lastSelectedVariationHighlight?.wordId != null) {
+        const hit = findRowByWordId(lastSelectedVariationHighlight.wordId);
+        if (hit) {
+          const row = sections[hit.sectionIndex]?.data?.[hit.itemIndex];
+          anchorKey = rowSortKey(row?.word);
+        }
+      }
+
+      if (anchorKey != null) {
+        let best = rowsOnCurrentPage[0];
+        let bestDist = Math.abs(best.key - anchorKey);
+        for (let i = 1; i < rowsOnCurrentPage.length; i++) {
+          const cand = rowsOnCurrentPage[i];
+          const d = Math.abs(cand.key - anchorKey);
+          if (d < bestDist) {
+            best = cand;
+            bestDist = d;
+          }
+        }
+        return { sectionIndex: best.sectionIndex, itemIndex: best.itemIndex };
+      }
+
+      rowsOnCurrentPage.sort((a, b) => a.key - b.key);
+      const first = rowsOnCurrentPage[0];
+      return { sectionIndex: first.sectionIndex, itemIndex: first.itemIndex };
+    }
+
     for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
       const rows = sections[sectionIndex].data || [];
       const itemIndex = rows.findIndex(
-        (row) => Number(row?.word?.line?.page?.position ?? 0) === Number(currentPage)
+        (row) => pagePositionFromWord(row.word) === Number(currentPage)
       );
       if (itemIndex >= 0) return { sectionIndex, itemIndex };
     }
 
-    return { sectionIndex: 0, itemIndex: 0 };
-  }, [sections, activeVariationWordId, lastSelectedVariationHighlight, currentPage]);
+    // No row matched this page exactly (e.g. mushaf page indexing differs from API). Scroll to
+    // the variation whose word page is closest to currentPage instead of defaulting to surah 1.
+    const pageNum = Number(currentPage);
+    if (Number.isFinite(pageNum) && pageNum > 0) {
+      let best = null;
+      let bestDist = Infinity;
+      let bestKey = Infinity;
+      for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+        const rows = sections[sectionIndex].data || [];
+        for (let itemIndex = 0; itemIndex < rows.length; itemIndex++) {
+          const row = rows[itemIndex];
+          const p = pagePositionFromWord(row.word);
+          if (p < 1) continue;
+          const k = rowSortKey(row.word);
+          const dist = Math.abs(p - pageNum);
+          if (dist < bestDist || (dist === bestDist && k < bestKey)) {
+            bestDist = dist;
+            bestKey = k;
+            best = { sectionIndex, itemIndex };
+          }
+        }
+      }
+      if (best) return best;
+    }
 
+    return { sectionIndex: 0, itemIndex: 0 };
+  }, [
+    sections,
+    scrollFocusWordId,
+    activeVariationWordId,
+    lastSelectedVariationHighlight,
+    currentPage,
+  ]);
+
+  const getItemLayout = useCallback(
+    (_data, flatIndex) => layoutForFlatIndex(sections, flatIndex),
+    [sections]
+  );
+
+  // Pre-scroll while minimized; after expand the list often resets to y=0 until layout settles, so
+  // when isExpanded we retry longer. Prefer ScrollView.scrollTo(y) from getItemLayout — more reliable
+  // than scrollToLocation when the sheet height jumps.
   useEffect(() => {
-    if (!isExpanded) return;
     const target = findScrollTarget();
     if (!target) return;
 
-    const timer = setTimeout(() => {
-      sectionListRef.current?.scrollToLocation({
-        sectionIndex: target.sectionIndex,
-        itemIndex: target.itemIndex,
-        viewPosition: 0.4,
-        animated: false,
-      });
-    }, 40);
+    const runScroll = () => {
+      const list = sectionListRef.current;
+      if (!list) return;
 
-    return () => clearTimeout(timer);
-  }, [isExpanded, findScrollTarget]);
+      const flatIdx = flatIndexForSectionDataRow(
+        sections,
+        target.sectionIndex,
+        target.itemIndex
+      );
+      const { offset } = layoutForFlatIndex(sections, flatIdx);
+      const y = Math.max(0, offset - SCROLL_Y_NUDGE);
+
+      const scrollResponder = list.getScrollResponder?.();
+      if (scrollResponder && typeof scrollResponder.scrollTo === "function") {
+        scrollResponder.scrollTo({ x: 0, y, animated: false });
+        return;
+      }
+
+      if (list.scrollToLocation) {
+        list.scrollToLocation({
+          sectionIndex: target.sectionIndex,
+          itemIndex: target.itemIndex + 1,
+          viewOffset: 0,
+          viewPosition: SCROLL_TARGET_VIEW_POSITION,
+          animated: false,
+        });
+      }
+    };
+
+    const delays = isExpanded ? [0, 40, 120, 260, 420, 560, 720] : [0, 40, 120, 260];
+    const ids = delays.map((ms) => setTimeout(runScroll, ms));
+    return () => ids.forEach(clearTimeout);
+  }, [findScrollTarget, expandScrollToken, sections, currentPage, isExpanded]);
 
   if (!variations || variations.length === 0) {
     return (
@@ -256,18 +458,31 @@ export default function VariationList({
         contentContainerStyle={styles.tableBodyContent}
         sections={sections}
         keyExtractor={(row) => String(row.wordId)}
-        stickySectionHeadersEnabled
+        getItemLayout={getItemLayout}
+        stickySectionHeadersEnabled={false}
+        removeClippedSubviews={false}
         showsVerticalScrollIndicator
         keyboardShouldPersistTaps="handled"
-        onScrollToIndexFailed={({ sectionIndex = 0, index = 0 }) => {
+        onScrollToIndexFailed={({ index: flatIndex }) => {
           setTimeout(() => {
-            sectionListRef.current?.scrollToLocation({
-              sectionIndex,
-              itemIndex: index,
-              viewPosition: 0.4,
+            const list = sectionListRef.current;
+            if (!list) return;
+            const { offset } = layoutForFlatIndex(sections, flatIndex);
+            const y = Math.max(0, offset - SCROLL_Y_NUDGE);
+            const sr = list.getScrollResponder?.();
+            if (sr?.scrollTo) {
+              sr.scrollTo({ x: 0, y, animated: false });
+              return;
+            }
+            const p = scrollLocationParamsForFlatIndex(sections, flatIndex);
+            list.scrollToLocation?.({
+              sectionIndex: p.sectionIndex,
+              itemIndex: p.itemIndex,
+              viewOffset: 0,
+              viewPosition: SCROLL_TARGET_VIEW_POSITION,
               animated: false,
             });
-          }, 60);
+          }, 64);
         }}
         renderSectionHeader={({ section: { title } }) => (
           <View style={styles.surahSectionHeader}>
@@ -281,11 +496,14 @@ export default function VariationList({
         )}
         renderItem={({ item: row }) => {
           const wordId = row.wordId;
-          const pageNum = row.word?.line?.page?.position ?? 0;
+          const pageNum = pagePositionFromWord(row.word);
           const isActiveRow =
             wordId != null &&
-            ((activeVariationWordId != null &&
-              String(wordId) === String(activeVariationWordId)) ||
+            ((scrollFocusWordId != null &&
+              Number(pageNum) === Number(currentPage) &&
+              String(wordId) === String(scrollFocusWordId)) ||
+              (activeVariationWordId != null &&
+                String(wordId) === String(activeVariationWordId)) ||
               (lastSelectedVariationHighlight &&
                 currentPage === lastSelectedVariationHighlight.pageNum &&
                 String(wordId) === String(lastSelectedVariationHighlight.wordId)));

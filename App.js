@@ -176,6 +176,8 @@ const getSurahHeaderV2Glyph = (surahHeaderPosition) => {
 
 // Recite tab: extra padding below the Hafs|Shubah bar (above safe area). Reduce if the last line of mushaf gets cut off; increase if the bar feels too tight.
 const RECITE_BOTTOM_BAR_PADDING_BOTTOM = -28;
+// Kept at 0 so the traversal bar matches the Hafs|narrator strip; off-page UI uses the same minHeight as the segmented control.
+const OFF_PAGE_TRAVERSAL_BAR_BOTTOM_PAD_EXTRA = 0;
 
 // Drawer header lines up with mushaf body text: approximate mushafTopBar height + PageView top padding (container + pageContent).
 const MUSHAF_DRAWER_CONTENT_TOP_OFFSET = 56 + 10;
@@ -5227,6 +5229,9 @@ export default function App() {
   const currentTabRef = useRef(currentTab);
   const isDrawerVisibleRef = useRef(isDrawerVisible);
   const currentPageRef = useRef(currentPage);
+  currentPageRef.current = currentPage;
+  const mushafIdRef = useRef(mushafId);
+  mushafIdRef.current = mushafId;
   const isNavigatingRef = useRef(false);
   const handlePreviousPageRef = useRef();
   const handleNextPageRef = useRef();
@@ -5605,10 +5610,6 @@ export default function App() {
   useEffect(() => {
     isDrawerVisibleRef.current = isDrawerVisible;
   }, [isDrawerVisible]);
-
-  useEffect(() => {
-    currentPageRef.current = currentPage;
-  }, [currentPage]);
 
   useEffect(() => {
     headerPreviewRef.current = headerPreview;
@@ -6248,9 +6249,15 @@ export default function App() {
 
   // Function to fetch a single page and cache it
   const fetchAndCachePage = async (pageNum, showLoading = false, force = false) => {
+    const requestedMushafId = mushafId;
     // Check ref cache first (synchronous access)
     if (!force && pageCacheRef.current[pageNum]) {
-      return pageCacheRef.current[pageNum];
+      const cached = pageCacheRef.current[pageNum];
+      if (pageNum === currentPageRef.current) {
+        setPage(cached);
+        setLoading(false);
+      }
+      return cached;
     }
 
     // If a request is already in flight for this page, await that same request.
@@ -6273,6 +6280,10 @@ export default function App() {
         }
         if (Array.isArray(data.lines)) {
           data.lines.sort((a, b) => Number(a.position) - Number(b.position));
+        }
+
+        if (requestedMushafId !== mushafIdRef.current) {
+          return null;
         }
 
         // Cache the page in both ref and state
@@ -6807,6 +6818,15 @@ export default function App() {
         (v) => (v.word?.line?.page?.position ?? 0) === currentPage
       ),
     [narratorVariations, currentPage]
+  );
+
+  /** Next/Prev difference strip — keep short so the sheet drag handle stays visible above it. */
+  const showOffPageTraversalUI = useMemo(
+    () =>
+      !!firstSelectedNarratorId &&
+      narratorVariations.length > 0 &&
+      currentPageVariations.length === 0,
+    [firstSelectedNarratorId, narratorVariations.length, currentPageVariations.length]
   );
 
   const selectedTraversalNarratorIds = useMemo(
@@ -8357,7 +8377,10 @@ if (response.ok) {
                         headerPreview.operations
                       );
                     }
-                    const isLoading = isCurrent && (!pageData || loading);
+                    // Derive from cache only: global `loading` can stay true across races (e.g. a
+                    // prefetch completes and fills the ref before `setLoading(false)` runs for the
+                    // visible page on first launch / mushaf hydration).
+                    const isLoading = isCurrent && !pageData;
 
                     return (
                       <View
@@ -8456,6 +8479,7 @@ if (response.ok) {
                 currentPage={currentPage}
                 lastSelectedVariationHighlight={lastSelectedVariationHighlight}
                 activeVariationWordId={activeTraversalWordId}
+                scrollFocusWordId={selectedWordId ?? activeTraversalWordId}
                 mushafId={mushafId}
                 getQuranFontFamily={getQuranFontFamily}
                 onExpandedChange={setIsVariationBottomSheetExpanded}
@@ -8482,9 +8506,13 @@ if (response.ok) {
                   styles.variationTraversalBar,
                   !firstSelectedNarratorId && styles.variationTraversalBarEmpty,
                   {
-                    paddingBottom: firstSelectedNarratorId
-                      ? RECITE_BOTTOM_BAR_PADDING_BOTTOM + bottomBarInset
-                      : 0 + bottomBarInset,
+                    paddingBottom:
+                      (firstSelectedNarratorId
+                        ? RECITE_BOTTOM_BAR_PADDING_BOTTOM +
+                          (showOffPageTraversalUI
+                            ? OFF_PAGE_TRAVERSAL_BAR_BOTTOM_PAD_EXTRA
+                            : 0)
+                        : 0) + bottomBarInset,
                   },
                   barVisibleStyle,
                 ]}
@@ -8533,10 +8561,18 @@ if (response.ok) {
                 )}
 
                 {firstSelectedNarratorId ? (
-                  narratorVariations.length > 0 && currentPageVariations.length === 0 ? (
-                    <View style={styles.variationTraversalSegmentedControl}>
+                  showOffPageTraversalUI ? (
+                    <View
+                      style={[
+                        styles.variationTraversalSegmentedControl,
+                        styles.variationTraversalOffPageSegmented,
+                      ]}
+                    >
                       <TouchableOpacity
-                        style={styles.variationTraversalOffPageCard}
+                        style={[
+                          styles.variationTraversalOffPageCard,
+                          styles.variationTraversalOffPageCardNext,
+                        ]}
                         activeOpacity={0.72}
                         onPress={() => {
                           const v = offPageNextVariation;
@@ -8559,8 +8595,7 @@ if (response.ok) {
                         </Text>
                         <View
                           style={[
-                            styles.variationTraversalCardWordWrap,
-                            styles.variationTraversalCardWordWrapNarrator,
+                            styles.variationTraversalOffPageWordWrap,
                             {
                               borderColor:
                                 selectedTraversalNarrators[0]?.highlightColor ?? "#f5a623",
@@ -8569,7 +8604,7 @@ if (response.ok) {
                         >
                           <Text
                             style={[
-                              styles.variationTraversalCardWord,
+                              styles.variationTraversalOffPageWord,
                               { fontFamily: getQuranFontFamily(mushafId) },
                             ]}
                             numberOfLines={1}
@@ -8582,7 +8617,10 @@ if (response.ok) {
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.variationTraversalOffPageCard}
+                        style={[
+                          styles.variationTraversalOffPageCard,
+                          styles.variationTraversalOffPageCardPrev,
+                        ]}
                         activeOpacity={0.72}
                         onPress={() => {
                           const v = offPagePrevVariation;
@@ -8600,13 +8638,16 @@ if (response.ok) {
                           }
                         }}
                       >
+                        <View
+                          style={styles.variationTraversalOffPagePrevBg}
+                          pointerEvents="none"
+                        />
                         <Text style={styles.variationTraversalOffPageHeading}>
                           Prev Difference:
                         </Text>
                         <View
                           style={[
-                            styles.variationTraversalCardWordWrap,
-                            styles.variationTraversalCardWordWrapNarrator,
+                            styles.variationTraversalOffPageWordWrap,
                             {
                               borderColor:
                                 selectedTraversalNarrators[0]?.highlightColor ?? "#f5a623",
@@ -8615,7 +8656,7 @@ if (response.ok) {
                         >
                           <Text
                             style={[
-                              styles.variationTraversalCardWord,
+                              styles.variationTraversalOffPageWord,
                               { fontFamily: getQuranFontFamily(mushafId) },
                             ]}
                             numberOfLines={1}
@@ -10134,6 +10175,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     minHeight: 82,
   },
+  variationTraversalOffPageSegmented: {
+    // Same outer pill as on-page (`variationTraversalSegmentedControl` merged first) — do not use a
+    // transparent wrapper or the bar (#313237) shows in the padded inset and the chip looks narrower.
+    minHeight: 82,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    marginHorizontal: 6,
+    alignItems: "stretch",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
   /** Clip progress inside word box only: base + warm fill left → right */
   variationTraversalChipClipOverlay: {
     position: "absolute",
@@ -10206,24 +10258,61 @@ const styles = StyleSheet.create({
   },
   variationTraversalOffPageCard: {
     flex: 1,
+    alignSelf: "stretch",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 2,
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
     minWidth: 0,
   },
+  /** Left half: transparent so merged parent `#4a4d5b` matches on-page pill (same width/position). */
+  variationTraversalOffPageCardNext: {
+    backgroundColor: "transparent",
+  },
+  /** Prev half: overflow clips the full-bleed bg layer (`variationTraversalOffPagePrevBg`). */
+  variationTraversalOffPageCardPrev: {
+    overflow: "hidden",
+  },
+  /** Edge-to-edge darker fill for the right half (avoids “margin” where pill gray showed through). */
+  variationTraversalOffPagePrevBg: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "#383c4a",
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+  },
   variationTraversalOffPageHeading: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: "600",
     color: "#f0f0f3",
-    marginBottom: 6,
+    marginBottom: 4,
     textAlign: "center",
   },
   variationTraversalOffPagePage: {
-    fontSize: 11,
+    fontSize: 9,
     color: "#c4c6ce",
-    marginTop: 6,
+    marginTop: 4,
     textAlign: "center",
+  },
+  variationTraversalOffPageWordWrap: {
+    alignSelf: "center",
+    backgroundColor: "#2f313d",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 34,
+    minWidth: 80,
+    maxWidth: "100%",
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    position: "relative",
+    overflow: "hidden",
+    borderWidth: 1.4,
+  },
+  variationTraversalOffPageWord: {
+    fontSize: 15,
+    color: "#ffffff",
+    textAlign: "center",
+    lineHeight: 0,
   },
   variationTraversalArrowDisabled: {
     opacity: 0.5,
