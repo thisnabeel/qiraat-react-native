@@ -1177,12 +1177,12 @@ const NarratorPopup = ({
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
       // Check if it's a base letter (not a diacritic or diamond marker)
-      if (!/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
+      if (!/[\u064B-\u065F\u0670\u06E2\u06E4\u06E7\u06E8\u25C6]/.test(char)) {
         // Find the end position (after the base letter and any following diacritics)
         let end = i + 1;
         while (end < text.length) {
           const nextChar = text[end];
-          if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(nextChar)) {
+          if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E7\u06E8\u25C6]/.test(nextChar)) {
             end++;
           } else {
             break;
@@ -1332,13 +1332,14 @@ const NarratorPopup = ({
     { char: "\u0651", name: "Shadda" },    // ّ
     { char: "\u06E2", name: "Small high meem (iqlāb)" },   // ۢ
     { char: "\u06E8", name: "Small high noon" },          // ۨ (tajwīd / ghunnah, often with tanween–sukoon notation)
+    { char: "\u06E7", name: "Small high yeh" },           // ۧ (mini dotless yeh above letter)
     { char: "\u064B", name: "Fathatan" },   // ً
     { char: "\u064D", name: "Kasratan" },  // ٍ
     { char: "\u064C", name: "Dammatan" },  // ٌ
   ];
-  /** Shown on a second harakat row (iqlāb / small noon) so the main row stays shorter. */
-  const HARAKAT_TAJWEED_ROW_CHARS = ["\u06E2", "\u06E8"];
-  /** Long-press on ۢ / ۨ: fatha, fathatan, damma, dammatan, kasra, kasratan — each combined with the small letter. */
+  /** Shown on a second harakat row (iqlāb / small noon / small high yeh) so the main row stays shorter. */
+  const HARAKAT_TAJWEED_ROW_CHARS = ["\u06E2", "\u06E8", "\u06E7"];
+  /** Long-press on ۢ / ۨ / ۧ: fatha, fathatan, damma, dammatan, kasra, kasratan — each combined with the small letter. */
   const TAJWEED_VOWEL_PERMUTATION_MARKS = [
     "\u064E",
     "\u064B",
@@ -1376,9 +1377,9 @@ const NarratorPopup = ({
   // Helper: Remove all diacritics from a string
   const removeDiacritics = (str) => {
     if (!str) return '';
-    // Remove combining diacritics (U+064B to U+065F, U+0670, U+06E2/U+06E8 small letters, U+06E4) and diamond marker (U+25C6)
+    // Remove combining diacritics (U+064B to U+065F, U+0670, U+06E2/06E7/06E8 small letters, U+06E4) and diamond marker (U+25C6)
     // Note: U+0640 (Tatweel) is treated as a base letter, not a diacritic
-    return str.replace(/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/g, '');
+    return str.replace(/[\u064B-\u065F\u0670\u06E2\u06E4\u06E7\u06E8\u25C6]/g, '');
   };
 
   // Helper: Get base letter (without diacritics) at current letter index
@@ -1469,7 +1470,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1522,7 +1523,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1579,7 +1580,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1636,7 +1637,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1697,7 +1698,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1757,7 +1758,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1817,7 +1818,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1877,7 +1878,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1933,7 +1934,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -1989,7 +1990,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2046,7 +2047,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2096,7 +2097,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2194,7 +2195,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2244,7 +2245,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2293,7 +2294,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const ch = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(ch)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(ch)) {
         letterEnd++;
       } else {
         break;
@@ -2339,7 +2340,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const ch = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(ch)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(ch)) {
         letterEnd++;
       } else {
         break;
@@ -2386,7 +2387,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2436,7 +2437,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -2531,7 +2532,7 @@ const NarratorPopup = ({
       let letterEnd = letterStart + 1;
       while (letterEnd < inputValue.length) {
         const char = inputValue[letterEnd];
-        if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
+        if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E7\u06E8\u25C6]/.test(char)) {
           letterEnd++;
         } else {
           break;
@@ -2581,7 +2582,7 @@ const NarratorPopup = ({
     let letterEnd = letterStart + 1;
     while (letterEnd < inputValue.length) {
       const char = inputValue[letterEnd];
-      if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E8\u25C6]/.test(char)) {
+      if (/[\u064B-\u065F\u0670\u06E2\u06E4\u06E7\u06E8\u25C6]/.test(char)) {
         letterEnd++;
       } else {
         break;
@@ -3306,10 +3307,13 @@ const NarratorPopup = ({
                           const isDammahButton = keyboardMode === "harakat" && baseLetter && harakatChar === dammaChar;
                           const smallHighMeemChar = "\u06E2";
                           const smallHighNoonChar = "\u06E8";
+                          const smallHighYehChar = "\u06E7";
                           const isSmallHighMeemButton =
                             keyboardMode === "harakat" && baseLetter && harakatChar === smallHighMeemChar;
                           const isSmallHighNoonButton =
                             keyboardMode === "harakat" && baseLetter && harakatChar === smallHighNoonChar;
+                          const isSmallHighYehButton =
+                            keyboardMode === "harakat" && baseLetter && harakatChar === smallHighYehChar;
                           const diamondMarker = "\u25C6"; // Diamond marker (◆)
                           
                           return (
@@ -3509,7 +3513,9 @@ const NarratorPopup = ({
                                       });
                                     }, 0);
                                   } else if (
-                                    (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                    (isSmallHighMeemButton ||
+                                      isSmallHighNoonButton ||
+                                      isSmallHighYehButton) &&
                                     keyboardMode === "harakat" &&
                                     baseLetter
                                   ) {
@@ -3603,7 +3609,9 @@ const NarratorPopup = ({
                                       // Released over plain letter button (for sukoon button)
                                       handleHarakatPress(plainLetter);
                                     } else if (
-                                      (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                      (isSmallHighMeemButton ||
+                                        isSmallHighNoonButton ||
+                                        isSmallHighYehButton) &&
                                       baseLetter
                                     ) {
                                       const permIdx = hoveringTajweedPermutationIndexRef.current;
@@ -3615,7 +3623,9 @@ const NarratorPopup = ({
                                         const vowelMark = TAJWEED_VOWEL_PERMUTATION_MARKS[permIdx];
                                         const tailMark = isSmallHighMeemButton
                                           ? smallHighMeemChar
-                                          : smallHighNoonChar;
+                                          : isSmallHighNoonButton
+                                            ? smallHighNoonChar
+                                            : smallHighYehChar;
                                         handleHarakatPress(baseLetter + vowelMark + tailMark);
                                       }
                                     }
@@ -3700,7 +3710,9 @@ const NarratorPopup = ({
                                       setDragStartY(pageY);
                                     });
                                   } else if (
-                                    (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                    (isSmallHighMeemButton ||
+                                      isSmallHighNoonButton ||
+                                      isSmallHighYehButton) &&
                                     keyboardMode === "harakat" &&
                                     baseLetter
                                   ) {
@@ -4473,9 +4485,11 @@ const NarratorPopup = ({
                                 </View>
                               )}
 
-                              {/* Small high meem / noon: vowel × tanween permutations (long-press) */}
+                              {/* Small high meem / noon / yeh: vowel × tanween permutations (long-press) */}
                               {isLongPressed &&
-                                (isSmallHighMeemButton || isSmallHighNoonButton) &&
+                                (isSmallHighMeemButton ||
+                                  isSmallHighNoonButton ||
+                                  isSmallHighYehButton) &&
                                 keyboardMode === "harakat" &&
                                 baseLetter && (
                                   <View
@@ -4493,7 +4507,9 @@ const NarratorPopup = ({
                                             const permIdx = rowStart + col;
                                             const tailMark = isSmallHighMeemButton
                                               ? smallHighMeemChar
-                                              : smallHighNoonChar;
+                                              : isSmallHighNoonButton
+                                                ? smallHighNoonChar
+                                                : smallHighYehChar;
                                             const combo = baseLetter + vowelMark + tailMark;
                                             return (
                                               <Pressable
