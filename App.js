@@ -33,6 +33,7 @@ import ComparisonTable from "./ComparisonTable";
 import InlineComparison from "./InlineComparison";
 import { DiamondShapeSvg, DIAMOND_SIZING } from "./components/DiamondOverlayText";
 import segmentsData from "./segments.json";
+import surahNumbersAr from "./surah_numbers.json";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
 import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/VariationBottomSheet";
@@ -131,11 +132,13 @@ const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT
  * @property {boolean} mushaf2HeaderInsert — Mushaf 2: Header/Save bar, line targets, surah picker, stacked preview, save-to-API.
  * @property {boolean} mushafLineAutoFitFont — Shrink font only until words fit row; row minHeight / Text lineHeight stay fixed; words vertically centered in the row (debug overflow).
  * @property {boolean} verser — Mushaf 2 top bar: Verser tool (no behavior until wired).
+ * @property {boolean} wordLongPressVariationEditor — Long-press a mushaf word opens the narrator / variation editor popup.
  */
 const FEATURE_FLAGS = {
-  mushaf2HeaderInsert: true,
+  mushaf2HeaderInsert: false,
   mushafLineAutoFitFont: true,
-  verser: true,
+  verser: false,
+  wordLongPressVariationEditor: false,
 };
 
 /**
@@ -693,22 +696,26 @@ const Line = ({
               wordWidthsRef.current[index] = ev.nativeEvent.layout.width;
               scheduleLineFitMeasure();
             }}
-            onLongPress={() => {
-              // Measure the word's absolute position
-              const ref = wordRefs.current[word.id];
-              if (ref && ref.measure) {
-                ref.measure((x, y, width, height, pageX, pageY) => {
-                  word.layout = { x: pageX, y: pageY, width, height };
-                  // Attach simple line context so audio matching can use nearby words
-                  const wordWithContext = {
-                    ...word,
-                    lineWords: words,
-                  };
-                  onWordPress(wordWithContext);
-                });
-              }
-            }}
-            delayLongPress={500}
+            onLongPress={
+              FEATURE_FLAGS.wordLongPressVariationEditor
+                ? () => {
+                    // Measure the word's absolute position
+                    const ref = wordRefs.current[word.id];
+                    if (ref && ref.measure) {
+                      ref.measure((x, y, width, height, pageX, pageY) => {
+                        word.layout = { x: pageX, y: pageY, width, height };
+                        // Attach simple line context so audio matching can use nearby words
+                        const wordWithContext = {
+                          ...word,
+                          lineWords: words,
+                        };
+                        onWordPress(wordWithContext);
+                      });
+                    }
+                  }
+                : undefined
+            }
+            delayLongPress={FEATURE_FLAGS.wordLongPressVariationEditor ? 500 : undefined}
             cancelable={true}
             style={wordContainerStyle}
           >
@@ -798,15 +805,24 @@ const PageView = ({
     return (
       <View style={containerStyle}>
         <View style={pageContentStyle}>
-          <ActivityIndicator size="large" color={isDarkMode ? "#fff" : "#000"} />
-          <Text
-            style={[
-              styles.loadingText,
-              isDarkMode && styles.loadingTextDark,
-            ]}
-          >
-            Loading page...
-          </Text>
+          <View style={styles.pageStateWrap}>
+            <View
+              style={[
+                styles.pageStateCard,
+                isDarkMode && styles.pageStateCardDark,
+              ]}
+            >
+              <ActivityIndicator size="large" color={isDarkMode ? "#fff" : "#111827"} />
+              <Text
+                style={[
+                  styles.pageStateTitle,
+                  isDarkMode && styles.pageStateTitleDark,
+                ]}
+              >
+                Loading page...
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
     );
@@ -823,14 +839,24 @@ const PageView = ({
     return (
       <View style={containerStyle}>
         <View style={pageContentStyle}>
-          <Text
-            style={[
-              styles.errorText,
-              isDarkMode && styles.errorTextDark,
-            ]}
-          >
-            No page data available
-          </Text>
+          <View style={styles.pageStateWrap}>
+            <View
+              style={[
+                styles.pageStateCard,
+                isDarkMode && styles.pageStateCardDark,
+              ]}
+            >
+              <ActivityIndicator size="large" color={isDarkMode ? "#fff" : "#111827"} />
+              <Text
+                style={[
+                  styles.pageStateTitle,
+                  isDarkMode && styles.pageStateTitleDark,
+                ]}
+              >
+                Loading page...
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
     );
@@ -5028,6 +5054,9 @@ export default function App() {
         m.set(n, s.fields.title);
       }
     });
+    for (let n = 1; n <= 114; n++) {
+      if (!m.has(n) && surahNumbersAr[String(n)]) m.set(n, surahNumbersAr[String(n)]);
+    }
     return m;
   }, [surahSegments]);
   const [currentJuzIndex, setCurrentJuzIndex] = useState(0);
@@ -5065,6 +5094,14 @@ export default function App() {
     // overrides it from storage.
     return 2;
   });
+  /** Mushaf 2: juz row from API segments (`MushafSegment`); null means fallback to local `segments.json`. */
+  const [mushafJuzSegmentsApi, setMushafJuzSegmentsApi] = useState(null);
+  const goToPageJuzSegments = useMemo(() => {
+    if (mushafId === 2 && Array.isArray(mushafJuzSegmentsApi) && mushafJuzSegmentsApi.length > 0) {
+      return [...mushafJuzSegmentsApi].sort((a, b) => b.fields.first_page - a.fields.first_page);
+    }
+    return juzSegments;
+  }, [mushafId, mushafJuzSegmentsApi, juzSegments]);
   const VARIATIONS_SIDEBAR_WIDTH = 320;
   const [isVariationsSidebarOpen, setIsVariationsSidebarOpen] = useState(false);
   const [isVariationBottomSheetVisible, setIsVariationBottomSheetVisible] = useState(false);
@@ -5108,6 +5145,50 @@ export default function App() {
   /** From GET /api/mushafs/:id/surah_header_markers — page (string) -> surah_header_position[] */
   const [surahHeaderMarkersByPage, setSurahHeaderMarkersByPage] = useState(null);
   const [surahHeaderMarkersTick, setSurahHeaderMarkersTick] = useState(0);
+  /** Surah rows for Go-to-Page: DB surah-header lines when available, else segments.json fallback. */
+  const goToPageSurahCarouselEntries = useMemo(() => {
+    const fallback = surahSegments.map((surah) => {
+      const surahNum = surah.fields.category_position;
+      const page = Math.max(1, surah.fields.first_page - GO_TO_PAGE_SURAH_FIRST_PAGE_BACK);
+      return {
+        key: `seg-${surah.pk}`,
+        page,
+        surahNumber: surahNum,
+        title: surah.fields.title,
+        lastPage: surah.fields.last_page,
+        fromMarkers: false,
+      };
+    });
+
+    if (!surahHeaderMarkersByPage || typeof surahHeaderMarkersByPage !== "object") return fallback;
+
+    const raw = [];
+    for (const pageStr of Object.keys(surahHeaderMarkersByPage)) {
+      const page = parseInt(pageStr, 10);
+      if (!Number.isFinite(page) || page < 1) continue;
+      const nums = surahHeaderMarkersByPage[pageStr];
+      if (!Array.isArray(nums)) continue;
+      for (const rawN of nums) {
+        const n = Number(rawN);
+        if (!Number.isFinite(n) || n < 1 || n > 114) continue;
+        raw.push({
+          key: `hdr-${page}-${n}`,
+          page,
+          surahNumber: n,
+          title: surahNumbersAr[String(n)] || `سورة ${n}`,
+          lastPage: totalPages,
+          fromMarkers: true,
+        });
+      }
+    }
+    if (raw.length === 0) return fallback;
+    raw.sort((a, b) => a.page - b.page);
+    for (let i = 0; i < raw.length; i++) {
+      raw[i].lastPage = i + 1 < raw.length ? raw[i + 1].page - 1 : Math.max(raw[i].page, totalPages);
+    }
+    raw.sort((a, b) => b.page - a.page);
+    return raw;
+  }, [surahHeaderMarkersByPage, surahSegments, totalPages]);
   /** Surah picker: first new row index (= tapped line.position, i.e. insert before that line) */
   const pendingHeaderInsertAtRef = useRef(null);
   /** Page number for which the picker was opened (freeze if user swipes before confirming) */
@@ -5150,6 +5231,7 @@ export default function App() {
   const handlePreviousPageRef = useRef();
   const handleNextPageRef = useRef();
   const fetchingPagesRef = useRef(new Set()); // Track which pages are being fetched
+  const inFlightPageRequestsRef = useRef({}); // pageNum -> Promise resolving to page payload
   const isDraggingDrawerRef = useRef(false);
   const drawerStartValueRef = useRef(-DRAWER_WIDTH);
   const isAnimatingDrawerRef = useRef(false);
@@ -5660,6 +5742,8 @@ export default function App() {
     setPageCache({});
     variationCacheRef.current = {};
     setVariationCache({});
+    inFlightPageRequestsRef.current = {};
+    fetchingPagesRef.current.clear();
     setPage(null); // clear current page so UI shows loading until correct mushaf page is fetched
     setLoading(true);
   }, [mushafId]);
@@ -6164,81 +6248,113 @@ export default function App() {
 
   // Function to fetch a single page and cache it
   const fetchAndCachePage = async (pageNum, showLoading = false, force = false) => {
-    // Skip if already fetching
-    if (fetchingPagesRef.current.has(pageNum)) {
-      return null;
-    }
-
     // Check ref cache first (synchronous access)
     if (!force && pageCacheRef.current[pageNum]) {
       return pageCacheRef.current[pageNum];
     }
 
+    // If a request is already in flight for this page, await that same request.
+    // This avoids a race where foreground loading waits forever while prefetch owns the fetch.
+    const inFlight = inFlightPageRequestsRef.current[pageNum];
+    if (inFlight) {
+      return inFlight;
+    }
+
     fetchingPagesRef.current.add(pageNum);
-    
-    try {
-      const response = await fetch(`${getApiBase()}/api/mushafs/${mushafId}/pages/${pageNum}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      if (!data || typeof data !== "object" || !data.id) {
-        throw new Error(`Invalid page payload for mushaf ${mushafId} page ${pageNum}`);
-      }
-      if (Array.isArray(data.lines)) {
-        data.lines.sort((a, b) => Number(a.position) - Number(b.position));
-      }
+    const requestPromise = (async () => {
+      try {
+        const response = await fetch(`${getApiBase()}/api/mushafs/${mushafId}/pages/${pageNum}`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (!data || typeof data !== "object" || !data.id) {
+          throw new Error(`Invalid page payload for mushaf ${mushafId} page ${pageNum}`);
+        }
+        if (Array.isArray(data.lines)) {
+          data.lines.sort((a, b) => Number(a.position) - Number(b.position));
+        }
 
-      // Cache the page in both ref and state
-      pageCacheRef.current[pageNum] = data;
-      setPageCache((prev) => ({
-        ...prev,
-        [pageNum]: data,
-      }));
+        // Cache the page in both ref and state
+        pageCacheRef.current[pageNum] = data;
+        setPageCache((prev) => ({
+          ...prev,
+          [pageNum]: data,
+        }));
 
-      // If this is the current page, update it immediately
-      if (pageNum === currentPage) {
-        setPage(data);
-        if (showLoading) {
+        // If this is currently visible, always stop loading once data arrives.
+        if (pageNum === currentPageRef.current) {
+          setPage(data);
           setLoading(false);
         }
-      }
-      
-      return data;
-    } catch (err) {
-      // Only log errors for current page or if it's a CORS error on web
-      const isCorsError = err.message.includes('Failed to fetch') || err.message.includes('CORS');
-      const isCurrentPage = pageNum === currentPage;
-      
-      if (isCurrentPage || (isCorsError && Platform.OS === 'web')) {
-        const errorMessage =
-          isCorsError && Platform.OS === "web"
-            ? "Could not reach the API from the browser (often a CORS block). On Vercel, requests should go to /api on the same site. On Expo web at localhost, the API must allow your origin in Rails CORS."
-            : err.message;
-        
-        if (isCurrentPage) {
-          console.error(`Error fetching page ${pageNum}:`, err);
-          setError(errorMessage);
-          if (showLoading) {
+
+        return data;
+      } catch (err) {
+        // Only log errors for current page or if it's a CORS error on web
+        const isCorsError = err.message.includes("Failed to fetch") || err.message.includes("CORS");
+        const isCurrentPage = pageNum === currentPageRef.current;
+
+        if (isCurrentPage || (isCorsError && Platform.OS === "web")) {
+          const errorMessage =
+            isCorsError && Platform.OS === "web"
+              ? "Could not reach the API from the browser (often a CORS block). On Vercel, requests should go to /api on the same site. On Expo web at localhost, the API must allow your origin in Rails CORS."
+              : err.message;
+
+          if (isCurrentPage) {
+            console.error(`Error fetching page ${pageNum}:`, err);
+            setError(errorMessage);
             setLoading(false);
+          } else if (isCorsError && Platform.OS === "web") {
+            // Prefetch failures on web (e.g. CORS) — avoid spamming the UI
           }
-        } else if (isCorsError && Platform.OS === "web") {
-          // Prefetch failures on web (e.g. CORS) — avoid spamming the UI
         }
+        return null;
+      } finally {
+        fetchingPagesRef.current.delete(pageNum);
+        delete inFlightPageRequestsRef.current[pageNum];
       }
-      return null;
-    } finally {
-      fetchingPagesRef.current.delete(pageNum);
-    }
+    })();
+
+    inFlightPageRequestsRef.current[pageNum] = requestPromise;
+    return requestPromise;
   };
 
-  // Bulk surah banner markers for Go → Page green chips (mushaf 2 + header flag only).
+  // Mushaf 2: fetch juz rows from persisted MushafSegment API; otherwise fallback to local segments JSON.
   useEffect(() => {
-    if (!FEATURE_FLAGS.mushaf2HeaderInsert || mushafId !== 2) {
-      setSurahHeaderMarkersByPage(null);
+    if (mushafId !== 2) {
+      setMushafJuzSegmentsApi(null);
       return;
     }
     let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/mushafs/${mushafId}/segments?category=juz`);
+        const data = res.ok ? await res.json() : {};
+        const rows = Array.isArray(data.segments) ? data.segments : [];
+        const normalized = rows.map((s) => ({
+          pk: `api-juz-${s.id}`,
+          fields: {
+            first_page: s.start_page,
+            last_page: s.end_page,
+            title: s.title || "",
+            category: "juz",
+            category_position: s.category_position,
+          },
+        }));
+        if (!cancelled) setMushafJuzSegmentsApi(normalized.length > 0 ? normalized : null);
+      } catch (_) {
+        if (!cancelled) setMushafJuzSegmentsApi(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mushafId]);
+
+  // Surah banner markers for Go → Page chips (all mushafs; returns empty map where unsupported).
+  useEffect(() => {
+    let cancelled = false;
+    setSurahHeaderMarkersByPage(null);
     (async () => {
       try {
         const res = await fetch(
@@ -6568,7 +6684,7 @@ export default function App() {
     return /shu'?bah/i.test(firstNarratorTitle);
   }, [firstNarratorTitle]);
   const currentSurahNumber =
-    surahSegments[currentSurahIndex]?.fields?.category_position ?? null;
+    goToPageSurahCarouselEntries[currentSurahIndex]?.surahNumber ?? null;
   const shubahBottomPlayRef = useRef(null);
   const shubahHasTimestamp = useMemo(() => {
     if (!isShubahHighlight || !currentSurahNumber || !selectedWord) return false;
@@ -6791,9 +6907,9 @@ export default function App() {
   useEffect(() => {
     // Find current Juz (array is sorted descending: highest page first)
     // Find the Juz where first_page <= currentPage <= last_page
-    let juzIndex = juzSegments.length - 1; // Default to last (lowest page)
-    for (let i = 0; i < juzSegments.length; i++) {
-      const juz = juzSegments[i];
+    let juzIndex = goToPageJuzSegments.length - 1; // Default to last (lowest page)
+    for (let i = 0; i < goToPageJuzSegments.length; i++) {
+      const juz = goToPageJuzSegments[i];
       if (currentPage >= juz.fields.first_page && currentPage <= juz.fields.last_page) {
         juzIndex = i;
         break;
@@ -6805,14 +6921,10 @@ export default function App() {
 
     // Find current Surah (array is sorted descending: highest page first).
     // Effective start matches Go to Page surah chip navigation (see GO_TO_PAGE_SURAH_FIRST_PAGE_BACK).
-    let surahIndex = surahSegments.length - 1; // Default to last (lowest page)
-    for (let i = 0; i < surahSegments.length; i++) {
-      const surah = surahSegments[i];
-      const surahStart = Math.max(
-        1,
-        surah.fields.first_page - GO_TO_PAGE_SURAH_FIRST_PAGE_BACK
-      );
-      if (currentPage >= surahStart && currentPage <= surah.fields.last_page) {
+    let surahIndex = goToPageSurahCarouselEntries.length - 1;
+    for (let i = 0; i < goToPageSurahCarouselEntries.length; i++) {
+      const entry = goToPageSurahCarouselEntries[i];
+      if (currentPage >= entry.page && currentPage <= entry.lastPage) {
         surahIndex = i;
         break;
       }
@@ -6820,13 +6932,13 @@ export default function App() {
       // If we reach the end without a match, use the last index (lowest page)
     }
     setCurrentSurahIndex(surahIndex);
-  }, [currentPage, juzSegments, surahSegments]);
+  }, [currentPage, goToPageJuzSegments, goToPageSurahCarouselEntries]);
 
   /** Align header-insert surah strip with the surah highlighted for this page in Go to Page (same index logic). */
   const scrollSurahHeaderPickerToGoModalSurah = useCallback(() => {
     const sc = surahHeaderPickerScrollRef.current;
     if (!sc) return;
-    const surahNum = surahSegments[currentSurahIndex]?.fields?.category_position;
+    const surahNum = goToPageSurahCarouselEntries[currentSurahIndex]?.surahNumber;
     if (typeof surahNum !== "number" || surahNum < 1 || surahNum > 114) return;
     const viewport =
       surahHeaderPickerViewWidthRef.current || Dimensions.get("window").width - 48;
@@ -6834,7 +6946,7 @@ export default function App() {
     const idx = surahNum - 1;
     const x = Math.max(0, idx * stride + SURAH_HEADER_PICKER_CHIP_W / 2 - viewport / 2);
     sc.scrollTo({ x, animated: true });
-  }, [surahSegments, currentSurahIndex]);
+  }, [goToPageSurahCarouselEntries, currentSurahIndex]);
 
   useEffect(() => {
     if (!surahPickerVisible) return;
@@ -6862,17 +6974,25 @@ export default function App() {
     };
 
     const juzWidth = juzCarouselWidthRef.current || winW;
-    if (juzScrollViewRef.current && currentJuzIndex >= 0 && currentJuzIndex < juzSegments.length) {
+    if (
+      juzScrollViewRef.current &&
+      currentJuzIndex >= 0 &&
+      currentJuzIndex < goToPageJuzSegments.length
+    ) {
       const scrollX = centerScrollXFromWidths(juzItemWidthsRef.current, currentJuzIndex, juzWidth);
       juzScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
     }
 
     const surahWidth = surahCarouselWidthRef.current || winW;
-    if (surahScrollViewRef.current && currentSurahIndex >= 0 && currentSurahIndex < surahSegments.length) {
+    if (
+      surahScrollViewRef.current &&
+      currentSurahIndex >= 0 &&
+      currentSurahIndex < goToPageSurahCarouselEntries.length
+    ) {
       const scrollX = centerScrollXFromWidths(surahItemWidthsRef.current, currentSurahIndex, surahWidth);
       surahScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
     }
-  }, [showPageSlider, currentJuzIndex, currentSurahIndex, juzSegments.length, surahSegments.length]);
+  }, [showPageSlider, currentJuzIndex, currentSurahIndex, goToPageJuzSegments.length, goToPageSurahCarouselEntries.length]);
 
   const scheduleCarouselScrollToCenter = useCallback(() => {
     if (carouselCenterDebounceRef.current) clearTimeout(carouselCenterDebounceRef.current);
@@ -8226,7 +8346,7 @@ if (response.ok) {
                           selectedNarrators={selectedNarrators}
                           allVariations={isCurrent ? allVariations : {}}
                           narratorHighlightColorById={narratorHighlightColorById}
-                          highlightFirstLine={juzSegments.some(
+                          highlightFirstLine={goToPageJuzSegments.some(
                             (j) => j.fields.first_page === pageNum
                           )}
                           isDarkMode={isMushafDarkMode}
@@ -9273,7 +9393,7 @@ if (response.ok) {
         onDeleteVariation={handleDeleteVariation}
         mushafId={mushafId}
         currentSurahNumber={
-          surahSegments[currentSurahIndex]?.fields?.category_position ?? null
+          goToPageSurahCarouselEntries[currentSurahIndex]?.surahNumber ?? null
         }
         isShubahHighlight={isShubahHighlight}
       />
@@ -9323,7 +9443,7 @@ if (response.ok) {
               {Array.from({ length: 114 }, (_, i) => i + 1).map((n) => {
                 const surahName = surahTitleByNumber.get(n) ?? "";
                 const goModalSurahNum =
-                  surahSegments[currentSurahIndex]?.fields?.category_position;
+                  goToPageSurahCarouselEntries[currentSurahIndex]?.surahNumber;
                 const isGoModalSurah =
                   typeof goModalSurahNum === "number" && n === goModalSurahNum;
                 return (
@@ -9409,7 +9529,7 @@ if (response.ok) {
                 contentContainerStyle={styles.carouselContent}
                 style={styles.carouselScrollView}
               >
-                {juzSegments.map((juz, index) => (
+                {goToPageJuzSegments.map((juz, index) => (
                   <TouchableOpacity
                     key={juz.pk}
                     style={[
@@ -9459,16 +9579,14 @@ if (response.ok) {
                 contentContainerStyle={styles.carouselContent}
                 style={styles.carouselSurahScrollView}
               >
-                {surahSegments.map((surah, index) => {
-                  const surahNum = surah.fields.category_position;
-                  const surahStart = Math.max(
-                    1,
-                    surah.fields.first_page - GO_TO_PAGE_SURAH_FIRST_PAGE_BACK
-                  );
+                {goToPageSurahCarouselEntries.map((entry, index) => {
+                  const surahNum = entry.surahNumber;
+                  const surahStart = entry.page;
                   const headerNumsOnAnchor =
                     surahHeaderMarkersByPage &&
                     surahHeaderMarkersByPage[String(surahStart)];
                   const hasSurahHeaderOnAnchorPage =
+                    !entry.fromMarkers &&
                     FEATURE_FLAGS.mushaf2HeaderInsert &&
                     mushafId === 2 &&
                     Array.isArray(headerNumsOnAnchor) &&
@@ -9476,7 +9594,7 @@ if (response.ok) {
                     headerNumsOnAnchor.some((h) => Number(h) === surahNum);
                   return (
                     <TouchableOpacity
-                      key={surah.pk}
+                      key={entry.key}
                       style={[
                         styles.carouselItemBase,
                         styles.carouselItemSurah,
@@ -9492,11 +9610,7 @@ if (response.ok) {
                         if (showPageSlider) scheduleCarouselScrollToCenter();
                       }}
                       onPress={() => {
-                        const pageNum = Math.max(
-                          1,
-                          surah.fields.first_page - GO_TO_PAGE_SURAH_FIRST_PAGE_BACK
-                        );
-                        handlePageChange(pageNum.toString());
+                        handlePageChange(String(Math.max(1, entry.page)));
                       }}
                     >
                       <Text
@@ -9508,7 +9622,7 @@ if (response.ok) {
                             styles.carouselItemTextActive,
                         ]}
                       >
-                        {surah.fields.title}
+                        {entry.title}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -10041,6 +10155,37 @@ const styles = StyleSheet.create({
   },
   pageContentDark: {
     backgroundColor: "#1F1F22",
+  },
+  pageStateWrap: {
+    flex: 1,
+    minHeight: 360,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  pageStateCard: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 16,
+    alignItems: "center",
+    paddingVertical: 22,
+    paddingHorizontal: 18,
+    backgroundColor: "#F3F4F6",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  pageStateCardDark: {
+    backgroundColor: "#2A2A2E",
+    borderColor: "#3B3B42",
+  },
+  pageStateTitle: {
+    marginTop: 12,
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  pageStateTitleDark: {
+    color: "#F9FAFB",
   },
   line: {
     flexDirection: "row-reverse",
