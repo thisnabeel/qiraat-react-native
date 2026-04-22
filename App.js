@@ -6884,6 +6884,36 @@ export default function App() {
     });
   }, [selectedTraversalNarrators, allMushafVariations, activeTraversalWordId, currentPage]);
 
+  const narratorVariationsSorted = useMemo(() => {
+    const sortKey = (v) => {
+      const w = v?.word;
+      if (!w) return 0;
+      const page = w.line?.page?.position ?? 0;
+      const linePos = w.line?.position ?? w.line?.id ?? 0;
+      const wpos = w.position ?? 0;
+      return page * 1e9 + Number(linePos) * 1e6 + Number(wpos);
+    };
+    return [...narratorVariations].sort((a, b) => sortKey(a) - sortKey(b));
+  }, [narratorVariations]);
+
+  const { offPageNextVariation, offPagePrevVariation } = useMemo(() => {
+    if (narratorVariationsSorted.length === 0) {
+      return { offPageNextVariation: null, offPagePrevVariation: null };
+    }
+    const firstAfter = narratorVariationsSorted.find(
+      (v) => (v.word?.line?.page?.position ?? 0) > currentPage
+    );
+    let nextV = firstAfter ?? narratorVariationsSorted[0];
+    const lastBefore = [...narratorVariationsSorted]
+      .reverse()
+      .find((v) => (v.word?.line?.page?.position ?? 0) < currentPage);
+    let prevV = lastBefore ?? narratorVariationsSorted[narratorVariationsSorted.length - 1];
+    if (narratorVariationsSorted.length === 1) {
+      nextV = prevV = narratorVariationsSorted[0];
+    }
+    return { offPageNextVariation: nextV, offPagePrevVariation: prevV };
+  }, [narratorVariationsSorted, currentPage]);
+
   // When page changes (e.g. via swipe) or variations load, sync active state to first variation on current page
   useEffect(() => {
     if (currentPageVariations.length === 0) return;
@@ -8503,87 +8533,125 @@ if (response.ok) {
                 )}
 
                 {firstSelectedNarratorId ? (
-                  <View style={styles.variationTraversalSegmentedControl}>
-                    <TouchableOpacity
-                      style={styles.variationTraversalCard}
-                      activeOpacity={0.72}
-                      disabled={narratorVariations.length === 0}
-                      onPress={() => {
-                        console.log("traversal-chip:hafs-card-press");
-                        goToActiveTraversalVariationPage({ type: "hafs" });
-                      }}
-                    >
-                      <Text style={styles.variationTraversalCardLabel}>Hafs</Text>
-                      <View style={styles.variationTraversalCardWordWrap}>
-                        <Text
-                          style={[
-                            styles.variationTraversalCardWord,
-                            { fontFamily: getQuranFontFamily(mushafId) },
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {activeHafsTraversalText}
-                        </Text>
-                        {chipClipTraversalProgress != null &&
-                        activeListenTrack?.chipClipSource?.type === "hafs" ? (
-                          <View
-                            style={styles.variationTraversalChipClipOverlay}
-                            pointerEvents="none"
-                          >
-                            <View style={styles.variationTraversalChipClipOverlayTrack} />
-                            <View
-                              style={[
-                                styles.variationTraversalChipClipOverlayFill,
-                                {
-                                  width: `${Math.round(chipClipTraversalProgress * 1000) / 10}%`,
-                                },
-                              ]}
-                            />
-                          </View>
-                        ) : null}
-                      </View>
-                    </TouchableOpacity>
-                    <Text style={styles.variationTraversalSwapIcon}>↔</Text>
-                    {traversalNarratorCards.map((card) => (
+                  narratorVariations.length > 0 && currentPageVariations.length === 0 ? (
+                    <View style={styles.variationTraversalSegmentedControl}>
                       <TouchableOpacity
-                        key={`traversal-card-${card.id}`}
-                        style={[
-                          styles.variationTraversalCard,
-                          styles.variationTraversalCardNarrator,
-                        ]}
+                        style={styles.variationTraversalOffPageCard}
                         activeOpacity={0.72}
-                        disabled={narratorVariations.length === 0}
                         onPress={() => {
-                          console.log(`traversal-chip:narrator-card-press:${card.id}`);
-                          goToActiveTraversalVariationPage({
-                            type: "comparison",
-                            narratorId: card.id,
-                            narratorTitle: card.title,
-                          });
+                          const v = offPageNextVariation;
+                          if (!v) return;
+                          const pageNum = v.word?.line?.page?.position ?? currentPage;
+                          setLastSelectedVariationHighlight(
+                            v?.word?.id != null ? { wordId: v.word.id, pageNum } : null
+                          );
+                          setCurrentPage(pageNum);
+                          setPageInput(String(pageNum));
+                          handlePageChange(String(pageNum));
+                          if (v?.word?.id != null) {
+                            setSelectedWordId(v.word.id);
+                            setSelectedWord({ id: v.word.id, content: v.word.content });
+                          }
                         }}
                       >
-                        <Text style={styles.variationTraversalCardLabel}>{card.title}</Text>
+                        <Text style={styles.variationTraversalOffPageHeading}>
+                          Next Difference:
+                        </Text>
                         <View
                           style={[
                             styles.variationTraversalCardWordWrap,
                             styles.variationTraversalCardWordWrapNarrator,
-                            { borderColor: card.highlightColor },
+                            {
+                              borderColor:
+                                selectedTraversalNarrators[0]?.highlightColor ?? "#f5a623",
+                            },
                           ]}
                         >
                           <Text
                             style={[
                               styles.variationTraversalCardWord,
-                              styles.variationTraversalCardWordActive,
                               { fontFamily: getQuranFontFamily(mushafId) },
                             ]}
                             numberOfLines={1}
                           >
-                            {card.content}
+                            {offPageNextVariation?.word?.content ?? "—"}
+                          </Text>
+                        </View>
+                        <Text style={styles.variationTraversalOffPagePage}>
+                          Pg. {offPageNextVariation?.word?.line?.page?.position ?? "—"}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.variationTraversalOffPageCard}
+                        activeOpacity={0.72}
+                        onPress={() => {
+                          const v = offPagePrevVariation;
+                          if (!v) return;
+                          const pageNum = v.word?.line?.page?.position ?? currentPage;
+                          setLastSelectedVariationHighlight(
+                            v?.word?.id != null ? { wordId: v.word.id, pageNum } : null
+                          );
+                          setCurrentPage(pageNum);
+                          setPageInput(String(pageNum));
+                          handlePageChange(String(pageNum));
+                          if (v?.word?.id != null) {
+                            setSelectedWordId(v.word.id);
+                            setSelectedWord({ id: v.word.id, content: v.word.content });
+                          }
+                        }}
+                      >
+                        <Text style={styles.variationTraversalOffPageHeading}>
+                          Prev Difference:
+                        </Text>
+                        <View
+                          style={[
+                            styles.variationTraversalCardWordWrap,
+                            styles.variationTraversalCardWordWrapNarrator,
+                            {
+                              borderColor:
+                                selectedTraversalNarrators[0]?.highlightColor ?? "#f5a623",
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.variationTraversalCardWord,
+                              { fontFamily: getQuranFontFamily(mushafId) },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {offPagePrevVariation?.word?.content ?? "—"}
+                          </Text>
+                        </View>
+                        <Text style={styles.variationTraversalOffPagePage}>
+                          Pg. {offPagePrevVariation?.word?.line?.page?.position ?? "—"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <View style={styles.variationTraversalSegmentedControl}>
+                      <TouchableOpacity
+                        style={styles.variationTraversalCard}
+                        activeOpacity={0.72}
+                        disabled={narratorVariations.length === 0}
+                        onPress={() => {
+                          console.log("traversal-chip:hafs-card-press");
+                          goToActiveTraversalVariationPage({ type: "hafs" });
+                        }}
+                      >
+                        <Text style={styles.variationTraversalCardLabel}>Hafs</Text>
+                        <View style={styles.variationTraversalCardWordWrap}>
+                          <Text
+                            style={[
+                              styles.variationTraversalCardWord,
+                              { fontFamily: getQuranFontFamily(mushafId) },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {activeHafsTraversalText}
                           </Text>
                           {chipClipTraversalProgress != null &&
-                          activeListenTrack?.chipClipSource?.type === "comparison" &&
-                          String(activeListenTrack.chipClipSource.narratorId) ===
-                            String(card.id) ? (
+                          activeListenTrack?.chipClipSource?.type === "hafs" ? (
                             <View
                               style={styles.variationTraversalChipClipOverlay}
                               pointerEvents="none"
@@ -8601,8 +8669,67 @@ if (response.ok) {
                           ) : null}
                         </View>
                       </TouchableOpacity>
-                    ))}
-                  </View>
+                      <Text style={styles.variationTraversalSwapIcon}>↔</Text>
+                      {traversalNarratorCards.map((card) => (
+                        <TouchableOpacity
+                          key={`traversal-card-${card.id}`}
+                          style={[
+                            styles.variationTraversalCard,
+                            styles.variationTraversalCardNarrator,
+                          ]}
+                          activeOpacity={0.72}
+                          disabled={narratorVariations.length === 0}
+                          onPress={() => {
+                            console.log(`traversal-chip:narrator-card-press:${card.id}`);
+                            goToActiveTraversalVariationPage({
+                              type: "comparison",
+                              narratorId: card.id,
+                              narratorTitle: card.title,
+                            });
+                          }}
+                        >
+                          <Text style={styles.variationTraversalCardLabel}>{card.title}</Text>
+                          <View
+                            style={[
+                              styles.variationTraversalCardWordWrap,
+                              styles.variationTraversalCardWordWrapNarrator,
+                              { borderColor: card.highlightColor },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.variationTraversalCardWord,
+                                styles.variationTraversalCardWordActive,
+                                { fontFamily: getQuranFontFamily(mushafId) },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {card.content}
+                            </Text>
+                            {chipClipTraversalProgress != null &&
+                            activeListenTrack?.chipClipSource?.type === "comparison" &&
+                            String(activeListenTrack.chipClipSource.narratorId) ===
+                              String(card.id) ? (
+                              <View
+                                style={styles.variationTraversalChipClipOverlay}
+                                pointerEvents="none"
+                              >
+                                <View style={styles.variationTraversalChipClipOverlayTrack} />
+                                <View
+                                  style={[
+                                    styles.variationTraversalChipClipOverlayFill,
+                                    {
+                                      width: `${Math.round(chipClipTraversalProgress * 1000) / 10}%`,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            ) : null}
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )
                 ) : (
                   <TouchableOpacity
                     style={styles.noRiwayahBannerInTraversal}
@@ -10076,6 +10203,27 @@ const styles = StyleSheet.create({
     color: "#d5d5d9",
     marginHorizontal: 5,
     lineHeight: 26,
+  },
+  variationTraversalOffPageCard: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    minWidth: 0,
+  },
+  variationTraversalOffPageHeading: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#f0f0f3",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  variationTraversalOffPagePage: {
+    fontSize: 11,
+    color: "#c4c6ce",
+    marginTop: 6,
+    textAlign: "center",
   },
   variationTraversalArrowDisabled: {
     opacity: 0.5,
