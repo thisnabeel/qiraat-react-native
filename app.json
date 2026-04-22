@@ -2,7 +2,7 @@
   "expo": {
     "name": "Aswaat",
     "slug": "minrawi-app",
-    "version": "1.0.51",
+    "version": "1.0.52",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.aswaat.app",
-      "buildNumber": "53",
+      "buildNumber": "54",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [

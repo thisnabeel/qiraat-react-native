@@ -8642,31 +8642,33 @@ if (response.ok) {
                           style={styles.variationTraversalOffPagePrevBg}
                           pointerEvents="none"
                         />
-                        <Text style={styles.variationTraversalOffPageHeading}>
-                          Prev Difference:
-                        </Text>
-                        <View
-                          style={[
-                            styles.variationTraversalOffPageWordWrap,
-                            {
-                              borderColor:
-                                selectedTraversalNarrators[0]?.highlightColor ?? "#f5a623",
-                            },
-                          ]}
-                        >
-                          <Text
+                        <View style={styles.variationTraversalOffPagePrevContent}>
+                          <Text style={styles.variationTraversalOffPageHeading}>
+                            Prev Difference:
+                          </Text>
+                          <View
                             style={[
-                              styles.variationTraversalOffPageWord,
-                              { fontFamily: getQuranFontFamily(mushafId) },
+                              styles.variationTraversalOffPageWordWrap,
+                              {
+                                borderColor:
+                                  selectedTraversalNarrators[0]?.highlightColor ?? "#f5a623",
+                              },
                             ]}
-                            numberOfLines={1}
                           >
-                            {offPagePrevVariation?.word?.content ?? "—"}
+                            <Text
+                              style={[
+                                styles.variationTraversalOffPageWord,
+                                { fontFamily: getQuranFontFamily(mushafId) },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {offPagePrevVariation?.word?.content ?? "—"}
+                            </Text>
+                          </View>
+                          <Text style={styles.variationTraversalOffPagePage}>
+                            Pg. {offPagePrevVariation?.word?.line?.page?.position ?? "—"}
                           </Text>
                         </View>
-                        <Text style={styles.variationTraversalOffPagePage}>
-                          Pg. {offPagePrevVariation?.word?.line?.page?.position ?? "—"}
-                        </Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
@@ -10176,11 +10178,11 @@ const styles = StyleSheet.create({
     minHeight: 82,
   },
   variationTraversalOffPageSegmented: {
-    // Same outer pill as on-page (`variationTraversalSegmentedControl` merged first) — do not use a
-    // transparent wrapper or the bar (#313237) shows in the padded inset and the chip looks narrower.
+    // No outer padding here: pill gray + Prev dark extend to the rounded clip; each half uses inner
+    // padding so Prev does not get a light “halo” from `#4a4d5b` around the darker fill.
     minHeight: 82,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
     marginHorizontal: 6,
     alignItems: "stretch",
     borderRadius: 14,
@@ -10261,24 +10263,39 @@ const styles = StyleSheet.create({
     alignSelf: "stretch",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 2,
-    paddingHorizontal: 6,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
     minWidth: 0,
   },
-  /** Left half: transparent so merged parent `#4a4d5b` matches on-page pill (same width/position). */
+  /** Left half: inset matches old pill padding; right side stays tight to the center split. */
   variationTraversalOffPageCardNext: {
     backgroundColor: "transparent",
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingLeft: 6,
+    paddingRight: 2,
   },
   /** Prev half: overflow clips the full-bleed bg layer (`variationTraversalOffPagePrevBg`). */
   variationTraversalOffPageCardPrev: {
     overflow: "hidden",
   },
-  /** Edge-to-edge darker fill for the right half (avoids “margin” where pill gray showed through). */
+  /** Flush with pill top/right/bottom; radius matches outer pill (14). */
   variationTraversalOffPagePrevBg: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "#383c4a",
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
+    borderTopRightRadius: 14,
+    borderBottomRightRadius: 14,
+  },
+  /** Padding lives inside Prev so the dark bg is not inset by the old outer pill padding. */
+  variationTraversalOffPagePrevContent: {
+    flex: 1,
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 6,
+    paddingBottom: 6,
+    paddingRight: 6,
+    paddingLeft: 4,
   },
   variationTraversalOffPageHeading: {
     fontSize: 9,
