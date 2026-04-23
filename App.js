@@ -53,12 +53,17 @@ import { getWordSegmentForText } from "./components/shubahTimestamps";
 import { Search } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
+import {
+  scheduleListenNowPlayingSync,
+  clearListenNowPlaying,
+  subscribeListenRemoteCommands,
+} from "aswaat-now-playing";
 
 /**
  * Set `true` to point all API calls at a local Rails app (overrides Railway / Vercel same-origin rules).
  * For a physical device, set `LOCAL_API_BASE` to your machine’s LAN IP (e.g. http://192.168.1.5:3000).
  */
-const USE_LOCALHOST_API = false;
+const USE_LOCALHOST_API = true;
 const LOCAL_API_BASE = "http://localhost:3000";
 
 /** Direct Railway API (native apps and local Expo web when not using localhost override). */
@@ -153,9 +158,6 @@ const MUSHAF_LINE_AUTO_FIT = {
   /** Ignore tiny scale updates (reduces churn). */
   scaleEpsilon: 0.006,
 };
-
-/** Go to Page → Surah chips: segment `first_page` is one ahead of the printed mushaf page; subtract this when navigating. */
-const GO_TO_PAGE_SURAH_FIRST_PAGE_BACK = 1;
 
 const MUSHAF_2_MAX_PAGE_LINES = 13;
 /** Matches `surahPickerChip` width + `marginRight` for scroll-centering in header surah sheet */
@@ -5069,6 +5071,8 @@ export default function App() {
   const surahHeaderPickerViewWidthRef = useRef(0);
   const juzCarouselWidthRef = useRef(0);
   const surahCarouselWidthRef = useRef(0);
+  /** Go modal: surah number last chosen from the carousel (disambiguates multiple surahs on one page). */
+  const goModalSurahHighlightPinRef = useRef(null);
   /** Per-index measured chip width for centering variable-width carousel rows */
   const juzItemWidthsRef = useRef({});
   const surahItemWidthsRef = useRef({});
@@ -5098,12 +5102,34 @@ export default function App() {
   });
   /** Mushaf 2: juz row from API segments (`MushafSegment`); null means fallback to local `segments.json`. */
   const [mushafJuzSegmentsApi, setMushafJuzSegmentsApi] = useState(null);
+  /** Mushaf 2: surah list for header-insert picker from API `MushafSegment` category surah; null → 1..114 + local titles. */
+  const [mushafSurahSegmentsApi, setMushafSurahSegmentsApi] = useState(null);
   const goToPageJuzSegments = useMemo(() => {
     if (mushafId === 2 && Array.isArray(mushafJuzSegmentsApi) && mushafJuzSegmentsApi.length > 0) {
       return [...mushafJuzSegmentsApi].sort((a, b) => b.fields.first_page - a.fields.first_page);
     }
     return juzSegments;
   }, [mushafId, mushafJuzSegmentsApi, juzSegments]);
+  /** Surahs shown in the header-insert / “Select surah” sheet (Mushaf 2: API segments when present). */
+  const headerInsertSurahPickerEntries = useMemo(() => {
+    if (mushafId === 2 && Array.isArray(mushafSurahSegmentsApi) && mushafSurahSegmentsApi.length > 0) {
+      return [...mushafSurahSegmentsApi]
+        .sort((a, b) => a.fields.category_position - b.fields.category_position)
+        .map((s) => ({
+          key: s.pk,
+          surahNumber: s.fields.category_position,
+          title: (s.fields.title || "").trim() || surahTitleByNumber.get(s.fields.category_position) || "",
+        }));
+    }
+    return Array.from({ length: 114 }, (_, i) => {
+      const n = i + 1;
+      return {
+        key: `local-surah-${n}`,
+        surahNumber: n,
+        title: surahTitleByNumber.get(n) ?? surahNumbersAr[String(n)] ?? "",
+      };
+    });
+  }, [mushafId, mushafSurahSegmentsApi, surahTitleByNumber]);
   const VARIATIONS_SIDEBAR_WIDTH = 320;
   const [isVariationsSidebarOpen, setIsVariationsSidebarOpen] = useState(false);
   const [isVariationBottomSheetVisible, setIsVariationBottomSheetVisible] = useState(false);
@@ -5147,25 +5173,17 @@ export default function App() {
   /** From GET /api/mushafs/:id/surah_header_markers — page (string) -> surah_header_position[] */
   const [surahHeaderMarkersByPage, setSurahHeaderMarkersByPage] = useState(null);
   const [surahHeaderMarkersTick, setSurahHeaderMarkersTick] = useState(0);
-  /** Surah rows for Go-to-Page: DB surah-header lines when available, else segments.json fallback. */
+  /** Surah rows for Go-to-Page: only GET /api/mushafs/:id/surah_header_markers (`by_page`). Empty while loading. */
   const goToPageSurahCarouselEntries = useMemo(() => {
-    const fallback = surahSegments.map((surah) => {
-      const surahNum = surah.fields.category_position;
-      const page = Math.max(1, surah.fields.first_page - GO_TO_PAGE_SURAH_FIRST_PAGE_BACK);
-      return {
-        key: `seg-${surah.pk}`,
-        page,
-        surahNumber: surahNum,
-        title: surah.fields.title,
-        lastPage: surah.fields.last_page,
-        fromMarkers: false,
-      };
-    });
+    if (surahHeaderMarkersByPage === null) return [];
 
-    if (!surahHeaderMarkersByPage || typeof surahHeaderMarkersByPage !== "object") return fallback;
+    if (typeof surahHeaderMarkersByPage !== "object") return [];
 
     const raw = [];
-    for (const pageStr of Object.keys(surahHeaderMarkersByPage)) {
+    const pageKeys = Object.keys(surahHeaderMarkersByPage).sort(
+      (x, y) => parseInt(x, 10) - parseInt(y, 10)
+    );
+    for (const pageStr of pageKeys) {
       const page = parseInt(pageStr, 10);
       if (!Number.isFinite(page) || page < 1) continue;
       const nums = surahHeaderMarkersByPage[pageStr];
@@ -5183,14 +5201,22 @@ export default function App() {
         });
       }
     }
-    if (raw.length === 0) return fallback;
+    if (raw.length === 0) return [];
+    // Mushaf reading order: page ASC, then line order within a page (stable sort keeps API array order).
     raw.sort((a, b) => a.page - b.page);
     for (let i = 0; i < raw.length; i++) {
-      raw[i].lastPage = i + 1 < raw.length ? raw[i + 1].page - 1 : Math.max(raw[i].page, totalPages);
+      if (i + 1 < raw.length) {
+        const next = raw[i + 1];
+        raw[i].lastPage =
+          next.page > raw[i].page ? next.page - 1 : raw[i].page;
+      } else {
+        raw[i].lastPage = Math.max(raw[i].page, totalPages);
+      }
     }
-    raw.sort((a, b) => b.page - a.page);
+    // Go-to-Page strip: high page on the left (see juz row). Same page: higher surah left so RTL → surah ASC.
+    raw.sort((a, b) => b.page - a.page || b.surahNumber - a.surahNumber);
     return raw;
-  }, [surahHeaderMarkersByPage, surahSegments, totalPages]);
+  }, [surahHeaderMarkersByPage, totalPages]);
   /** Surah picker: first new row index (= tapped line.position, i.e. insert before that line) */
   const pendingHeaderInsertAtRef = useRef(null);
   /** Page number for which the picker was opened (freeze if user swipes before confirming) */
@@ -5244,6 +5270,8 @@ export default function App() {
   /** Skip `onPageSelected` while we programmatically `setPage` (avoids bogus page after `totalPages` updates). */
   const pagerSelectSuppressedRef = useRef(false);
   const listenSoundRef = useRef(null);
+  /** Latest listen metadata for lock-screen / Dynamic Island sync (playback callback has a stable ref). */
+  const activeListenTrackMetaRef = useRef({ track: null, reciter: null });
   const listenClipEndMsRef = useRef(null);
   const listenClipStartMsRef = useRef(null);
   /** Prevents overlapping chip-segment fetch/play while a prior chip request is in flight */
@@ -5426,6 +5454,37 @@ export default function App() {
     () => listenReciters.find((r) => r.slug === activeListenTrack?.reciterSlug),
     [listenReciters, activeListenTrack?.reciterSlug]
   );
+
+  useEffect(() => {
+    activeListenTrackMetaRef.current = {
+      track: activeListenTrack,
+      reciter: activeListenReciterForPlayer,
+    };
+  }, [activeListenTrack, activeListenReciterForPlayer]);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return undefined;
+    return subscribeListenRemoteCommands({
+      onPlay: () => {
+        listenSoundRef.current?.playAsync?.().catch(() => {});
+      },
+      onPause: () => {
+        listenSoundRef.current?.pauseAsync?.().catch(() => {});
+      },
+      onToggle: async () => {
+        const s = await listenSoundRef.current?.getStatusAsync?.();
+        if (!s?.isLoaded) return;
+        if (s.isPlaying) {
+          await listenSoundRef.current?.pauseAsync?.().catch(() => {});
+        } else {
+          await listenSoundRef.current?.playAsync?.().catch(() => {});
+        }
+      },
+      onSeek: (positionMillis) => {
+        listenSoundRef.current?.setPositionAsync?.(positionMillis).catch(() => {});
+      },
+    });
+  }, []);
 
   const getListenVerseSegmentsForRecitation = useCallback(async (recitationId) => {
     const idNum = Number(recitationId);
@@ -6378,6 +6437,38 @@ export default function App() {
     };
   }, [mushafId]);
 
+  // Mushaf 2: surah rows for header-insert picker from persisted MushafSegment API.
+  useEffect(() => {
+    if (mushafId !== 2) {
+      setMushafSurahSegmentsApi(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${getApiBase()}/api/mushafs/${mushafId}/segments?category=surah`);
+        const data = res.ok ? await res.json() : {};
+        const rows = Array.isArray(data.segments) ? data.segments : [];
+        const normalized = rows.map((s) => ({
+          pk: `api-surah-${s.id}`,
+          fields: {
+            first_page: s.start_page,
+            last_page: s.end_page,
+            title: s.title || "",
+            category: "surah",
+            category_position: s.category_position,
+          },
+        }));
+        if (!cancelled) setMushafSurahSegmentsApi(normalized.length > 0 ? normalized : null);
+      } catch (_) {
+        if (!cancelled) setMushafSurahSegmentsApi(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mushafId]);
+
   // Surah banner markers for Go → Page chips (all mushafs; returns empty map where unsupported).
   useEffect(() => {
     let cancelled = false;
@@ -6986,19 +7077,45 @@ export default function App() {
     setCurrentJuzIndex(juzIndex);
 
     // Find current Surah (array is sorted descending: highest page first).
-    // Effective start matches Go to Page surah chip navigation (see GO_TO_PAGE_SURAH_FIRST_PAGE_BACK).
-    let surahIndex = goToPageSurahCarouselEntries.length - 1;
-    for (let i = 0; i < goToPageSurahCarouselEntries.length; i++) {
-      const entry = goToPageSurahCarouselEntries[i];
+    // Chip ranges come from surah_header_markers (`entry.page` .. `entry.lastPage`).
+    const entries = goToPageSurahCarouselEntries;
+    const matchingIndices = [];
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
       if (currentPage >= entry.page && currentPage <= entry.lastPage) {
-        surahIndex = i;
-        break;
+        matchingIndices.push(i);
       }
-      // If currentPage is less than this Surah's first_page, continue to next (lower page number)
-      // If we reach the end without a match, use the last index (lowest page)
+    }
+    const pin = goModalSurahHighlightPinRef.current;
+    let surahIndex = entries.length - 1;
+    if (matchingIndices.length === 0) {
+      surahIndex = entries.length - 1;
+      goModalSurahHighlightPinRef.current = null;
+    } else if (matchingIndices.length === 1) {
+      surahIndex = matchingIndices[0];
+      goModalSurahHighlightPinRef.current = null;
+    } else {
+      const pinnedIdx =
+        pin != null
+          ? matchingIndices.find((i) => entries[i].surahNumber === pin)
+          : undefined;
+      if (pinnedIdx !== undefined) {
+        surahIndex = pinnedIdx;
+      } else {
+        surahIndex = matchingIndices.reduce((best, i) =>
+          entries[i].surahNumber < entries[best].surahNumber ? i : best
+        );
+        goModalSurahHighlightPinRef.current = null;
+      }
     }
     setCurrentSurahIndex(surahIndex);
   }, [currentPage, goToPageJuzSegments, goToPageSurahCarouselEntries]);
+
+  useEffect(() => {
+    if (!showPageSlider) {
+      goModalSurahHighlightPinRef.current = null;
+    }
+  }, [showPageSlider]);
 
   /** Align header-insert surah strip with the surah highlighted for this page in Go to Page (same index logic). */
   const scrollSurahHeaderPickerToGoModalSurah = useCallback(() => {
@@ -7009,10 +7126,11 @@ export default function App() {
     const viewport =
       surahHeaderPickerViewWidthRef.current || Dimensions.get("window").width - 48;
     const stride = SURAH_HEADER_PICKER_CHIP_W + SURAH_HEADER_PICKER_CHIP_GAP;
-    const idx = surahNum - 1;
+    const idx = headerInsertSurahPickerEntries.findIndex((e) => e.surahNumber === surahNum);
+    if (idx < 0) return;
     const x = Math.max(0, idx * stride + SURAH_HEADER_PICKER_CHIP_W / 2 - viewport / 2);
     sc.scrollTo({ x, animated: true });
-  }, [goToPageSurahCarouselEntries, currentSurahIndex]);
+  }, [goToPageSurahCarouselEntries, currentSurahIndex, headerInsertSurahPickerEntries]);
 
   useEffect(() => {
     if (!surahPickerVisible) return;
@@ -7565,8 +7683,54 @@ if (response.ok) {
     // Loading state is handled by useEffect based on cache
   };
 
+  /** Merge refreshed `ayah` onto a word everywhere we keep page / variation / selection state. */
+  const mergeWordAyahIntoCaches = useCallback((wordId, ayah) => {
+    const idStr = String(wordId);
+    const ayahVal = ayah == null ? "" : String(ayah);
+
+    const patchPage = (pg) => {
+      if (!pg?.lines) return pg;
+      let changed = false;
+      const lines = pg.lines.map((line) => ({
+        ...line,
+        words: (line.words || []).map((w) => {
+          if (String(w.id) !== idStr) return w;
+          changed = true;
+          return { ...w, ayah: ayahVal };
+        }),
+      }));
+      return changed ? { ...pg, lines } : pg;
+    };
+
+    setPageCache((prev) => {
+      const next = { ...prev };
+      for (const k of Object.keys(next)) {
+        const patched = patchPage(next[k]);
+        if (patched !== next[k]) {
+          next[k] = patched;
+          pageCacheRef.current[k] = patched;
+        }
+      }
+      return next;
+    });
+
+    setPage((p) => (p ? patchPage(p) : p));
+
+    setAllMushafVariations((prev) =>
+      prev.map((item) =>
+        item.word && String(item.word.id) === idStr
+          ? { ...item, word: { ...item.word, ayah: ayahVal } }
+          : item
+      )
+    );
+
+    setSelectedWord((sw) =>
+      sw && String(sw.id) === idStr ? { ...sw, ayah: ayahVal } : sw
+    );
+  }, []);
+
   /** When the traversal bar shows a variation from another page, tap Hafs / narrator word to jump there. */
-  const goToActiveTraversalVariationPage = (riwayahChip) => {
+  const goToActiveTraversalVariationPage = async (riwayahChip) => {
     const isHafsChip = riwayahChip?.type === "hafs";
     const isComparisonChip = riwayahChip?.type === "comparison";
     console.log("traversal-chip:press", {
@@ -7581,12 +7745,34 @@ if (response.ok) {
       activeAyah: activeTraversalVariation?.word?.ayah ?? null,
     });
     const v = activeTraversalVariation;
-    const word = v?.word;
+    let word = v?.word;
     if (!word?.id) {
       console.log("traversal-chip:missing-word-id");
       return;
     }
-    const ayahLabel = normalizeAyahLabelForListen(word?.ayah);
+
+    let ayahLabel = normalizeAyahLabelForListen(word?.ayah);
+    if (!ayahLabel) {
+      try {
+        const res = await fetch(`${getApiBase()}/api/words/${word.id}`);
+        if (!res.ok) {
+          console.warn("traversal-chip:refresh-word-ayah-http", { wordId: word.id, status: res.status });
+        } else {
+          const w = await res.json();
+          const freshAyah = w?.ayah;
+          const normalized = normalizeAyahLabelForListen(freshAyah);
+          if (normalized) {
+            mergeWordAyahIntoCaches(word.id, freshAyah);
+            word = { ...word, ayah: freshAyah };
+            ayahLabel = normalized;
+            console.log("traversal-chip:refresh-word-ayah-ok", { wordId: word.id, ayah: ayahLabel });
+          }
+        }
+      } catch (e) {
+        console.warn("traversal-chip:refresh-word-ayah-error", { wordId: word.id, message: e?.message });
+      }
+    }
+
     if (ayahLabel) {
       console.log(`ayah: ${ayahLabel}`);
       void handlePlayFirstRecitationSegmentForAyah(ayahLabel, { traversalChip: riwayahChip });
@@ -7599,7 +7785,7 @@ if (response.ok) {
     setPageInput(String(pageNum));
     handlePageChange(String(pageNum));
     setSelectedWordId(word.id);
-    setSelectedWord({ id: word.id, content: word.content });
+    setSelectedWord({ ...word, content: word.content });
   };
 
   const handlePreviousPage = () => {
@@ -7848,6 +8034,19 @@ if (response.ok) {
     setListenPositionMs(positionMs);
     setListenDurationMs(status.durationMillis ?? 0);
     setListenIsPlaying(status.isPlaying ?? false);
+
+    if (Platform.OS === "ios") {
+      const { track, reciter } = activeListenTrackMetaRef.current;
+      if (track) {
+        scheduleListenNowPlayingSync({
+          track,
+          reciter,
+          positionMs,
+          durationMs: status.durationMillis ?? 0,
+          isPlaying: status.isPlaying ?? false,
+        });
+      }
+    }
     const clipEndMs = listenClipEndMsRef.current;
     if (
       clipEndMs != null &&
@@ -7874,6 +8073,9 @@ if (response.ok) {
       listenClipStartMsRef.current = null;
       setListenIsPlaying(false);
       setListenTraversalClipHighlightVerse(null);
+      if (Platform.OS === "ios") {
+        clearListenNowPlaying();
+      }
     }
   }, []);
 
@@ -7938,6 +8140,17 @@ if (response.ok) {
         );
         listenSoundRef.current = sound;
         setActiveListenTrack(track);
+        if (Platform.OS === "ios") {
+          const reciterRow = listenReciters.find((r) => r.slug === track.reciterSlug);
+          scheduleListenNowPlayingSync({
+            track,
+            reciter: reciterRow,
+            positionMs: 0,
+            durationMs: 0,
+            isPlaying: true,
+            force: true,
+          });
+        }
         if (!playOptions.suppressPlayer) {
           setListenPlayerVisible(true);
         }
@@ -7946,13 +8159,16 @@ if (response.ok) {
         console.error("Error playing surah recitation:", e);
       }
     },
-    [activeListenTrack, handleListenPlaybackStatusUpdate, unloadListenSound]
+    [activeListenTrack, handleListenPlaybackStatusUpdate, unloadListenSound, listenReciters]
   );
 
   const handleCloseListenPlayer = useCallback(async () => {
     listenClipEndMsRef.current = null;
     listenClipStartMsRef.current = null;
     await unloadListenSound();
+    if (Platform.OS === "ios") {
+      await clearListenNowPlaying();
+    }
     setActiveListenTrack(null);
     setListenIsPlaying(false);
     setListenPositionMs(0);
@@ -7970,6 +8186,22 @@ if (response.ok) {
     try {
       await listenSoundRef.current.setPositionAsync(nextPosition);
       setListenPositionMs(nextPosition);
+      if (Platform.OS === "ios") {
+        const { track, reciter } = activeListenTrackMetaRef.current;
+        if (track) {
+          const st = await listenSoundRef.current.getStatusAsync();
+          if (st?.isLoaded) {
+            scheduleListenNowPlayingSync({
+              track,
+              reciter,
+              positionMs: nextPosition,
+              durationMs: st.durationMillis ?? 0,
+              isPlaying: st.isPlaying ?? false,
+              force: true,
+            });
+          }
+        }
+      }
     } catch (e) {
       console.warn("Failed to seek recitation:", e);
     }
@@ -9627,15 +9859,16 @@ if (response.ok) {
                 }
               }}
             >
-              {Array.from({ length: 114 }, (_, i) => i + 1).map((n) => {
-                const surahName = surahTitleByNumber.get(n) ?? "";
+              {headerInsertSurahPickerEntries.map((entry) => {
+                const n = entry.surahNumber;
+                const surahName = entry.title || "";
                 const goModalSurahNum =
                   goToPageSurahCarouselEntries[currentSurahIndex]?.surahNumber;
                 const isGoModalSurah =
                   typeof goModalSurahNum === "number" && n === goModalSurahNum;
                 return (
                   <TouchableOpacity
-                    key={n}
+                    key={entry.key}
                     style={[
                       styles.surahPickerChip,
                       isGoModalSurah && styles.surahPickerChipActive,
@@ -9779,6 +10012,8 @@ if (response.ok) {
                     Array.isArray(headerNumsOnAnchor) &&
                     surahNum > 0 &&
                     headerNumsOnAnchor.some((h) => Number(h) === surahNum);
+                  const surahChipLit =
+                    index === currentSurahIndex || hasSurahHeaderOnAnchorPage;
                   return (
                     <TouchableOpacity
                       key={entry.key}
@@ -9797,20 +10032,44 @@ if (response.ok) {
                         if (showPageSlider) scheduleCarouselScrollToCenter();
                       }}
                       onPress={() => {
+                        goModalSurahHighlightPinRef.current = entry.surahNumber;
+                        const idx = goToPageSurahCarouselEntries.findIndex(
+                          (e) => e.key === entry.key
+                        );
+                        if (idx >= 0) {
+                          setCurrentSurahIndex(idx);
+                        }
                         handlePageChange(String(Math.max(1, entry.page)));
                       }}
                     >
-                      <Text
-                        style={[
-                          styles.carouselItemText,
-                          styles.carouselItemSurahTitle,
-                          (index === currentSurahIndex ||
-                            hasSurahHeaderOnAnchorPage) &&
-                            styles.carouselItemTextActive,
-                        ]}
-                      >
-                        {entry.title}
-                      </Text>
+                      <View style={styles.carouselSurahChipInner}>
+                        <Text
+                          style={[
+                            styles.carouselItemText,
+                            styles.carouselItemSurahTitle,
+                            surahChipLit && styles.carouselItemTextActive,
+                          ]}
+                        >
+                          {entry.title}
+                        </Text>
+                        <View
+                          style={[
+                            styles.carouselSurahNumPill,
+                            surahChipLit && styles.carouselSurahNumPillLit,
+                          ]}
+                          pointerEvents="none"
+                        >
+                          <Text
+                            style={[
+                              styles.carouselSurahNumPillText,
+                              surahChipLit && styles.carouselSurahNumPillTextLit,
+                            ]}
+                            allowFontScaling={false}
+                          >
+                            {surahNum}
+                          </Text>
+                        </View>
+                      </View>
                     </TouchableOpacity>
                   );
                 })}
@@ -12237,7 +12496,7 @@ const styles = StyleSheet.create({
     maxHeight: 52,
   },
   carouselSurahScrollView: {
-    maxHeight: 88,
+    maxHeight: 96,
   },
   carouselContent: {
     paddingRight: 10,
@@ -12260,8 +12519,46 @@ const styles = StyleSheet.create({
     height: 44,
   },
   carouselItemSurah: {
-    minHeight: 44,
-    paddingVertical: 8,
+    minHeight: 56,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    overflow: "visible",
+  },
+  carouselSurahChipInner: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: 18,
+    paddingTop: 2,
+    minWidth: 40,
+  },
+  /** Surah index (1–114) — sits under Arabic title */
+  carouselSurahNumPill: {
+    position: "absolute",
+    bottom: 0,
+    alignSelf: "center",
+    minWidth: 24,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.06)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(0,0,0,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  carouselSurahNumPillLit: {
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderColor: "rgba(255,255,255,0.38)",
+  },
+  carouselSurahNumPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#4a5568",
+    letterSpacing: 0.2,
+  },
+  carouselSurahNumPillTextLit: {
+    color: "#fff",
   },
   carouselItemActive: {
     backgroundColor: "#027778",
@@ -12280,6 +12577,7 @@ const styles = StyleSheet.create({
   },
   carouselItemSurahTitle: {
     textAlign: "center",
+    marginBottom: 6,
   },
   carouselItemTextActive: {
     color: "#fff",

@@ -1,0 +1,13 @@
+{
+  "name": "aswaat-now-playing",
+  "version": "1.0.0",
+  "description": "iOS lock screen / Dynamic Island Now Playing for Aswaat listen mode",
+  "main": "src/index.js",
+  "license": "MIT",
+  "author": "Aswaat",
+  "homepage": "https://github.com/aswaat/aswaat",
+  "peerDependencies": {
+    "expo": "*",
+    "expo-modules-core": "*"
+  }
+}
