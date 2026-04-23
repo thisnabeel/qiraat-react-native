@@ -63,7 +63,7 @@ import {
  * Set `true` to point all API calls at a local Rails app (overrides Railway / Vercel same-origin rules).
  * For a physical device, set `LOCAL_API_BASE` to your machine’s LAN IP (e.g. http://192.168.1.5:3000).
  */
-const USE_LOCALHOST_API = true;
+const USE_LOCALHOST_API = false;
 const LOCAL_API_BASE = "http://localhost:3000";
 
 /** Direct Railway API (native apps and local Expo web when not using localhost override). */
