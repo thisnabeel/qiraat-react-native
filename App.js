@@ -37,6 +37,7 @@ import surahNumbersAr from "./surah_numbers.json";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
 import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/VariationBottomSheet";
+import WebPasswordGate from "./components/WebPasswordGate";
 import {
   VerserWordBody,
   VerserToolbarButton,
@@ -134,16 +135,16 @@ const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT
 
 /**
  * Feature flags — flip booleans here for releases without hunting through App.js.
- * @property {boolean} mushaf2HeaderInsert — Mushaf 2: Header/Save bar, line targets, surah picker, stacked preview, save-to-API.
+ * @property {boolean} mushaf2HeaderInsert — Mushaf 2: Header/Save bar, line targets, surah picker, stacked preview, save-to-API. On web only, defaults on.
  * @property {boolean} mushafLineAutoFitFont — Shrink font only until words fit row; row minHeight / Text lineHeight stay fixed; words vertically centered in the row (debug overflow).
- * @property {boolean} verser — Mushaf 2 top bar: Verser tool (no behavior until wired).
- * @property {boolean} wordLongPressVariationEditor — Long-press a mushaf word opens the narrator / variation editor popup.
+ * @property {boolean} verser — Mushaf 2 top bar: Verser tool (no behavior until wired). On web only, defaults on.
+ * @property {boolean} wordLongPressVariationEditor — Long-press a mushaf word opens the narrator / variation editor popup. On web only, defaults on.
  */
 const FEATURE_FLAGS = {
-  mushaf2HeaderInsert: false,
+  mushaf2HeaderInsert: Platform.OS === "web",
   mushafLineAutoFitFont: true,
-  verser: false,
-  wordLongPressVariationEditor: false,
+  verser: Platform.OS === "web",
+  wordLongPressVariationEditor: Platform.OS === "web",
 };
 
 /**
@@ -8387,6 +8388,7 @@ if (response.ok) {
   );
 
   return (
+    <WebPasswordGate>
     <SafeAreaProvider>
       <GestureHandlerRootView
         style={[
@@ -10140,6 +10142,7 @@ if (response.ok) {
       </Modal>
     </GestureHandlerRootView>
     </SafeAreaProvider>
+    </WebPasswordGate>
   );
 }
 
