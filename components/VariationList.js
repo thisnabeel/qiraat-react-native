@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import surahNamesByNumber from "../surah_numbers.json";
+import { surahArabicName } from "../surahMeta";
 
 const ARROW_COL_WIDTH = 40;
 
@@ -206,7 +206,7 @@ export default function VariationList({
     const out = [];
     for (const row of tableRows) {
       const n = row.surahNumber ?? 1;
-      const title = surahNamesByNumber[String(n)] ?? `سورة ${n}`;
+      const title = surahArabicName(n);
       const prev = out[out.length - 1];
       if (prev && prev.surahNumber === n) {
         prev.data.push(row);

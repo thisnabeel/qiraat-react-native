@@ -20,6 +20,7 @@ import {
   PanResponder,
   Keyboard,
   Alert,
+  AppState,
 } from "react-native";
 import {
   SafeAreaProvider,
@@ -33,7 +34,7 @@ import ComparisonTable from "./ComparisonTable";
 import InlineComparison from "./InlineComparison";
 import { DiamondShapeSvg, DIAMOND_SIZING } from "./components/DiamondOverlayText";
 import segmentsData from "./segments.json";
-import surahNumbersAr from "./surah_numbers.json";
+import { surahArabicName, surahEnglishAlias } from "./surahMeta";
 import QiraatSettingsModal from "./components/QiraatSettingsModal";
 import ShubahWordAudioButton from "./components/ShubahWordAudioButton";
 import VariationBottomSheet, { TRANSLATE_MINIMIZED } from "./components/VariationBottomSheet";
@@ -51,7 +52,7 @@ import {
   suggestVerserLabelFromRange,
 } from "./verser";
 import { getWordSegmentForText } from "./components/shubahTimestamps";
-import { Search } from "react-native-feather";
+import { Search, Volume2 } from "react-native-feather";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
 import {
@@ -104,6 +105,21 @@ const buildVerseSegmentLookupUrl = (verse, { reciterSlug, narratorSlug } = {}) =
 /** Trimmed surah:ayah for comparing API `word.ayah` to `RecitationVerseSegment#verse`. */
 const normalizeAyahLabelForListen = (s) => (s == null ? "" : String(s)).trim();
 
+/** True when verse-segment lookup returns a playable clip (same check as chip playback). */
+async function fetchRecitationVerseSegmentPlayable(normalizedAyah, narratorSlug) {
+  const ayah = normalizeAyahLabelForListen(normalizedAyah);
+  if (!ayah || !ayah.includes(":") || !narratorSlug) return false;
+  try {
+    const lookupUrl = buildVerseSegmentLookupUrl(ayah, { narratorSlug });
+    const res = await fetch(lookupUrl);
+    if (!res.ok) return false;
+    const payload = await res.json();
+    return !!(payload?.audio_url && payload.recitation_id != null);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * @param {{ start_time: number, end_time: number }[]} segments sorted by start_time
  * @param {number} sec
@@ -139,12 +155,16 @@ const getMushafLineHeight = (mushafId) => (mushafId === 2 ? MUSHAF_2_LINE_HEIGHT
  * @property {boolean} mushafLineAutoFitFont — Shrink font only until words fit row; row minHeight / Text lineHeight stay fixed; words vertically centered in the row (debug overflow).
  * @property {boolean} verser — Mushaf 2 top bar: Verser tool (no behavior until wired). On web only, defaults on.
  * @property {boolean} wordLongPressVariationEditor — Long-press a mushaf word opens the narrator / variation editor popup. On web only, defaults on.
+ * @property {boolean} variationWordListenBadge — Prefetch + short tap on variation words; bottom bar volume badges when enabled with traversal playability.
+ * @property {boolean} variationWordListenBadgeOnMushafWords — When false, no volume pill on mushaf text (tap-to-play still works); traversal chips keep their badges.
  */
 const FEATURE_FLAGS = {
   mushaf2HeaderInsert: Platform.OS === "web",
   mushafLineAutoFitFont: true,
   verser: Platform.OS === "web",
   wordLongPressVariationEditor: Platform.OS === "web",
+  variationWordListenBadge: true,
+  variationWordListenBadgeOnMushafWords: false,
 };
 
 /**
@@ -335,6 +355,10 @@ const Line = ({
   pageNum = null,
   /** Short tap: jump bottom traversal bar to this word if it is a narration-change for the selected narrator */
   onVariationTraversalWordTap = null,
+  /** When set, word ids (strings) on this page that show the listenable-variation volume badge */
+  variationListenBadgeWordIds = null,
+  /** Matches loading state for traversal chip clip (spinner on mushaf badge for that word) */
+  chipClipLoadingBadge = null,
 }) => {
   const normalizedWords = Array.isArray(words) ? words : [];
   const hasRenderableWords = normalizedWords.some((word) => {
@@ -685,17 +709,29 @@ const Line = ({
           onVariationTraversalWordTap(word, pageNum);
         };
 
+        const showListenBadge =
+          FEATURE_FLAGS.variationWordListenBadge &&
+          FEATURE_FLAGS.variationWordListenBadgeOnMushafWords &&
+          !!variationListenBadgeWordIds &&
+          variationListenBadgeWordIds.has(String(word.id));
+
+        const badgeClipLoading =
+          chipClipLoadingBadge?.kind === "mushaf-word" &&
+          String(chipClipLoadingBadge.wordId) === String(word.id);
+
+        const handleWordShortPress = () => {
+          if (verserActive && onVerserWordTap) {
+            fireVerserTap();
+            return;
+          }
+          fireVariationTraversalTap();
+        };
+
         return (
           <Pressable
             key={`${word.id}-${index}`}
             ref={(ref) => (wordRefs.current[word.id] = ref)}
-            onPress={() => {
-              if (verserActive && onVerserWordTap) {
-                fireVerserTap();
-                return;
-              }
-              fireVariationTraversalTap();
-            }}
+            onPress={handleWordShortPress}
             onLayout={(ev) => {
               if (!autoFitLine) return;
               wordWidthsRef.current[index] = ev.nativeEvent.layout.width;
@@ -722,9 +758,47 @@ const Line = ({
             }
             delayLongPress={FEATURE_FLAGS.wordLongPressVariationEditor ? 500 : undefined}
             cancelable={true}
-            style={wordContainerStyle}
+            style={
+              showListenBadge
+                ? (state) => [
+                    ...wordContainerStyle(state),
+                    styles.wordPressableListenOverflow,
+                  ]
+                : wordContainerStyle
+            }
           >
-            {verserWordBody}
+            {showListenBadge ? (
+              <View style={styles.wordWithListenBadgeWrap}>
+                {verserWordBody}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Play variation audio"
+                  onPress={handleWordShortPress}
+                  style={styles.wordListenBadge}
+                  hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                >
+                  <View
+                    style={[
+                      styles.wordListenBadgeInner,
+                      isDarkMode && styles.wordListenBadgeInnerDark,
+                    ]}
+                  >
+                    {badgeClipLoading ? (
+                      <ActivityIndicator color="#ffffff" style={styles.wordListenBadgeSpinner} />
+                    ) : (
+                      <Volume2
+                        stroke="#ffffff"
+                        width={8}
+                        height={8}
+                        strokeWidth={1.85}
+                      />
+                    )}
+                  </View>
+                </Pressable>
+              </View>
+            ) : (
+              verserWordBody
+            )}
           </Pressable>
         );
       })}
@@ -797,6 +871,8 @@ const PageView = ({
   onVerserWordTap,
   recitationListenHighlightVerse = null,
   onVariationTraversalWordTap = null,
+  variationListenBadgeWordIds = null,
+  chipClipLoadingBadge = null,
 }) => {
 
   if (loading) {
@@ -950,6 +1026,8 @@ const PageView = ({
               recitationListenHighlightVerse={recitationListenHighlightVerse}
               pageNum={page.position}
               onVariationTraversalWordTap={onVariationTraversalWordTap}
+              variationListenBadgeWordIds={variationListenBadgeWordIds}
+              chipClipLoadingBadge={chipClipLoadingBadge}
             />
           );
           const lineInstanceKey = `${page.position}-${line.id}`;
@@ -5035,6 +5113,7 @@ export default function App() {
   const [sliderValue, setSliderValue] = useState(9); // Temporary value for slider (doesn't trigger page load)
   /** "Go to Page" modal number field — string so users can clear/retype; synced from currentPage while modal open */
   const [goPageField, setGoPageField] = useState("");
+  const [goPageSurahSearch, setGoPageSurahSearch] = useState("");
   const [totalPages, setTotalPages] = useState(604);
   const juzSegments = useMemo(
     () =>
@@ -5060,7 +5139,7 @@ export default function App() {
       }
     });
     for (let n = 1; n <= 114; n++) {
-      if (!m.has(n) && surahNumbersAr[String(n)]) m.set(n, surahNumbersAr[String(n)]);
+      if (!m.has(n)) m.set(n, surahArabicName(n));
     }
     return m;
   }, [surahSegments]);
@@ -5127,7 +5206,7 @@ export default function App() {
       return {
         key: `local-surah-${n}`,
         surahNumber: n,
-        title: surahTitleByNumber.get(n) ?? surahNumbersAr[String(n)] ?? "",
+        title: surahTitleByNumber.get(n) ?? surahArabicName(n),
       };
     });
   }, [mushafId, mushafSurahSegmentsApi, surahTitleByNumber]);
@@ -5138,6 +5217,20 @@ export default function App() {
   const [sheetTranslateY, setSheetTranslateY] = useState(null); // Animated.Value from VariationBottomSheet for bar visibility
   const [allMushafVariations, setAllMushafVariations] = useState([]);
   const [lastSelectedVariationHighlight, setLastSelectedVariationHighlight] = useState(null);
+  /**
+   * After prefetch: word id string -> lookup for comparison riwayah succeeded (mushaf listen badge).
+   * Missing key = not checked yet; false = checked and not playable.
+   */
+  const [comparisonSegmentPlayableByWordId, setComparisonSegmentPlayableByWordId] = useState({});
+  /** Bottom traversal chips: null = prefetching / unknown; boolean after lookup */
+  const [traversalChipSegmentPlayable, setTraversalChipSegmentPlayable] = useState({
+    hafs: null,
+    comparison: null,
+  });
+  /** While chip clip fetch/play is in flight — spinners on mushaf word + traversal volume badges */
+  const [chipClipLoadingBadge, setChipClipLoadingBadge] = useState(null);
+  /** Bumped when app returns to foreground so segment playability is re-checked */
+  const [segmentPrefetchResumeTick, setSegmentPrefetchResumeTick] = useState(0);
   const variationsSidebarAnim = useRef(new Animated.Value(VARIATIONS_SIDEBAR_WIDTH)).current;
   const variationsSidebarBackdropAnim = useRef(new Animated.Value(0)).current;
   const variationsSidebarScrollRef = useRef(null);
@@ -5196,7 +5289,8 @@ export default function App() {
           key: `hdr-${page}-${n}`,
           page,
           surahNumber: n,
-          title: surahNumbersAr[String(n)] || `سورة ${n}`,
+          title: surahArabicName(n),
+          titleEn: surahEnglishAlias(n),
           lastPage: totalPages,
           fromMarkers: true,
         });
@@ -5218,6 +5312,32 @@ export default function App() {
     raw.sort((a, b) => b.page - a.page || b.surahNumber - a.surahNumber);
     return raw;
   }, [surahHeaderMarkersByPage, totalPages]);
+  const goPageSurahSearchNorm = useMemo(() => {
+    const t = goPageSurahSearch.trim().toLowerCase();
+    return t.replace(/\s+/g, " ");
+  }, [goPageSurahSearch]);
+  const goToPageSurahCarouselFiltered = useMemo(() => {
+    const entries = goToPageSurahCarouselEntries;
+    if (!goPageSurahSearchNorm) return entries;
+    return entries.filter((e) => {
+      const ar = (e.title || "").toLowerCase();
+      const en = (e.titleEn || "").toLowerCase();
+      const num = String(e.surahNumber);
+      return (
+        ar.includes(goPageSurahSearchNorm) ||
+        (en && en.includes(goPageSurahSearchNorm)) ||
+        num.includes(goPageSurahSearchNorm)
+      );
+    });
+  }, [goToPageSurahCarouselEntries, goPageSurahSearchNorm]);
+  const activeSurahCarouselRowIndex = useMemo(() => {
+    const filtered = goToPageSurahCarouselFiltered;
+    const key = goToPageSurahCarouselEntries[currentSurahIndex]?.key;
+    if (!filtered.length) return 0;
+    if (!key) return 0;
+    const idx = filtered.findIndex((e) => e.key === key);
+    return idx >= 0 ? idx : 0;
+  }, [goToPageSurahCarouselFiltered, goToPageSurahCarouselEntries, currentSurahIndex]);
   /** Surah picker: first new row index (= tapped line.position, i.e. insert before that line) */
   const pendingHeaderInsertAtRef = useRef(null);
   /** Page number for which the picker was opened (freeze if user swipes before confirming) */
@@ -5277,6 +5397,12 @@ export default function App() {
   const listenClipStartMsRef = useRef(null);
   /** Prevents overlapping chip-segment fetch/play while a prior chip request is in flight */
   const chipClipSegmentRequestInFlightRef = useRef(false);
+  /** Invalidate in-flight mushaf-page segment prefetches when page/narrator/resume changes */
+  const comparisonSegmentPrefetchGenRef = useRef(0);
+  /** Invalidate traversal Hafs|comparison prefetch when active word or resume changes */
+  const traversalSegmentPrefetchGenRef = useRef(0);
+  /** Set each render after `handlePlayFirstRecitationSegmentForAyah` exists — used by earlier `handleVariationTraversalWordTap`. */
+  const playRecitationSegmentForAyahRef = useRef(async () => {});
   const listenVerseSegmentsByRecitationRef = useRef({});
   const listenPlayerDrag = useRef(
     new Animated.ValueXY({
@@ -6893,6 +7019,133 @@ export default function App() {
     );
   }, [allMushafVariations, firstSelectedNarratorId]);
 
+  /** Per mushaf page: word ids with a narration change AND a confirmed playable verse-segment lookup */
+  const variationListenBadgeWordIdsByPage = useMemo(() => {
+    if (!FEATURE_FLAGS.variationWordListenBadge || !firstSelectedNarratorId) return null;
+    const map = {};
+    for (const v of narratorVariations) {
+      const pos = v.word?.line?.page?.position;
+      const wid = v.word?.id;
+      if (pos == null || wid == null) continue;
+      const idStr = String(wid);
+      if (comparisonSegmentPlayableByWordId[idStr] !== true) continue;
+      const pageKey = Number(pos);
+      if (!Number.isFinite(pageKey)) continue;
+      if (!map[pageKey]) map[pageKey] = new Set();
+      map[pageKey].add(idStr);
+    }
+    return Object.keys(map).length > 0 ? map : null;
+  }, [narratorVariations, firstSelectedNarratorId, comparisonSegmentPlayableByWordId]);
+
+  /** Hafs / narrator chips in the bottom traversal bar: show same volume badge as mushaf words */
+  const showTraversalBarListenBadges = useMemo(
+    () =>
+      FEATURE_FLAGS.variationWordListenBadge &&
+      !!firstSelectedNarratorId &&
+      narratorVariations.length > 0,
+    [firstSelectedNarratorId, narratorVariations.length]
+  );
+
+  useEffect(() => {
+    setComparisonSegmentPlayableByWordId({});
+  }, [firstSelectedNarratorId, mushafId]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") setSegmentPrefetchResumeTick((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    if (!FEATURE_FLAGS.variationWordListenBadge || !firstSelectedNarratorId) return;
+    const compSlug = recitationNarratorSlugForMushafNarratorId(
+      firstSelectedNarratorId,
+      parentNarrators
+    );
+    const onPage = narratorVariations.filter(
+      (v) => (v.word?.line?.page?.position ?? 0) === currentPage
+    );
+    if (onPage.length === 0) return;
+
+    const gen = ++comparisonSegmentPrefetchGenRef.current;
+    let cancelled = false;
+
+    const ayahToWordIds = new Map();
+    for (const v of onPage) {
+      const wid = v.word?.id;
+      if (wid == null) continue;
+      const ayah = normalizeAyahLabelForListen(v.word?.ayah);
+      if (!ayah || !ayah.includes(":")) continue;
+      const idStr = String(wid);
+      if (!ayahToWordIds.has(ayah)) ayahToWordIds.set(ayah, []);
+      ayahToWordIds.get(ayah).push(idStr);
+    }
+
+    setComparisonSegmentPlayableByWordId((prev) => {
+      const next = { ...prev };
+      for (const v of onPage) {
+        if (v.word?.id == null) continue;
+        const idStr = String(v.word.id);
+        const ayah = normalizeAyahLabelForListen(v.word?.ayah);
+        if (!ayah || !ayah.includes(":")) next[idStr] = false;
+      }
+      return next;
+    });
+
+    if (!compSlug) {
+      setComparisonSegmentPlayableByWordId((prev) => {
+        const next = { ...prev };
+        for (const v of onPage) {
+          if (v.word?.id != null) next[String(v.word.id)] = false;
+        }
+        return next;
+      });
+      return;
+    }
+
+    if (ayahToWordIds.size === 0) {
+      setComparisonSegmentPlayableByWordId((prev) => {
+        const next = { ...prev };
+        for (const v of onPage) {
+          if (v.word?.id != null) next[String(v.word.id)] = false;
+        }
+        return next;
+      });
+      return;
+    }
+
+    (async () => {
+      const entries = Array.from(ayahToWordIds.entries());
+      const batchSize = 5;
+      for (let i = 0; i < entries.length; i += batchSize) {
+        if (cancelled || gen !== comparisonSegmentPrefetchGenRef.current) return;
+        const batch = entries.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map(async ([ayah, wordIds]) => {
+            const ok = await fetchRecitationVerseSegmentPlayable(ayah, compSlug);
+            if (cancelled || gen !== comparisonSegmentPrefetchGenRef.current) return;
+            setComparisonSegmentPlayableByWordId((prev) => {
+              const next = { ...prev };
+              for (const wid of wordIds) next[wid] = ok;
+              return next;
+            });
+          })
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentPage,
+    firstSelectedNarratorId,
+    narratorVariations,
+    parentNarrators,
+    segmentPrefetchResumeTick,
+  ]);
+
   // Current variation index derived from Narration Changes active state (lastSelectedVariationHighlight)
   const currentVariationIndex = useMemo(() => {
     if (narratorVariations.length === 0) return 0;
@@ -6983,6 +7236,66 @@ export default function App() {
   const activeTraversalVariation = narratorVariations[currentVariationIndex] ?? null;
   const activeTraversalWordId = activeTraversalVariation?.word?.id ?? null;
   const activeHafsTraversalText = activeTraversalVariation?.word?.content ?? "—";
+
+  useEffect(() => {
+    if (!FEATURE_FLAGS.variationWordListenBadge || !firstSelectedNarratorId) {
+      setTraversalChipSegmentPlayable({ hafs: null, comparison: null });
+      return;
+    }
+    const w = activeTraversalVariation?.word;
+    if (!w?.id) {
+      setTraversalChipSegmentPlayable({ hafs: null, comparison: null });
+      return;
+    }
+
+    const gen = ++traversalSegmentPrefetchGenRef.current;
+    let cancelled = false;
+    const compSlug = recitationNarratorSlugForMushafNarratorId(
+      firstSelectedNarratorId,
+      parentNarrators
+    );
+
+    setTraversalChipSegmentPlayable({ hafs: null, comparison: null });
+
+    (async () => {
+      let ayahNorm = normalizeAyahLabelForListen(w.ayah);
+      if (!ayahNorm?.includes(":")) {
+        try {
+          const res = await fetch(`${getApiBase()}/api/words/${w.id}`);
+          if (res.ok) {
+            const j = await res.json();
+            ayahNorm = normalizeAyahLabelForListen(j?.ayah);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      if (!ayahNorm?.includes(":")) {
+        if (!cancelled && gen === traversalSegmentPrefetchGenRef.current) {
+          setTraversalChipSegmentPlayable({ hafs: false, comparison: false });
+        }
+        return;
+      }
+      const [hafsOk, compOk] = await Promise.all([
+        fetchRecitationVerseSegmentPlayable(ayahNorm, "hafs-an-asim"),
+        compSlug
+          ? fetchRecitationVerseSegmentPlayable(ayahNorm, compSlug)
+          : Promise.resolve(false),
+      ]);
+      if (cancelled || gen !== traversalSegmentPrefetchGenRef.current) return;
+      setTraversalChipSegmentPlayable({ hafs: hafsOk, comparison: compOk });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeTraversalVariation?.word?.id,
+    activeTraversalVariation?.word?.ayah,
+    firstSelectedNarratorId,
+    parentNarrators,
+    segmentPrefetchResumeTick,
+  ]);
 
   const traversalNarratorCards = useMemo(() => {
     return selectedTraversalNarrators.map((narrator) => {
@@ -7171,13 +7484,23 @@ export default function App() {
     const surahWidth = surahCarouselWidthRef.current || winW;
     if (
       surahScrollViewRef.current &&
-      currentSurahIndex >= 0 &&
-      currentSurahIndex < goToPageSurahCarouselEntries.length
+      activeSurahCarouselRowIndex >= 0 &&
+      activeSurahCarouselRowIndex < goToPageSurahCarouselFiltered.length
     ) {
-      const scrollX = centerScrollXFromWidths(surahItemWidthsRef.current, currentSurahIndex, surahWidth);
+      const scrollX = centerScrollXFromWidths(
+        surahItemWidthsRef.current,
+        activeSurahCarouselRowIndex,
+        surahWidth
+      );
       surahScrollViewRef.current.scrollTo({ x: scrollX, animated: true });
     }
-  }, [showPageSlider, currentJuzIndex, currentSurahIndex, goToPageJuzSegments.length, goToPageSurahCarouselEntries.length]);
+  }, [
+    showPageSlider,
+    currentJuzIndex,
+    activeSurahCarouselRowIndex,
+    goToPageJuzSegments.length,
+    goToPageSurahCarouselFiltered.length,
+  ]);
 
   const scheduleCarouselScrollToCenter = useCallback(() => {
     if (carouselCenterDebounceRef.current) clearTimeout(carouselCenterDebounceRef.current);
@@ -7195,10 +7518,19 @@ export default function App() {
       const timer = setTimeout(scrollCarouselsToCenter, 150);
       return () => clearTimeout(timer);
     }
-  }, [showPageSlider, currentPage, currentJuzIndex, currentSurahIndex, scrollCarouselsToCenter]);
+  }, [
+    showPageSlider,
+    currentPage,
+    currentJuzIndex,
+    currentSurahIndex,
+    goPageSurahSearchNorm,
+    activeSurahCarouselRowIndex,
+    scrollCarouselsToCenter,
+  ]);
 
   useEffect(() => {
     if (!showPageSlider) {
+      setGoPageSurahSearch("");
       juzItemWidthsRef.current = {};
       surahItemWidthsRef.current = {};
       if (carouselCenterDebounceRef.current) {
@@ -7610,8 +7942,28 @@ if (response.ok) {
       );
       if (!hit) return;
       setLastSelectedVariationHighlight({ wordId: word.id, pageNum: pn });
+
+      if (FEATURE_FLAGS.variationWordListenBadge) {
+        const vMatch = narratorVariations.find(
+          (x) =>
+            String(x.word?.id) === String(word.id) &&
+            (x.word?.line?.page?.position ?? 0) === pn
+        );
+        const rawAyah = vMatch?.word?.ayah ?? word?.ayah;
+        const ayahLabel = normalizeAyahLabelForListen(rawAyah);
+        if (ayahLabel && ayahLabel.includes(":")) {
+          void playRecitationSegmentForAyahRef.current(ayahLabel, {
+            traversalChip: {
+              type: "comparison",
+              narratorId: firstSelectedNarratorId,
+              narratorTitle: firstNarratorTitle || undefined,
+            },
+            clipLoadingBadge: { kind: "mushaf-word", wordId: String(word.id) },
+          });
+        }
+      }
     },
-    [firstSelectedNarratorId, narratorVariations]
+    [firstSelectedNarratorId, firstNarratorTitle, narratorVariations]
   );
 
   const handleWordPress = (word) => {
@@ -7776,7 +8128,18 @@ if (response.ok) {
 
     if (ayahLabel) {
       console.log(`ayah: ${ayahLabel}`);
-      void handlePlayFirstRecitationSegmentForAyah(ayahLabel, { traversalChip: riwayahChip });
+      void handlePlayFirstRecitationSegmentForAyah(ayahLabel, {
+        traversalChip: riwayahChip,
+        clipLoadingBadge:
+          riwayahChip?.type === "hafs"
+            ? { kind: "traversal-hafs" }
+            : riwayahChip?.type === "comparison"
+              ? {
+                  kind: "traversal-comparison",
+                  narratorId: String(riwayahChip.narratorId),
+                }
+              : undefined,
+      });
     }
     const pageNum = word.line?.page?.position;
     if (pageNum == null) return;
@@ -8176,6 +8539,7 @@ if (response.ok) {
     setListenDurationMs(0);
     setListenPlayerVisible(false);
     setListenTraversalClipHighlightVerse(null);
+    setChipClipLoadingBadge(null);
   }, [unloadListenSound]);
 
   const handleSeekListenTrack = useCallback(async (value) => {
@@ -8227,7 +8591,7 @@ if (response.ok) {
 
       const chip = options.traversalChip;
 
-      if (chip && activeListenTrack?.chipClipPlayback && listenIsPlaying) {
+      if (chip && activeListenTrack?.chipClipPlayback) {
         const cur = activeListenTrack.chipClipSource;
         const playingAyah = normalizeAyahLabelForListen(
           activeListenTrack.chipClipAyah ?? ""
@@ -8238,13 +8602,24 @@ if (response.ok) {
             cur.type === chip.type &&
             (chip.type !== "comparison" ||
               String(cur.narratorId) === String(chip.narratorId));
-          if (sameChip) return;
+          if (sameChip && listenIsPlaying) {
+            await handleCloseListenPlayer();
+            return;
+          }
         }
       }
 
       if (chip) {
         if (chipClipSegmentRequestInFlightRef.current) return;
         chipClipSegmentRequestInFlightRef.current = true;
+        const loadingBadge =
+          options.clipLoadingBadge ??
+          (chip.type === "hafs"
+            ? { kind: "traversal-hafs" }
+            : chip.type === "comparison"
+              ? { kind: "traversal-comparison", narratorId: String(chip.narratorId) }
+              : null);
+        if (loadingBadge) setChipClipLoadingBadge(loadingBadge);
       }
 
       const narratorSlug =
@@ -8330,6 +8705,8 @@ if (response.ok) {
           setListenTraversalClipHighlightVerse(normalizedAyah);
         }
         await handlePlayListenTrack(track, { suppressPlayer });
+        /** Hide spinners as soon as the sound is loaded — do not wait for seek + play (feels laggy). */
+        if (chip) setChipClipLoadingBadge(null);
         if (listenSoundRef.current) {
           await listenSoundRef.current.setPositionAsync(startMs);
           listenClipStartMsRef.current = startMs;
@@ -8345,11 +8722,21 @@ if (response.ok) {
           message: e?.message,
         });
       } finally {
-        if (chip) chipClipSegmentRequestInFlightRef.current = false;
+        if (chip) {
+          chipClipSegmentRequestInFlightRef.current = false;
+          setChipClipLoadingBadge(null);
+        }
       }
     },
-    [handlePlayListenTrack, parentNarrators, activeListenTrack, listenIsPlaying]
+    [
+      handlePlayListenTrack,
+      handleCloseListenPlayer,
+      parentNarrators,
+      activeListenTrack,
+      listenIsPlaying,
+    ]
   );
+  playRecitationSegmentForAyahRef.current = handlePlayFirstRecitationSegmentForAyah;
 
   if (error) {
     return (
@@ -8492,8 +8879,12 @@ if (response.ok) {
                       const highlightColor = narrator.highlight_color || "#00d4ff";
                       
                       return (
-                        <View
+                        <TouchableOpacity
                           key={narratorId}
+                          activeOpacity={0.7}
+                          onPress={() =>
+                            isDrawerFullyOpen ? closeDrawer() : openDrawer()
+                          }
                           style={[
                             styles.mushafNarratorPill,
                             { borderColor: highlightColor },
@@ -8507,7 +8898,7 @@ if (response.ok) {
                           >
                             {narrator.title}
                           </Text>
-                        </View>
+                        </TouchableOpacity>
                       );
                     })}
                 </ScrollView>
@@ -8569,7 +8960,15 @@ if (response.ok) {
                       }}
                     />
                   ) : null}
-                  <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (isDrawerVisibleRef.current) closeDrawer();
+                      setShowPageSlider(true);
+                    }}
+                  >
+                    <Text style={styles.mushafPageIndicator}>Pg. {currentPage}</Text>
+                  </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.mushafIconButton}
                     onPress={() => {
@@ -8660,6 +9059,10 @@ if (response.ok) {
                               ? handleVariationTraversalWordTap
                               : undefined
                           }
+                          variationListenBadgeWordIds={
+                            variationListenBadgeWordIdsByPage?.[pageNum] ?? null
+                          }
+                          chipClipLoadingBadge={chipClipLoadingBadge}
                           headerInsertMode={
                             isCurrent &&
                             headerInsertMode &&
@@ -8756,6 +9159,10 @@ if (response.ok) {
                 style={[
                   styles.variationTraversalBar,
                   !firstSelectedNarratorId && styles.variationTraversalBarEmpty,
+                  showTraversalBarListenBadges &&
+                    (traversalChipSegmentPlayable.hafs === true ||
+                      traversalChipSegmentPlayable.comparison === true) &&
+                    styles.variationTraversalBarListenBadgeOverflow,
                   {
                     paddingBottom:
                       (firstSelectedNarratorId
@@ -8925,7 +9332,12 @@ if (response.ok) {
                   ) : (
                     <View style={styles.variationTraversalSegmentedControl}>
                       <TouchableOpacity
-                        style={styles.variationTraversalCard}
+                        style={[
+                          styles.variationTraversalCard,
+                          showTraversalBarListenBadges &&
+                            traversalChipSegmentPlayable.hafs === true &&
+                            styles.variationTraversalCardBadgeOverflow,
+                        ]}
                         activeOpacity={0.72}
                         disabled={narratorVariations.length === 0}
                         onPress={() => {
@@ -8934,7 +9346,14 @@ if (response.ok) {
                         }}
                       >
                         <Text style={styles.variationTraversalCardLabel}>Hafs</Text>
-                        <View style={styles.variationTraversalCardWordWrap}>
+                        <View
+                          style={[
+                            styles.variationTraversalCardWordWrap,
+                            showTraversalBarListenBadges &&
+                              traversalChipSegmentPlayable.hafs === true &&
+                              styles.variationTraversalCardWordWrapWithBadge,
+                          ]}
+                        >
                           <Text
                             style={[
                               styles.variationTraversalCardWord,
@@ -8961,6 +9380,26 @@ if (response.ok) {
                               />
                             </View>
                           ) : null}
+                          {showTraversalBarListenBadges &&
+                          traversalChipSegmentPlayable.hafs === true ? (
+                            <View style={styles.traversalCardListenBadge} pointerEvents="none">
+                              <View style={styles.traversalCardListenBadgeInner}>
+                                {chipClipLoadingBadge?.kind === "traversal-hafs" ? (
+                                  <ActivityIndicator
+                                    color="#ffffff"
+                                    style={styles.traversalCardListenBadgeSpinner}
+                                  />
+                                ) : (
+                                  <Volume2
+                                    stroke="#ffffff"
+                                    width={11}
+                                    height={11}
+                                    strokeWidth={2.05}
+                                  />
+                                )}
+                              </View>
+                            </View>
+                          ) : null}
                         </View>
                       </TouchableOpacity>
                       <Text style={styles.variationTraversalSwapIcon}>↔</Text>
@@ -8970,6 +9409,9 @@ if (response.ok) {
                           style={[
                             styles.variationTraversalCard,
                             styles.variationTraversalCardNarrator,
+                            showTraversalBarListenBadges &&
+                              traversalChipSegmentPlayable.comparison === true &&
+                              styles.variationTraversalCardBadgeOverflow,
                           ]}
                           activeOpacity={0.72}
                           disabled={narratorVariations.length === 0}
@@ -8987,6 +9429,9 @@ if (response.ok) {
                             style={[
                               styles.variationTraversalCardWordWrap,
                               styles.variationTraversalCardWordWrapNarrator,
+                              showTraversalBarListenBadges &&
+                                traversalChipSegmentPlayable.comparison === true &&
+                                styles.variationTraversalCardWordWrapWithBadge,
                               { borderColor: card.highlightColor },
                             ]}
                           >
@@ -9017,6 +9462,27 @@ if (response.ok) {
                                     },
                                   ]}
                                 />
+                              </View>
+                            ) : null}
+                            {showTraversalBarListenBadges &&
+                            traversalChipSegmentPlayable.comparison === true ? (
+                              <View style={styles.traversalCardListenBadge} pointerEvents="none">
+                                <View style={styles.traversalCardListenBadgeInner}>
+                                  {chipClipLoadingBadge?.kind === "traversal-comparison" &&
+                                  String(chipClipLoadingBadge.narratorId) === String(card.id) ? (
+                                    <ActivityIndicator
+                                      color="#ffffff"
+                                      style={styles.traversalCardListenBadgeSpinner}
+                                    />
+                                  ) : (
+                                    <Volume2
+                                      stroke="#ffffff"
+                                      width={11}
+                                      height={11}
+                                      strokeWidth={2.05}
+                                    />
+                                  )}
+                                </View>
                               </View>
                             ) : null}
                           </View>
@@ -9910,13 +10376,17 @@ if (response.ok) {
         visible={showPageSlider}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowPageSlider(false)}
+        onRequestClose={() => {
+          setShowPageSlider(false);
+          setGoPageSurahSearch("");
+        }}
       >
         <Pressable
           style={styles.pageSliderModalOverlay}
           onPress={() => {
             Keyboard.dismiss();
             setShowPageSlider(false);
+            setGoPageSurahSearch("");
           }}
         >
           <Pressable
@@ -9926,7 +10396,10 @@ if (response.ok) {
             <View style={styles.pageSliderHeader}>
               <Text style={styles.pageSliderTitle}>Go to Page</Text>
               <TouchableOpacity
-                onPress={() => setShowPageSlider(false)}
+                onPress={() => {
+                  setShowPageSlider(false);
+                  setGoPageSurahSearch("");
+                }}
                 style={styles.pageSliderCloseButton}
               >
                 <Text style={styles.pageSliderCloseText}>✕</Text>
@@ -9976,7 +10449,9 @@ if (response.ok) {
                       ]}
                       numberOfLines={1}
                     >
-                      {juz.fields.title}
+                      {(juz.fields.title || "")
+                        .replace(/Juz\s*/i, "")
+                        .trim()}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -9992,6 +10467,20 @@ if (response.ok) {
               }}
             >
               <Text style={styles.carouselLabel}>Surah</Text>
+              <TextInput
+                style={styles.goPageSurahSearchInput}
+                value={goPageSurahSearch}
+                onChangeText={setGoPageSurahSearch}
+                placeholder="Search Arabic or English name…"
+                placeholderTextColor="#999"
+                autoCorrect={false}
+                autoCapitalize="none"
+                clearButtonMode="while-editing"
+              />
+              {goToPageSurahCarouselEntries.length > 0 &&
+              goToPageSurahCarouselFiltered.length === 0 ? (
+                <Text style={styles.goPageSurahSearchEmpty}>No surah matches this search.</Text>
+              ) : (
               <ScrollView
                 ref={surahScrollViewRef}
                 horizontal
@@ -10001,7 +10490,7 @@ if (response.ok) {
                 contentContainerStyle={styles.carouselContent}
                 style={styles.carouselSurahScrollView}
               >
-                {goToPageSurahCarouselEntries.map((entry, index) => {
+                {goToPageSurahCarouselFiltered.map((entry, index) => {
                   const surahNum = entry.surahNumber;
                   const surahStart = entry.page;
                   const headerNumsOnAnchor =
@@ -10015,7 +10504,7 @@ if (response.ok) {
                     surahNum > 0 &&
                     headerNumsOnAnchor.some((h) => Number(h) === surahNum);
                   const surahChipLit =
-                    index === currentSurahIndex || hasSurahHeaderOnAnchorPage;
+                    index === activeSurahCarouselRowIndex || hasSurahHeaderOnAnchorPage;
                   return (
                     <TouchableOpacity
                       key={entry.key}
@@ -10024,7 +10513,7 @@ if (response.ok) {
                         styles.carouselItemSurah,
                         hasSurahHeaderOnAnchorPage &&
                           styles.carouselItemSurahHasDbHeader,
-                        index === currentSurahIndex &&
+                        index === activeSurahCarouselRowIndex &&
                           !hasSurahHeaderOnAnchorPage &&
                           styles.carouselItemActive,
                       ]}
@@ -10076,6 +10565,7 @@ if (response.ok) {
                   );
                 })}
               </ScrollView>
+              )}
             </View>
             
             <View style={styles.pageSliderContainer}>
@@ -10421,6 +10911,10 @@ const styles = StyleSheet.create({
     zIndex: 2,
     elevation: 11,
   },
+  /** Lets mushaf-style listen badges extend slightly below the word chips without clipping */
+  variationTraversalBarListenBadgeOverflow: {
+    overflow: "visible",
+  },
   variationTraversalBarEmpty: {
     minHeight: 120,
     paddingTop: 12,
@@ -10501,6 +10995,41 @@ const styles = StyleSheet.create({
   },
   variationTraversalCardNarrator: {
     backgroundColor: "transparent",
+  },
+  variationTraversalCardBadgeOverflow: {
+    overflow: "visible",
+  },
+  variationTraversalCardWordWrapWithBadge: {
+    overflow: "visible",
+  },
+  /** Bottom-right of each Hafs / narrator word tile (mushaf badges stay centered on the word) */
+  traversalCardListenBadge: {
+    position: "absolute",
+    right: 4,
+    bottom: -6,
+    zIndex: 4,
+    overflow: "visible",
+  },
+  /** Larger than mushaf `wordListenBadgeInner` — traversal bar only */
+  traversalCardListenBadgeInner: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#313139",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 2.5,
+    elevation: 3,
+  },
+  traversalCardListenBadgeSpinner: {
+    width: 13,
+    height: 13,
+    transform: [{ scale: 0.92 }],
   },
   variationTraversalCardLabel: {
     fontSize: 11,
@@ -10756,6 +11285,50 @@ const styles = StyleSheet.create({
   },
   wordPressable: {
     paddingHorizontal: 2,
+  },
+  /** Badge extends past the word box; keep paint/hit from clipping on some platforms */
+  wordPressableListenOverflow: {
+    overflow: "visible",
+    zIndex: 3,
+  },
+  wordWithListenBadgeWrap: {
+    position: "relative",
+    overflow: "visible",
+  },
+  /** Out of flow: does not change line height; straddles bottom edge of the word */
+  wordListenBadge: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: -7,
+    alignItems: "center",
+    zIndex: 2,
+    overflow: "visible",
+  },
+  wordListenBadgeInner: {
+    width: 15,
+    height: 15,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#313139",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  wordListenBadgeInnerDark: {
+    backgroundColor: "#313139",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    shadowOpacity: 0.5,
+  },
+  wordListenBadgeSpinner: {
+    width: 10,
+    height: 10,
+    transform: [{ scale: 0.82 }],
   },
   wordPressed: {
     opacity: 0.5,
@@ -12494,6 +13067,23 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#333",
     marginBottom: 8,
+  },
+  goPageSurahSearchInput: {
+    borderWidth: 1,
+    borderColor: "#d0d0d0",
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    marginBottom: 10,
+    backgroundColor: "#fafafa",
+    color: "#1a1a1a",
+  },
+  goPageSurahSearchEmpty: {
+    fontSize: 14,
+    color: "#666",
+    paddingVertical: 12,
+    textAlign: "center",
   },
   carouselScrollView: {
     maxHeight: 52,
