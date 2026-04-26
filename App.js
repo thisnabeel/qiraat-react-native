@@ -94,7 +94,7 @@ function resolveIosAppStoreUrl() {
  * Set `true` to point all API calls at a local Rails app (overrides Railway / Vercel same-origin rules).
  * For a physical device, set `LOCAL_API_BASE` to your machine’s LAN IP (e.g. http://192.168.1.5:3000).
  */
-const USE_LOCALHOST_API = true;
+const USE_LOCALHOST_API = false;
 const LOCAL_API_BASE = "http://localhost:3000";
 
 /** Direct Railway API (native apps and local Expo web when not using localhost override). */
@@ -8816,16 +8816,6 @@ if (response.ok) {
               <Text style={styles.iosUpdateWallBody}>
                 A newer version is available. Please update to continue using Aswaat.
               </Text>
-              <View style={styles.iosUpdateWallVersionRow}>
-                <View style={styles.iosUpdateWallChip}>
-                  <Text style={styles.iosUpdateWallChipLabel}>Your version</Text>
-                  <Text style={styles.iosUpdateWallChipValue}>{iosUpdateWall.installed}</Text>
-                </View>
-                <View style={[styles.iosUpdateWallChip, styles.iosUpdateWallChipRequired]}>
-                  <Text style={styles.iosUpdateWallChipLabel}>Required</Text>
-                  <Text style={styles.iosUpdateWallChipValue}>{iosUpdateWall.minVersion}</Text>
-                </View>
-              </View>
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Open the App Store to update Aswaat"
@@ -10857,41 +10847,8 @@ const styles = StyleSheet.create({
     color: "#5C5854",
     textAlign: "center",
     lineHeight: 24,
-    marginBottom: 28,
+    marginBottom: 32,
     paddingHorizontal: 4,
-  },
-  iosUpdateWallVersionRow: {
-    flexDirection: "row",
-    width: "100%",
-    gap: 12,
-    marginBottom: 28,
-  },
-  iosUpdateWallChip: {
-    flex: 1,
-    backgroundColor: "#F3F1EE",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#E8E4DF",
-  },
-  iosUpdateWallChipRequired: {
-    backgroundColor: "#FAF7F2",
-    borderColor: "#D4CEC6",
-  },
-  iosUpdateWallChipLabel: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#8A847C",
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
-  },
-  iosUpdateWallChipValue: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1C1B1A",
-    letterSpacing: -0.2,
   },
   iosUpdateWallButton: {
     alignSelf: "stretch",
