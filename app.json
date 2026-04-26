@@ -2,7 +2,7 @@
   "expo": {
     "name": "Aswaat",
     "slug": "minrawi-app",
-    "version": "1.0.57",
+    "version": "1.0.58",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.aswaat.app",
-      "buildNumber": "59",
+      "buildNumber": "60",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "UIBackgroundModes": [
@@ -39,7 +39,8 @@
     "extra": {
       "eas": {
         "projectId": "2a24810c-c527-480a-b9f6-b11c1ac3efff"
-      }
+      },
+      "iosAppStoreUrl": "https://apps.apple.com/us/app/aswaat/id6754865252"
     },
     "plugins": [
       "expo-sqlite"

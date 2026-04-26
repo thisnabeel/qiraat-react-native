@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import { useFonts } from "expo-font";
+import Constants from "expo-constants";
 import {
   StyleSheet,
   View,
@@ -21,6 +22,7 @@ import {
   Keyboard,
   Alert,
   AppState,
+  Linking,
 } from "react-native";
 import {
   SafeAreaProvider,
@@ -60,12 +62,39 @@ import {
   clearListenNowPlaying,
   subscribeListenRemoteCommands,
 } from "aswaat-now-playing";
+import { checkIosMinVersionFromApi } from "./iosMinVersionGate";
+
+/** Used when `expo.extra.iosAppStoreUrl` is missing (common in Expo Go) or not a valid App Store / https URL. */
+const DEFAULT_IOS_APP_STORE_URL = "https://apps.apple.com/us/app/aswaat/id6754865252";
+
+function resolveIosAppStoreUrl() {
+  const fromExpoConfig =
+    typeof Constants.expoConfig?.extra?.iosAppStoreUrl === "string"
+      ? Constants.expoConfig.extra.iosAppStoreUrl.trim()
+      : "";
+  const fromManifest =
+    typeof Constants.manifest?.extra?.iosAppStoreUrl === "string"
+      ? Constants.manifest.extra.iosAppStoreUrl.trim()
+      : "";
+  const fromManifest2 =
+    typeof Constants.manifest2?.extra?.expoClient?.extra?.iosAppStoreUrl === "string"
+      ? Constants.manifest2.extra.expoClient.extra.iosAppStoreUrl.trim()
+      : "";
+  const candidate = fromExpoConfig || fromManifest2 || fromManifest;
+  if (
+    /^https:\/\/(apps\.apple\.com|itunes\.apple\.com)\b/i.test(candidate) ||
+    /^itms-apps:\/\//i.test(candidate)
+  ) {
+    return candidate;
+  }
+  return DEFAULT_IOS_APP_STORE_URL;
+}
 
 /**
  * Set `true` to point all API calls at a local Rails app (overrides Railway / Vercel same-origin rules).
  * For a physical device, set `LOCAL_API_BASE` to your machine’s LAN IP (e.g. http://192.168.1.5:3000).
  */
-const USE_LOCALHOST_API = false;
+const USE_LOCALHOST_API = true;
 const LOCAL_API_BASE = "http://localhost:3000";
 
 /** Direct Railway API (native apps and local Expo web when not using localhost override). */
@@ -5100,6 +5129,33 @@ export default function App() {
 
     }
   }, [fontsLoaded, fontError]);
+  /** iOS: set when installed app version is below API `GlobalConfig` row name `min_ios_version`. */
+  const [iosUpdateWall, setIosUpdateWall] = useState(null);
+
+  const runIosMinVersionCheck = useCallback(async () => {
+    if (Platform.OS !== "ios") return;
+    const result = await checkIosMinVersionFromApi(getApiBase());
+    if (result.blocked) {
+      setIosUpdateWall({
+        minVersion: result.minVersion ?? "",
+        installed: result.installed ?? "",
+      });
+    } else {
+      setIosUpdateWall(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    runIosMinVersionCheck();
+  }, [runIosMinVersionCheck]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      if (next === "active") runIosMinVersionCheck();
+    });
+    return () => sub.remove();
+  }, [runIosMinVersionCheck]);
+
   const [popupVisible, setPopupVisible] = useState(false);
   const [narrators, setNarrators] = useState([]);
   const [selectedNarrator, setSelectedNarrator] = useState(null);
@@ -8738,6 +8794,62 @@ if (response.ok) {
   );
   playRecitationSegmentForAyahRef.current = handlePlayFirstRecitationSegmentForAyah;
 
+  if (iosUpdateWall) {
+    const storeUrl = resolveIosAppStoreUrl();
+    return (
+      <SafeAreaProvider>
+        <SafeAreaViewEdged
+          style={styles.iosUpdateWallRoot}
+          edges={["top", "right", "bottom", "left"]}
+          accessibilityViewIsModal
+        >
+          <StatusBar barStyle="dark-content" />
+          <View style={styles.iosUpdateWallBackdrop}>
+            <View style={styles.iosUpdateWallCard}>
+              <Image
+                accessibilityIgnoresInvertColors
+                source={require("./assets/icon.png")}
+                style={styles.iosUpdateWallIcon}
+              />
+              <Text style={styles.iosUpdateWallBrand}>Aswaat</Text>
+              <Text style={styles.iosUpdateWallTitle}>Update required</Text>
+              <Text style={styles.iosUpdateWallBody}>
+                A newer version is available. Please update to continue using Aswaat.
+              </Text>
+              <View style={styles.iosUpdateWallVersionRow}>
+                <View style={styles.iosUpdateWallChip}>
+                  <Text style={styles.iosUpdateWallChipLabel}>Your version</Text>
+                  <Text style={styles.iosUpdateWallChipValue}>{iosUpdateWall.installed}</Text>
+                </View>
+                <View style={[styles.iosUpdateWallChip, styles.iosUpdateWallChipRequired]}>
+                  <Text style={styles.iosUpdateWallChipLabel}>Required</Text>
+                  <Text style={styles.iosUpdateWallChipValue}>{iosUpdateWall.minVersion}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Open the App Store to update Aswaat"
+                style={styles.iosUpdateWallButton}
+                onPress={() => {
+                  const url = resolveIosAppStoreUrl();
+                  Linking.openURL(url).catch(() => {
+                    Alert.alert(
+                      "Could not open App Store",
+                      "Search the App Store for “Aswaat” or update this app from your home screen."
+                    );
+                  });
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.iosUpdateWallButtonText}>Update in App Store</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaViewEdged>
+      </SafeAreaProvider>
+    );
+  }
+
   if (error) {
     return (
       <View style={styles.errorContainer}>
@@ -10689,6 +10801,118 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     textAlign: "center",
+  },
+  iosUpdateWallRoot: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: "#E8E4DF",
+  },
+  iosUpdateWallBackdrop: {
+    flex: 1,
+    width: "100%",
+    minHeight: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  iosUpdateWallCard: {
+    width: "100%",
+    maxWidth: 400,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 28,
+    paddingVertical: 40,
+    paddingHorizontal: 28,
+    shadowColor: "#1a1208",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 32,
+    elevation: 8,
+  },
+  iosUpdateWallIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: 20,
+    marginBottom: 14,
+  },
+  iosUpdateWallBrand: {
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 2,
+    color: "#6B6560",
+    textTransform: "uppercase",
+    marginBottom: 6,
+  },
+  iosUpdateWallTitle: {
+    fontSize: 26,
+    fontWeight: "700",
+    color: "#1C1B1A",
+    marginBottom: 12,
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
+  iosUpdateWallBody: {
+    fontSize: 16,
+    color: "#5C5854",
+    textAlign: "center",
+    lineHeight: 24,
+    marginBottom: 28,
+    paddingHorizontal: 4,
+  },
+  iosUpdateWallVersionRow: {
+    flexDirection: "row",
+    width: "100%",
+    gap: 12,
+    marginBottom: 28,
+  },
+  iosUpdateWallChip: {
+    flex: 1,
+    backgroundColor: "#F3F1EE",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#E8E4DF",
+  },
+  iosUpdateWallChipRequired: {
+    backgroundColor: "#FAF7F2",
+    borderColor: "#D4CEC6",
+  },
+  iosUpdateWallChipLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#8A847C",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  iosUpdateWallChipValue: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#1C1B1A",
+    letterSpacing: -0.2,
+  },
+  iosUpdateWallButton: {
+    alignSelf: "stretch",
+    backgroundColor: "#1F1F22",
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 14,
+  },
+  iosUpdateWallButtonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
+    letterSpacing: -0.2,
+  },
+  iosUpdateWallHint: {
+    fontSize: 15,
+    color: "#7A756E",
+    textAlign: "center",
+    lineHeight: 22,
+    paddingHorizontal: 4,
   },
   mainContainer: {
     flex: 1,
